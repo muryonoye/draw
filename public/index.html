@@ -2,17 +2,19 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>같이 그리기</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: sans-serif; background: #222; color: #fff; display: flex; flex-direction: column; height: 100vh; }
-  #bar { display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: #333; flex-wrap: wrap; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #222; color: #fff; font-family: sans-serif; }
+  body { display: flex; flex-direction: column; }
+  #bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #333; flex-wrap: wrap; z-index: 2; }
   button { padding: 6px 12px; border: 0; border-radius: 6px; cursor: pointer; }
   button.active { outline: 2px solid #4af; }
-  #wrap { flex: 1; display: flex; justify-content: center; align-items: center; padding: 8px; min-height: 0; }
-  canvas { background: #fff; max-width: 100%; max-height: 100%; touch-action: none; cursor: crosshair; border-radius: 6px; }
+  #wrap { flex: 1; min-height: 0; position: relative; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; background: #fff; }
   #status { margin-left: auto; font-size: 12px; opacity: .7; }
+  #hud { position: absolute; right: 10px; bottom: 10px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 6px; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -21,52 +23,233 @@
   <input type="range" id="size" min="1" max="40" value="4">
   <button id="pen" class="active">펜</button>
   <button id="eraser">지우개</button>
-  <button id="clear">전체 지우기</button>
+  <button id="hand">이동(손)</button>
+  <button id="reset">보기 초기화</button>
+  <button id="clear">내 그림 지우기</button>
   <button id="copy">링크 복사</button>
   <span id="status">연결 중…</span>
 </div>
-<div id="wrap"><canvas id="c" width="1200" height="800"></canvas></div>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="hud">100%</div>
+</div>
 <script>
-const W = 1200, H = 800;
 const canvas = document.getElementById('c');
+const wrap = document.getElementById('wrap');
 const ctx = canvas.getContext('2d');
-ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-const room = new URLSearchParams(location.search).get('room') || 'lobby';
+const hud = document.getElementById('hud');
 const statusEl = document.getElementById('status');
+const colorEl = document.getElementById('color');
+const sizeEl = document.getElementById('size');
+
+const MIN_S = 0.05, MAX_S = 8;
+let cam = { x: 0, y: 0 };   // 화면 왼쪽 위에 해당하는 월드 좌표
+let scale = 1, dpr = 1;
+let segs = [];
+let me = null; // 서버가 알려주는 내 주인 ID
+let tool = 'pen', spaceDown = false;
+
+const r1 = (n) => Math.round(n * 10) / 10;
+const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+const rect = () => canvas.getBoundingClientRect();
+
+function resetView() {
+  const r = rect();
+  scale = 1;
+  cam.x = -r.width / 2;
+  cam.y = -r.height / 2;
+  paint();
+}
+function resize() {
+  const r = wrap.getBoundingClientRect();
+  const first = !resize.done;
+  dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(r.width * dpr));
+  canvas.height = Math.max(1, Math.round(r.height * dpr));
+  if (first) { resize.done = true; cam.x = -r.width / 2; cam.y = -r.height / 2; }
+  paint();
+}
+window.addEventListener('resize', resize);
+
+function applyTransform() {
+  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, -cam.x * scale * dpr, -cam.y * scale * dpr);
+}
+function strokeSeg(s) {
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = Math.max(s.size, 0.6 / scale);
+  ctx.beginPath();
+  ctx.moveTo(s.x0, s.y0);
+  ctx.lineTo(s.x1, s.y1);
+  ctx.stroke();
+}
+
+let raf = 0;
+function redraw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; paint(); }); }
+
+function paint() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  applyTransform();
+  const w = canvas.width / dpr / scale, h = canvas.height / dpr / scale;
+
+  // 배경 격자
+  let step = 100;
+  while (step * scale < 28) step *= 5;
+  ctx.strokeStyle = '#ececec';
+  ctx.lineWidth = 1 / scale;
+  ctx.lineCap = 'butt';
+  ctx.beginPath();
+  for (let x = Math.floor(cam.x / step) * step; x <= cam.x + w; x += step) { ctx.moveTo(x, cam.y); ctx.lineTo(x, cam.y + h); }
+  for (let y = Math.floor(cam.y / step) * step; y <= cam.y + h; y += step) { ctx.moveTo(cam.x, y); ctx.lineTo(cam.x + w, y); }
+  ctx.stroke();
+
+  // 화면에 보이는 선만 그리기
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const m = 30 / scale;
+  for (const s of segs) {
+    if (Math.max(s.x0, s.x1) + s.size < cam.x - m || Math.min(s.x0, s.x1) - s.size > cam.x + w + m ||
+        Math.max(s.y0, s.y1) + s.size < cam.y - m || Math.min(s.y0, s.y1) - s.size > cam.y + h + m) continue;
+    strokeSeg(s);
+  }
+  hud.textContent = Math.round(scale * 100) + '%';
+}
+
+function zoomAt(sx, sy, factor) {
+  const wx = cam.x + sx / scale, wy = cam.y + sy / scale;
+  scale = clamp(scale * factor, MIN_S, MAX_S);
+  cam.x = wx - sx / scale;
+  cam.y = wy - sy / scale;
+  redraw();
+}
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const r = rect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+}, { passive: false });
+
+// ---- 서버 연결 ----
+const room = new URLSearchParams(location.search).get('room') || 'lobby';
+
+// 이 브라우저의 비밀 키(주인 확인용). 지우면 예전 그림의 주인 자격을 잃는다.
+function makeKey() {
+  const a = crypto.getRandomValues(new Uint8Array(18));
+  return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function getKey() {
+  try {
+    let k = localStorage.getItem('draw:key');
+    if (!k) { k = makeKey(); localStorage.setItem('draw:key', k); }
+    return k;
+  } catch { return makeKey(); }
+}
+const myKey = getKey();
 let ws;
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/?room=${encodeURIComponent(room)}`);
+  ws = new WebSocket(`${proto}://${location.host}/?room=${encodeURIComponent(room)}&k=${myKey}`);
   ws.onopen = () => statusEl.textContent = '연결됨 · 방: ' + room;
-  ws.onclose = () => { statusEl.textContent = '재연결 중…'; setTimeout(connect, 1500); };
+  ws.onclose = () => { me = null; statusEl.textContent = '재연결 중…'; setTimeout(connect, 1500); };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.type === 'history') { clearLocal(); m.data.forEach(drawSeg); }
-    else if (m.type === 'seg') drawSeg(m);
-    else if (m.type === 'clear') clearLocal();
+    if (m.type === 'hello') { me = m.me; }
+    else if (m.type === 'history') { segs = m.data; redraw(); }
+    else if (m.type === 'seg') { segs.push(m); applyTransform(); ctx.lineCap = 'round'; strokeSeg(m); }
+    else if (m.type === 'clear') { segs = segs.filter((s) => s.o !== m.o); redraw(); }
   };
 }
 connect();
-function drawSeg(s) { ctx.strokeStyle = s.color; ctx.lineWidth = s.size; ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(s.x1, s.y1); ctx.stroke(); }
-function clearLocal() { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); }
 function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
-let tool = 'pen';
-const colorEl = document.getElementById('color'), sizeEl = document.getElementById('size');
-const penBtn = document.getElementById('pen'), eraserBtn = document.getElementById('eraser');
-penBtn.onclick = () => { tool = 'pen'; penBtn.classList.add('active'); eraserBtn.classList.remove('active'); };
-eraserBtn.onclick = () => { tool = 'eraser'; eraserBtn.classList.add('active'); penBtn.classList.remove('active'); };
-document.getElementById('clear').onclick = () => { if (confirm('모두의 그림이 지워져요. 계속할까요?')) { clearLocal(); send({ type: 'clear' }); } };
-document.getElementById('copy').onclick = async () => { await navigator.clipboard.writeText(location.href); statusEl.textContent = '링크 복사됨!'; };
-let drawing = false, last = null;
-function pos(e) { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
-canvas.addEventListener('pointerdown', (e) => { drawing = true; last = pos(e); canvas.setPointerCapture(e.pointerId); segTo(last); });
-canvas.addEventListener('pointermove', (e) => { if (drawing) segTo(pos(e)); });
-['pointerup', 'pointercancel'].forEach(t => canvas.addEventListener(t, () => { drawing = false; last = null; }));
-function segTo(p) {
-  const s = { x0: last.x, y0: last.y, x1: p.x, y1: p.y, color: tool === 'eraser' ? '#ffffff' : colorEl.value, size: tool === 'eraser' ? +sizeEl.value * 3 : +sizeEl.value };
-  drawSeg(s); send({ type: 'seg', ...s }); last = p;
+
+// ---- 도구 버튼 ----
+const btns = { pen: document.getElementById('pen'), eraser: document.getElementById('eraser'), hand: document.getElementById('hand') };
+function setTool(t) {
+  tool = t;
+  for (const k in btns) btns[k].classList.toggle('active', k === t);
+  updateCursor();
 }
+function updateCursor() { canvas.style.cursor = (tool === 'hand' || spaceDown) ? 'grab' : 'crosshair'; }
+for (const k in btns) btns[k].onclick = () => setTool(k);
+document.getElementById('reset').onclick = resetView;
+document.getElementById('clear').onclick = () => {
+  if (!me) return;
+  if (confirm('내가 그린 그림만 지워져요. (다른 사람 그림은 그대로예요) 계속할까요?')) {
+    segs = segs.filter((s) => s.o !== me); redraw(); send({ type: 'clear' });
+  }
+};
+document.getElementById('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(location.href); statusEl.textContent = '링크 복사됨!'; }
+  catch { statusEl.textContent = '주소창의 링크를 복사하세요'; }
+};
+window.addEventListener('keydown', (e) => { if (e.code === 'Space' && !spaceDown) { spaceDown = true; updateCursor(); e.preventDefault(); } });
+window.addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; updateCursor(); } });
+
+// ---- 그리기 / 이동 / 핀치 ----
+const pts = new Map();   // pointerId -> 화면 좌표(캔버스 기준)
+let mode = null;         // 'draw' | 'pan' | 'pinch'
+let last = null, pinchPrev = null;
+
+function rel(e) { const r = rect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+function toWorld(p) { return { x: cam.x + p.x / scale, y: cam.y + p.y / scale }; }
+function pinchState() {
+  const [a, b] = [...pts.values()];
+  return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+}
+function segTo(p) {
+  const s = {
+    x0: r1(last.x), y0: r1(last.y), x1: r1(p.x), y1: r1(p.y),
+    color: tool === 'eraser' ? '#ffffff' : colorEl.value,
+    size: tool === 'eraser' ? +sizeEl.value * 3 : +sizeEl.value,
+    o: me,
+  };
+  segs.push(s);
+  applyTransform();
+  ctx.lineCap = 'round';
+  strokeSeg(s);
+  send({ type: 'seg', ...s });
+  last = p;
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  pts.set(e.pointerId, rel(e));
+  if (pts.size === 2) { mode = 'pinch'; last = null; pinchPrev = pinchState(); return; }
+  if (pts.size > 2) return;
+  if (e.button === 1 || tool === 'hand' || spaceDown) { mode = 'pan'; return; }
+  if (e.button !== 0) return;
+  if (!me) { statusEl.textContent = '연결 중이에요. 잠시 후 다시 그려 주세요'; return; }
+  mode = 'draw';
+  last = toWorld(rel(e));
+  segTo(last);
+});
+canvas.addEventListener('pointermove', (e) => {
+  const p = pts.get(e.pointerId);
+  if (!p) return;
+  const np = rel(e);
+  const dx = np.x - p.x, dy = np.y - p.y;
+  p.x = np.x; p.y = np.y;
+  if (mode === 'pan') {
+    cam.x -= dx / scale; cam.y -= dy / scale; redraw();
+  } else if (mode === 'pinch' && pts.size === 2) {
+    const cur = pinchState();
+    const wx = cam.x + pinchPrev.cx / scale, wy = cam.y + pinchPrev.cy / scale;
+    scale = clamp(scale * cur.d / pinchPrev.d, MIN_S, MAX_S);
+    cam.x = wx - cur.cx / scale; cam.y = wy - cur.cy / scale;
+    pinchPrev = cur; redraw();
+  } else if (mode === 'draw') {
+    segTo(toWorld(np));
+  }
+});
+function endPointer(e) {
+  pts.delete(e.pointerId);
+  if (pts.size === 0) { mode = null; last = null; }
+  else if (mode === 'pinch' || mode === 'draw') { mode = 'pan'; last = null; }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+
+resize();
 </script>
 </body>
 </html>
