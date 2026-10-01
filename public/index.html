@@ -8,17 +8,33 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #222; color: #fff; font-family: sans-serif; }
   body { display: flex; flex-direction: column; }
-  #bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #333; flex-wrap: wrap; z-index: 2; }
+  #bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #333; flex-wrap: wrap; z-index: 3; }
   button { padding: 6px 12px; border: 0; border-radius: 6px; cursor: pointer; }
   button.active { outline: 2px solid #4af; }
+  input[type=text] { padding: 6px 8px; border-radius: 6px; border: 1px solid #555; background: #222; color: #fff; font-size: 16px; }
+  #nick { width: 140px; }
   #wrap { flex: 1; min-height: 0; position: relative; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; background: #fff; }
+  #cursors { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .cur { position: absolute; left: 0; top: 0; will-change: transform; }
+  .cur .dot { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
+  .cur .lbl { position: absolute; left: 8px; top: 6px; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
+  #tip { position: absolute; left: 0; top: 0; display: none; pointer-events: none; color: #fff; font-size: 12px; padding: 3px 8px; border-radius: 8px; white-space: nowrap; z-index: 2; }
+  #ring { position: absolute; left: 0; top: 0; display: none; pointer-events: none; border: 1.5px solid #222; border-radius: 50%; box-shadow: 0 0 0 1.5px #fff; z-index: 2; }
   #status { margin-left: auto; font-size: 12px; opacity: .7; }
   #hud { position: absolute; right: 10px; bottom: 10px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 6px; pointer-events: none; }
+  #roomPanel { position: absolute; top: 8px; left: 12px; z-index: 4; background: #2b2b2b; border: 1px solid #555; border-radius: 10px; padding: 14px; width: min(340px, calc(100% - 24px)); box-shadow: 0 8px 24px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 10px; }
+  #roomPanel[hidden] { display: none; }
+  #roomPanel .row { display: flex; gap: 8px; align-items: center; }
+  #roomPanel .row input { flex: 1; min-width: 0; }
+  #roomPanel .hint { font-size: 12px; opacity: .7; }
+  #roomPanel code { background: #111; padding: 2px 8px; border-radius: 6px; }
+  #joinErr { color: #f88; font-size: 12px; min-height: 1em; }
 </style>
 </head>
 <body>
 <div id="bar">
+  <input type="text" id="nick" placeholder="닉네임" autocomplete="off">
   <input type="color" id="color" value="#000000">
   <input type="range" id="size" min="1" max="40" value="4">
   <button id="pen" class="active">펜</button>
@@ -26,33 +42,87 @@
   <button id="hand">이동(손)</button>
   <button id="reset">보기 초기화</button>
   <button id="clear">내 그림 지우기</button>
+  <button id="roomBtn">방</button>
   <button id="copy">링크 복사</button>
   <span id="status">연결 중…</span>
 </div>
 <div id="wrap">
   <canvas id="c"></canvas>
+  <div id="cursors"></div>
+  <div id="tip"></div>
+  <div id="ring"></div>
   <div id="hud">100%</div>
+  <div id="roomPanel" hidden>
+    <div class="row"><b>지금 방</b> <code id="roomCode"></code></div>
+    <button id="newRoom">새 방 만들기</button>
+    <div class="hint">새 방의 주소는 추측할 수 없어요. 링크를 보낸 사람만 들어올 수 있어요.</div>
+    <div class="row">
+      <input type="text" id="joinInput" placeholder="방 코드 또는 링크" autocomplete="off">
+      <button id="joinBtn">들어가기</button>
+    </div>
+    <div id="joinErr"></div>
+    <button id="closePanel">닫기</button>
+  </div>
 </div>
 <script>
-const canvas = document.getElementById('c');
-const wrap = document.getElementById('wrap');
-const ctx = canvas.getContext('2d');
-const hud = document.getElementById('hud');
-const statusEl = document.getElementById('status');
-const colorEl = document.getElementById('color');
-const sizeEl = document.getElementById('size');
+const $ = (id) => document.getElementById(id);
+const canvas = $('c'), wrap = $('wrap'), ctx = canvas.getContext('2d');
+const hud = $('hud'), statusEl = $('status'), colorEl = $('color'), sizeEl = $('size');
+const nickEl = $('nick'), curLayer = $('cursors'), tip = $('tip'), ring = $('ring'), panel = $('roomPanel');
 
 const MIN_S = 0.05, MAX_S = 8;
+const ROOM_RE = /^[A-Za-z0-9_-]{1,32}$/;
+const ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+const ADJ = ['졸린', '배고픈', '용감한', '수줍은', '신난', '느긋한', '엉뚱한', '반짝이는', '씩씩한', '조용한'];
+const ANI = ['고양이', '강아지', '토끼', '판다', '수달', '여우', '펭귄', '곰', '다람쥐', '오리'];
+
 let cam = { x: 0, y: 0 };   // 화면 왼쪽 위에 해당하는 월드 좌표
 let scale = 1, dpr = 1;
-let segs = [];
-let me = null; // 서버가 알려주는 내 주인 ID
+let segs = [], names = {}, count = 0;
+let me = null, connected = false, ws = null; // me = 서버가 알려주는 내 주인 ID
 let tool = 'pen', spaceDown = false;
 
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
 const rect = () => canvas.getBoundingClientRect();
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+const rnd = (n) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
 
+// ---- 방 / 내 키 / 닉네임 ----
+const roomRaw = new URLSearchParams(location.search).get('room') || 'lobby';
+const room = ROOM_RE.test(roomRaw) ? roomRaw : 'lobby';
+
+// 이 브라우저의 비밀 키(주인 확인용). 지우면 예전 그림의 주인 자격을 잃는다.
+function makeKey() {
+  const a = crypto.getRandomValues(new Uint8Array(18));
+  return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function getKey() {
+  let k = lsGet('draw:key');
+  if (!k) { k = makeKey(); lsSet('draw:key', k); }
+  return k;
+}
+const myKey = getKey();
+
+function randomNick() { return ADJ[rnd(ADJ.length)] + ' ' + ANI[rnd(ANI.length)]; }
+let myNick = lsGet('draw:nick') || randomNick();
+lsSet('draw:nick', myNick);
+nickEl.value = myNick;
+
+function newRoomId() {
+  const b = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(b, (x) => ID_ALPHABET[x % ID_ALPHABET.length]).join('');
+}
+function parseRoom(s) {
+  s = String(s || '').trim();
+  if (!s) return null;
+  try { const r = new URL(s).searchParams.get('room'); if (r) s = r; } catch {}
+  return ROOM_RE.test(s) ? s : null;
+}
+function goRoom(id) { location.href = '/?room=' + encodeURIComponent(id); }
+
+// ---- 화면 / 좌표 ----
 function resetView() {
   const r = rect();
   scale = 1;
@@ -81,6 +151,78 @@ function strokeSeg(s) {
   ctx.moveTo(s.x0, s.y0);
   ctx.lineTo(s.x1, s.y1);
   ctx.stroke();
+}
+const toWorld = (p) => ({ x: cam.x + p.x / scale, y: cam.y + p.y / scale });
+
+// ---- 지우개: 서버와 화면이 똑같은 함수를 써야 모두의 그림이 같아진다 (server.js와 index.html에 같은 내용) ----
+// 선(s)에서 지우개 경로(캡슐: 선분 + 반지름)와 겹치는 구간 [시작, 끝](0~1)을 구한다. 겹치지 않으면 null.
+function erInterval(s, ex0, ey0, edx, edy, eL, rho) {
+  const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
+  const a = dx * dx + dy * dy;
+  let lo = Infinity, hi = -Infinity;
+  const add = (l, h) => { if (l <= h) { if (l < lo) lo = l; if (h > hi) hi = h; } };
+  const circle = (cx, cy) => {
+    const px = s.x0 - cx, py = s.y0 - cy;
+    const c = px * px + py * py - rho * rho;
+    if (a === 0) { if (c <= 0) add(0, 1); return; }
+    const b = 2 * (dx * px + dy * py);
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return;
+    const q = Math.sqrt(disc);
+    add(Math.max((-b - q) / (2 * a), 0), Math.min((-b + q) / (2 * a), 1));
+  };
+  circle(ex0, ey0);
+  if (eL > 0) {
+    circle(ex0 + edx, ey0 + edy);
+    const ux = edx / eL, uy = edy / eL, nx = -uy, ny = ux;
+    const qx = s.x0 - ex0, qy = s.y0 - ey0;
+    let l = 0, h = 1;
+    const clip = (f0, f1, m, M) => {
+      if (Math.abs(f1) < 1e-12) { if (f0 < m || f0 > M) { l = 1; h = 0; } return; }
+      let t1 = (m - f0) / f1, t2 = (M - f0) / f1;
+      if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
+      if (t1 > l) l = t1;
+      if (t2 < h) h = t2;
+    };
+    clip(qx * ux + qy * uy, dx * ux + dy * uy, 0, eL);
+    clip(qx * nx + qy * ny, dx * nx + dy * ny, -rho, rho);
+    add(l, h);
+  }
+  return lo <= hi ? [lo, hi] : null;
+}
+// owner 가 null 이 아니면 그 사람의 선만 지운다. 지워진 곳이 없으면 null, 있으면 새 배열(잘린 조각 포함)을 돌려준다.
+function eraseCapsule(list, owner, x0, y0, x1, y1, r) {
+  r = Math.min(Math.max(r, 1), 200);
+  const edx = x1 - x0, edy = y1 - y0;
+  const eL = Math.sqrt(edx * edx + edy * edy);
+  const minX = Math.min(x0, x1) - r, maxX = Math.max(x0, x1) + r;
+  const minY = Math.min(y0, y1) - r, maxY = Math.max(y0, y1) + r;
+  let hits = null;
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (owner !== null && s.o !== owner) continue;
+    const m = s.size / 2;
+    if (Math.max(s.x0, s.x1) + m < minX || Math.min(s.x0, s.x1) - m > maxX ||
+        Math.max(s.y0, s.y1) + m < minY || Math.min(s.y0, s.y1) - m > maxY) continue;
+    const iv = erInterval(s, x0, y0, edx, edy, eL, r + m);
+    if (!iv) continue;
+    if (!hits) hits = new Map();
+    hits.set(i, iv);
+  }
+  if (!hits) return null;
+  const R1 = (n) => Math.round(n * 10) / 10;
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    const iv = hits.get(i);
+    if (!iv) { out.push(s); continue; }
+    const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const piece = (a, b) => ({ x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o });
+    if (iv[0] * len >= 0.25) out.push(piece(0, iv[0]));
+    if ((1 - iv[1]) * len >= 0.25) out.push(piece(iv[1], 1));
+  }
+  return out;
 }
 
 let raf = 0;
@@ -114,6 +256,7 @@ function paint() {
     strokeSeg(s);
   }
   hud.textContent = Math.round(scale * 100) + '%';
+  for (const c of cursors.values()) layoutCursor(c);
 }
 
 function zoomAt(sx, sy, factor) {
@@ -129,78 +272,195 @@ canvas.addEventListener('wheel', (e) => {
   zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
 }, { passive: false });
 
-// ---- 서버 연결 ----
-const room = new URLSearchParams(location.search).get('room') || 'lobby';
+// ---- 다른 사람 커서 / 이름 ----
+const hue = (o) => { let h = 0; for (const ch of String(o)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
+const colorOf = (o) => `hsl(${hue(o)} 65% 42%)`;
+const nameOf = (o) => names[o] || '알 수 없음';
+const cursors = new Map(); // 주인 ID -> { el, lbl, x, y, t }
 
-// 이 브라우저의 비밀 키(주인 확인용). 지우면 예전 그림의 주인 자격을 잃는다.
-function makeKey() {
-  const a = crypto.getRandomValues(new Uint8Array(18));
-  return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function layoutCursor(c) {
+  c.el.style.transform = `translate(${(c.x - cam.x) * scale}px, ${(c.y - cam.y) * scale}px)`;
 }
-function getKey() {
-  try {
-    let k = localStorage.getItem('draw:key');
-    if (!k) { k = makeKey(); localStorage.setItem('draw:key', k); }
-    return k;
-  } catch { return makeKey(); }
+function showCursor(o, x, y) {
+  if (o === me) return;
+  let c = cursors.get(o);
+  if (!c) {
+    const el = document.createElement('div');
+    el.className = 'cur';
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = colorOf(o);
+    const lbl = document.createElement('span');
+    lbl.className = 'lbl';
+    lbl.style.background = colorOf(o);
+    el.append(dot, lbl);
+    curLayer.appendChild(el);
+    c = { el, lbl, x, y, t: 0 };
+    cursors.set(o, c);
+  }
+  c.x = x; c.y = y; c.t = performance.now();
+  c.lbl.textContent = nameOf(o);
+  layoutCursor(c);
 }
-const myKey = getKey();
-let ws;
+function hideCursor(o) {
+  const c = cursors.get(o);
+  if (c) { c.el.remove(); cursors.delete(o); }
+}
+function refreshLabels() { for (const [o, c] of cursors) c.lbl.textContent = nameOf(o); }
+setInterval(() => {
+  const t = performance.now();
+  for (const [o, c] of cursors) if (t - c.t > 4000) hideCursor(o);
+}, 1000);
+
+// ---- 마우스를 올리면 그린 사람 표시 ----
+function distToSeg(p, s) {
+  const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
+  const l2 = dx * dx + dy * dy;
+  let t = l2 ? ((p.x - s.x0) * dx + (p.y - s.y0) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (s.x0 + t * dx), p.y - (s.y0 + t * dy));
+}
+// 가장 위에 보이는 선을 찾는다.
+function hitTest(p) {
+  const tol = 4 / scale;
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const s = segs[i];
+    const r = s.size / 2 + tol;
+    if (p.x < Math.min(s.x0, s.x1) - r || p.x > Math.max(s.x0, s.x1) + r ||
+        p.y < Math.min(s.y0, s.y1) - r || p.y > Math.max(s.y0, s.y1) + r) continue;
+    if (distToSeg(p, s) <= r) return s;
+  }
+  return null;
+}
+let lastHit = 0;
+function hover(np) {
+  if (mode) { tip.style.display = 'none'; return; }
+  const now = performance.now();
+  if (now - lastHit < 40) return;
+  lastHit = now;
+  const s = hitTest(toWorld(np));
+  if (!s) { tip.style.display = 'none'; return; }
+  tip.textContent = nameOf(s.o);
+  tip.style.background = colorOf(s.o);
+  tip.style.transform = `translate(${np.x + 14}px, ${np.y + 14}px)`;
+  tip.style.display = 'block';
+}
+
+// ---- 상태 표시 ----
+function updateStatus() {
+  statusEl.textContent = connected ? `연결됨 · 방: ${room}${count ? ' · ' + count + '명' : ''}` : '재연결 중…';
+}
+let flashT = 0;
+function flash(msg) {
+  statusEl.textContent = msg;
+  clearTimeout(flashT);
+  flashT = setTimeout(updateStatus, 2500);
+}
+
+// ---- 서버 연결 ----
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/?room=${encodeURIComponent(room)}&k=${myKey}`);
-  ws.onopen = () => statusEl.textContent = '연결됨 · 방: ' + room;
-  ws.onclose = () => { me = null; statusEl.textContent = '재연결 중…'; setTimeout(connect, 1500); };
+  const q = `room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}`;
+  ws = new WebSocket(`${proto}://${location.host}/?${q}`);
+  ws.onopen = () => { connected = true; updateStatus(); };
+  ws.onclose = () => {
+    connected = false; me = null; count = 0;
+    for (const o of [...cursors.keys()]) hideCursor(o);
+    statusEl.textContent = '재연결 중…';
+    setTimeout(connect, 1500);
+  };
   ws.onmessage = (e) => {
-    const m = JSON.parse(e.data);
+    let m;
+    try { m = JSON.parse(e.data); } catch { return; }
     if (m.type === 'hello') { me = m.me; }
     else if (m.type === 'history') { segs = m.data; redraw(); }
+    else if (m.type === 'names') { names = m.names || {}; refreshLabels(); if (me && names[me]) nickEl.value = names[me]; }
+    else if (m.type === 'name') { names[m.o] = m.name; refreshLabels(); if (m.o === me) nickEl.value = m.name; }
+    else if (m.type === 'count') { count = m.n; updateStatus(); }
     else if (m.type === 'seg') { segs.push(m); applyTransform(); ctx.lineCap = 'round'; strokeSeg(m); }
     else if (m.type === 'clear') { segs = segs.filter((s) => s.o !== m.o); redraw(); }
+    else if (m.type === 'erase') { const res = eraseCapsule(segs, m.o, m.x0, m.y0, m.x1, m.y1, m.r); if (res) { segs = res; redraw(); } }
+    else if (m.type === 'cur') { showCursor(m.o, m.x, m.y); }
+    else if (m.type === 'curhide') { hideCursor(m.o); }
   };
 }
-connect();
 function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
 
-// ---- 도구 버튼 ----
-const btns = { pen: document.getElementById('pen'), eraser: document.getElementById('eraser'), hand: document.getElementById('hand') };
+// ---- 버튼 ----
+const btns = { pen: $('pen'), eraser: $('eraser'), hand: $('hand') };
 function setTool(t) {
   tool = t;
   for (const k in btns) btns[k].classList.toggle('active', k === t);
+  if (t !== 'eraser') ring.style.display = 'none';
+  else flash('지우개: 내가 그린 선만 지워져요');
   updateCursor();
 }
 function updateCursor() { canvas.style.cursor = (tool === 'hand' || spaceDown) ? 'grab' : 'crosshair'; }
 for (const k in btns) btns[k].onclick = () => setTool(k);
-document.getElementById('reset').onclick = resetView;
-document.getElementById('clear').onclick = () => {
+$('reset').onclick = resetView;
+$('clear').onclick = () => {
   if (!me) return;
   if (confirm('내가 그린 그림만 지워져요. (다른 사람 그림은 그대로예요) 계속할까요?')) {
     segs = segs.filter((s) => s.o !== me); redraw(); send({ type: 'clear' });
   }
 };
-document.getElementById('copy').onclick = async () => {
-  try { await navigator.clipboard.writeText(location.href); statusEl.textContent = '링크 복사됨!'; }
-  catch { statusEl.textContent = '주소창의 링크를 복사하세요'; }
+$('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(location.href); flash('링크 복사됨!'); }
+  catch { flash('주소창의 링크를 복사하세요'); }
 };
-window.addEventListener('keydown', (e) => { if (e.code === 'Space' && !spaceDown) { spaceDown = true; updateCursor(); e.preventDefault(); } });
+
+nickEl.addEventListener('change', () => {
+  const v = Array.from(nickEl.value.trim()).slice(0, 12).join('');
+  if (!v) { nickEl.value = (me && names[me]) || myNick; return; }
+  myNick = v;
+  lsSet('draw:nick', v);
+  send({ type: 'nick', name: v });
+});
+
+$('roomBtn').onclick = () => {
+  panel.hidden = !panel.hidden;
+  $('roomCode').textContent = room;
+  $('joinErr').textContent = '';
+};
+$('closePanel').onclick = () => { panel.hidden = true; };
+$('newRoom').onclick = () => goRoom(newRoomId());
+$('joinBtn').onclick = () => {
+  const id = parseRoom($('joinInput').value);
+  if (!id) { $('joinErr').textContent = '올바른 방 코드나 링크가 아니에요'; return; }
+  goRoom(id);
+};
+$('joinInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('joinBtn').click(); });
+
+window.addEventListener('keydown', (e) => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return; // 닉네임 입력 중에는 무시
+  if (e.code === 'Space' && !spaceDown) { spaceDown = true; updateCursor(); e.preventDefault(); }
+});
 window.addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; updateCursor(); } });
 
 // ---- 그리기 / 이동 / 핀치 ----
 const pts = new Map();   // pointerId -> 화면 좌표(캔버스 기준)
 let mode = null;         // 'draw' | 'pan' | 'pinch'
-let last = null, pinchPrev = null;
+let last = null, pinchPrev = null, lastCurSent = 0;
 
 function rel(e) { const r = rect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
-function toWorld(p) { return { x: cam.x + p.x / scale, y: cam.y + p.y / scale }; }
 function pinchState() {
   const [a, b] = [...pts.values()];
   return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
 }
+function sendCursor(w) {
+  const t = performance.now();
+  if (t - lastCurSent < 50) return;
+  lastCurSent = t;
+  send({ type: 'cur', x: r1(w.x), y: r1(w.y) });
+}
 function segTo(p) {
+  if (tool === 'eraser') eraseTo(p); else penTo(p);
+}
+function penTo(p) {
   const s = {
     x0: r1(last.x), y0: r1(last.y), x1: r1(p.x), y1: r1(p.y),
-    color: tool === 'eraser' ? '#ffffff' : colorEl.value,
-    size: tool === 'eraser' ? +sizeEl.value * 3 : +sizeEl.value,
+    color: colorEl.value,
+    size: +sizeEl.value,
     o: me,
   };
   segs.push(s);
@@ -210,23 +470,41 @@ function segTo(p) {
   send({ type: 'seg', ...s });
   last = p;
 }
+// 진짜 지우개: 내가 그린 선을 지우개 자리만큼 잘라낸다 (지우개 지름 = 굵기 x 3)
+function eraseTo(p) {
+  const a = { x0: r1(last.x), y0: r1(last.y), x1: r1(p.x), y1: r1(p.y), r: r1(+sizeEl.value * 1.5) };
+  const res = eraseCapsule(segs, me, a.x0, a.y0, a.x1, a.y1, a.r);
+  if (res) { segs = res; redraw(); send({ type: 'erase', ...a }); }
+  last = p;
+}
+function updateRing(np) {
+  if (tool !== 'eraser') { ring.style.display = 'none'; return; }
+  const d = +sizeEl.value * 3 * scale;
+  ring.style.width = d + 'px';
+  ring.style.height = d + 'px';
+  ring.style.transform = `translate(${np.x - d / 2}px, ${np.y - d / 2}px)`;
+  ring.style.display = 'block';
+}
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   pts.set(e.pointerId, rel(e));
+  tip.style.display = 'none';
   if (pts.size === 2) { mode = 'pinch'; last = null; pinchPrev = pinchState(); return; }
   if (pts.size > 2) return;
   if (e.button === 1 || tool === 'hand' || spaceDown) { mode = 'pan'; return; }
   if (e.button !== 0) return;
-  if (!me) { statusEl.textContent = '연결 중이에요. 잠시 후 다시 그려 주세요'; return; }
+  if (!me) { flash('연결 중이에요. 잠시 후 다시 그려 주세요'); return; }
   mode = 'draw';
   last = toWorld(rel(e));
   segTo(last);
 });
 canvas.addEventListener('pointermove', (e) => {
+  const np = rel(e);
+  sendCursor(toWorld(np));
+  if (e.pointerType !== 'touch') { updateRing(np); if (tool === 'eraser') tip.style.display = 'none'; else hover(np); }
   const p = pts.get(e.pointerId);
   if (!p) return;
-  const np = rel(e);
   const dx = np.x - p.x, dy = np.y - p.y;
   p.x = np.x; p.y = np.y;
   if (mode === 'pan') {
@@ -241,15 +519,20 @@ canvas.addEventListener('pointermove', (e) => {
     segTo(toWorld(np));
   }
 });
+canvas.addEventListener('pointerleave', (e) => {
+  if (e.pointerType === 'mouse') { tip.style.display = 'none'; ring.style.display = 'none'; send({ type: 'curhide' }); }
+});
 function endPointer(e) {
   pts.delete(e.pointerId);
   if (pts.size === 0) { mode = null; last = null; }
   else if (mode === 'pinch' || mode === 'draw') { mode = 'pan'; last = null; }
+  if (e.pointerType === 'touch') send({ type: 'curhide' });
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 
 resize();
+connect();
 </script>
 </body>
 </html>
