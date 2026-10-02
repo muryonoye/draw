@@ -2,157 +2,363 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#17191e">
 <title>같이 그리기</title>
 <style>
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #222; color: #fff; font-family: sans-serif; }
-  body { display: flex; flex-direction: column; }
-  #bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #333; flex-wrap: wrap; z-index: 3; }
-  button { padding: 6px 12px; border: 0; border-radius: 6px; cursor: pointer; }
-  button.active { outline: 2px solid #4af; }
-  input[type=text] { padding: 6px 8px; border-radius: 6px; border: 1px solid #555; background: #222; color: #fff; font-size: 16px; }
-  #nick { width: 140px; }
-  #wrap { flex: 1; min-height: 0; position: relative; }
-  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; background: #fff; }
+  :root {
+    --bg: #17191e; --panel: #22252c; --panel-2: #2b2f38; --line: #3a3f4b; --text: #eef1f6; --muted: #9aa3b2;
+    --accent: #5aa2ff; --accent-bg: rgba(90,162,255,.16); --danger: #ff6b6b; --ok: #4cd08a; --warn: #ffcc66;
+    --r-sm: 8px; --r: 12px; --r-lg: 16px; --shadow: 0 8px 28px rgba(0,0,0,.45); --btn: 44px;
+    --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px); --kb: 0px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+  body { height: 100dvh; display: flex; flex-direction: column; touch-action: pan-x pan-y;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; font: inherit; font-size: 16px; color: var(--text); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  svg.ic { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* 상단 바 */
+  #top { display: flex; align-items: center; gap: 6px; z-index: 20; background: var(--panel); border-bottom: 1px solid var(--line);
+    padding: calc(4px + var(--safe-t)) calc(8px + var(--safe-r)) 4px calc(8px + var(--safe-l)); }
+  #brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.02em; padding: 0 6px; }
+  .spacer { flex: 1; }
+  .ibtn { width: var(--btn); height: var(--btn); display: grid; place-items: center; border: 0; border-radius: var(--r); background: transparent; }
+  .ibtn:hover, .chip:hover, .tool:hover { background: var(--panel-2); }
+  .ibtn[aria-expanded="true"], .chip[aria-expanded="true"] { background: var(--accent-bg); color: var(--accent); }
+  .ibtn:disabled { opacity: .45; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* 무대 */
+  #stage { flex: 1; min-height: 0; position: relative; background: #fff; overflow: hidden; }
+  #board { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+  #board canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; pointer-events: none; transform-origin: 0 0; }
   #cursors { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
   .cur { position: absolute; left: 0; top: 0; will-change: transform; }
   .cur .dot { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
   .cur .lbl { position: absolute; left: 8px; top: 6px; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
-  #tip { position: absolute; left: 0; top: 0; display: none; pointer-events: none; color: #fff; font-size: 12px; padding: 3px 8px; border-radius: 8px; white-space: nowrap; z-index: 2; }
-  #ring { position: absolute; left: 0; top: 0; display: none; pointer-events: none; border: 1.5px solid #222; border-radius: 50%; box-shadow: 0 0 0 1.5px #fff; z-index: 2; }
-  #status { margin-left: auto; font-size: 12px; opacity: .7; }
-  #hud { position: absolute; right: 10px; bottom: 10px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 6px; pointer-events: none; }
-  #roomPanel { position: absolute; top: 8px; left: 12px; z-index: 4; background: #2b2b2b; border: 1px solid #555; border-radius: 10px; padding: 14px; width: min(340px, calc(100% - 24px)); box-shadow: 0 8px 24px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 10px; }
-  #roomPanel[hidden] { display: none; }
-  #roomPanel .row { display: flex; gap: 8px; align-items: center; }
-  #roomPanel .row input { flex: 1; min-width: 0; }
-  #roomPanel .hint { font-size: 12px; opacity: .7; }
-  #roomPanel code { background: #111; padding: 2px 8px; border-radius: 6px; }
-  #joinErr { color: #f88; font-size: 12px; min-height: 1em; }
+  #tip { position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none; display: flex; align-items: center; gap: 6px; max-width: 240px;
+    background: rgba(23,25,30,.94); color: #fff; font-size: 13px; padding: 5px 10px; border-radius: 10px; box-shadow: var(--shadow); white-space: nowrap; }
+  #tip .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  #tip b { overflow: hidden; text-overflow: ellipsis; }
+  #tip i { font-style: normal; font-size: 11px; color: var(--muted); }
+  #ring { position: absolute; left: 0; top: 0; z-index: 5; pointer-events: none; border: 1.5px solid #222; border-radius: 50%; box-shadow: 0 0 0 1.5px #fff; }
+
+  /* 상태 알약: 연결·인원·배율·중앙 좌표를 한곳에 */
+  #hud { position: absolute; left: calc(10px + var(--safe-l)); top: 10px; z-index: 8; display: flex; align-items: center; gap: 8px;
+    background: rgba(23,25,30,.86); color: var(--text); font-size: 12px; padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(6px); }
+  #hud .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  #hud .dot.on { background: var(--ok); }
+  #hud .sepv { width: 1px; height: 12px; background: var(--line); }
+  .linkbtn { border: 0; background: transparent; padding: 0; color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums; }
+  #banner { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 9; display: flex; align-items: center; gap: 8px;
+    background: var(--warn); color: #3a2b00; font-weight: 600; padding: 7px 14px; border-radius: 999px; box-shadow: var(--shadow); }
+  .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(58,43,0,.3); border-top-color: #3a2b00; animation: sp 0.9s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  /* 도구 모음 */
+  #tools { position: absolute; z-index: 15; left: calc(10px + var(--safe-l)); top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 4px;
+    padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+  .tool { position: relative; width: var(--btn); height: var(--btn); display: grid; place-items: center; border: 0; border-radius: var(--r); background: transparent; color: var(--text); }
+  .tool.active { background: var(--accent-bg); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .tool:disabled { opacity: .4; }
+  .tool .sub { position: absolute; left: 0; right: 0; bottom: 1px; text-align: center; font-size: 9px; line-height: 1; color: var(--muted); }
+  .tool .sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+  .tool .num { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .toolwrap { position: relative; }
+  .caret { position: absolute; right: -3px; top: -3px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel-2); display: grid; place-items: center; padding: 0; z-index: 1; }
+  .caret svg.ic { width: 12px; height: 12px; }
+  .toolsep { height: 1px; background: var(--line); margin: 2px 6px; }
+
+  /* 팝오버(데스크톱) / 바텀시트(모바일) */
+  .pop { position: fixed; z-index: 40; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow);
+    padding: 14px; width: 300px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 24px); overflow: auto; touch-action: pan-y; }
+  .pop h3 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; justify-content: space-between; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row + .row, .field + .field { margin-top: 10px; }
+  .field > label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .err { font-size: 12px; color: var(--danger); min-height: 16px; margin-top: 4px; }
+  .btn { min-height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn:hover { background: #343944; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #07121f; font-weight: 700; }
+  .btn.danger { background: var(--danger); border-color: var(--danger); color: #2a0707; font-weight: 700; }
+  .btn:disabled { opacity: .5; }
+  .btn.block { width: 100%; }
+  .inp { width: 100%; min-height: 40px; padding: 0 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
+  .seg2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .seg2 .opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); text-align: center; }
+  .seg2 .opt.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+  .seg2 .opt small { color: var(--muted); font-size: 11px; }
+  .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+  .swatches button { aspect-ratio: 1; min-width: 28px; border-radius: 50%; border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(255,255,255,.25); padding: 0; }
+  .swatches button.on { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+  .prev { height: 110px; display: grid; place-items: center; background: #fff; border-radius: var(--r); position: relative; overflow: hidden; }
+  .prev i { display: block; border-radius: 50%; }
+  .prev span { position: absolute; left: 8px; bottom: 6px; font-size: 11px; color: #555; }
+  .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+  .switch small { display: block; color: var(--muted); font-size: 11px; }
+  .switch input { width: 44px; height: 26px; appearance: none; -webkit-appearance: none; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; flex: none; cursor: pointer; }
+  .switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch input:checked { background: var(--accent); }
+  .switch input:checked::after { transform: translateX(18px); }
+  .kbd { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+  .kbd b { color: var(--text); font-weight: 600; background: var(--panel-2); border-radius: 6px; padding: 0 6px; text-align: center; }
+  #scrim { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); }
+  .sheetgrab { display: none; }
+
+  /* 우측 패널(사람/채팅 자리) */
+  #side { position: fixed; z-index: 25; right: calc(10px + var(--safe-r)); top: calc(56px + var(--safe-t)); bottom: 12px; width: 300px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+  #side .tabs { display: flex; border-bottom: 1px solid var(--line); }
+  #side .tabs button { flex: 1; min-height: 44px; border: 0; background: transparent; color: var(--muted); }
+  #side .tabs button.on { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+  #side .tabs button:disabled { opacity: .55; }
+  #side .body { flex: 1; padding: 16px; color: var(--muted); display: grid; place-items: center; text-align: center; }
+
+  /* 모달 / 토스트 / 종료 화면 */
+  #modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(0,0,0,.55); padding: 16px; }
+  #modal .card { width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 18px; }
+  #modal h3 { margin: 0 0 8px; font-size: 16px; }
+  #modal p { margin: 0 0 16px; color: var(--muted); white-space: pre-line; }
+  #modal .acts { display: flex; gap: 8px; justify-content: flex-end; }
+  #toasts { position: fixed; z-index: 70; left: 50%; transform: translateX(-50%); top: calc(54px + var(--safe-t)); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; width: min(92vw, 420px); }
+  .toast { background: rgba(34,37,44,.96); color: var(--text); border: 1px solid var(--line); padding: 8px 14px; border-radius: 12px; box-shadow: var(--shadow); font-size: 13px; animation: tin .18s ease-out; }
+  .toast.warn { border-color: var(--warn); } .toast.err { border-color: var(--danger); } .toast.ok { border-color: var(--ok); }
+  @keyframes tin { from { opacity: 0; transform: translateY(-6px); } }
+  #endScreen { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(23,25,30,.96); padding: 24px; text-align: center; }
+  #endScreen .card { max-width: 380px; }
+  #endScreen h2 { margin: 0 0 8px; } #endScreen p { color: var(--muted); margin: 0 0 18px; white-space: pre-line; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  /* 폰·태블릿 세로: 하단 도구 바 + 바텀시트 */
+  @media (max-width: 720px) {
+    #tools { left: 0; right: 0; top: auto; bottom: 0; transform: none; flex-direction: row; justify-content: space-between; gap: 2px; overflow-x: auto;
+      border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: 0; padding: 6px 8px calc(6px + var(--safe-b)); }
+    .tool { flex: 1 0 var(--btn); }
+    .toolsep { width: 1px; height: 28px; margin: 8px 2px; flex: none; }
+    .caret { right: 0; top: 0; }
+    .pop { left: 0 !important; right: 0; top: auto !important; bottom: var(--kb); width: 100%; max-width: none; max-height: 78dvh;
+      border-radius: var(--r-lg) var(--r-lg) 0 0; padding: 14px 14px calc(14px + var(--safe-b)); }
+    .sheetgrab { display: block; width: 40px; height: 4px; border-radius: 4px; background: var(--line); margin: -4px auto 10px; }
+    #side { left: 0; right: 0; top: auto; bottom: var(--kb); width: 100%; height: 62dvh; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+    #hud { top: 8px; }
+    #brand span { display: none; }
+  }
 </style>
 </head>
 <body>
-<div id="bar">
-  <input type="text" id="nick" placeholder="닉네임" autocomplete="off">
-  <input type="color" id="color" value="#000000">
-  <input type="range" id="size" min="1" max="40" value="4">
-  <button id="pen" class="active">펜</button>
-  <button id="eraser">지우개</button>
-  <button id="hand">이동(손)</button>
-  <button id="reset">보기 초기화</button>
-  <button id="clear">내 그림 지우기</button>
-  <button id="roomBtn">방</button>
-  <button id="copy">링크 복사</button>
-  <span id="status">연결 중…</span>
-</div>
-<div id="wrap">
-  <canvas id="c"></canvas>
-  <div id="cursors"></div>
-  <div id="tip"></div>
-  <div id="ring"></div>
-  <div id="hud">100%</div>
-  <div id="roomPanel" hidden>
-    <div class="row"><b>지금 방</b> <code id="roomCode"></code></div>
-    <button id="newRoom">새 방 만들기</button>
-    <div class="hint">새 방의 주소는 추측할 수 없어요. 링크를 보낸 사람만 들어올 수 있어요.</div>
-    <div class="row">
-      <input type="text" id="joinInput" placeholder="방 코드 또는 링크" autocomplete="off">
-      <button id="joinBtn">들어가기</button>
-    </div>
-    <div id="joinErr"></div>
-    <button id="closePanel">닫기</button>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-brand" viewBox="0 0 24 24"><path d="M3 17c4-9 7 3 10-5s5-5 8-8"/><circle cx="19" cy="19" r="2"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></symbol>
+    <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+    <symbol id="i-eraser-stroke" viewBox="0 0 24 24"><path d="M3 15c3-9 6 4 9-4s6-3 9-8"/><path d="M14 16l6 6M20 16l-6 6"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></symbol>
+    <symbol id="i-size" viewBox="0 0 24 24"><path d="M4 6h16" stroke-width="1"/><path d="M4 12h16" stroke-width="2.5"/><path d="M4 18h16" stroke-width="4.5"/></symbol>
+    <symbol id="i-view" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6M11 8v6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+  </defs>
+</svg>
+
+<header id="top">
+  <div id="brand"><svg class="ic"><use href="#i-brand"/></svg><span>같이 그리기</span></div>
+  <button id="btnRoom" class="chip" aria-label="방 메뉴" title="방 메뉴" aria-expanded="false"><svg class="ic"><use href="#i-link"/></svg><span id="roomLabel">방</span></button>
+  <div class="spacer"></div>
+  <button id="btnPeople" class="ibtn" aria-label="사람" title="사람"><svg class="ic"><use href="#i-users"/></svg></button>
+  <button id="btnChat" class="ibtn" aria-label="채팅" title="채팅"><svg class="ic"><use href="#i-chat"/></svg></button>
+  <button id="btnSettings" class="ibtn" aria-label="설정" title="설정" aria-expanded="false"><svg class="ic"><use href="#i-sliders"/></svg></button>
+</header>
+
+<main id="stage">
+  <div id="board">
+    <canvas id="grid"></canvas>
+    <canvas id="c"></canvas>
+    <canvas id="hl"></canvas>
   </div>
+  <div id="cursors"></div>
+  <div id="tip" hidden><span class="dot"></span><b></b><i></i></div>
+  <div id="ring" hidden></div>
+  <div id="hud" role="status">
+    <span id="hudDot" class="dot"></span><span id="hudCount">연결 중…</span>
+    <span class="sepv"></span><span id="hudZoom">100%</span>
+    <span class="sepv"></span><button id="hudCenter" class="linkbtn" title="중앙 좌표 (누르면 복사)" aria-label="중앙 좌표">(0, 0)</button>
+  </div>
+  <div id="banner" hidden><span class="spin"></span><span>재연결 중…</span></div>
+
+  <nav id="tools" aria-label="도구">
+    <button id="tPen" class="tool active" aria-label="펜 (P)" title="펜 (P)" aria-pressed="true"><svg class="ic"><use href="#i-pen"/></svg></button>
+    <div class="toolwrap">
+      <button id="tEraser" class="tool" aria-label="지우개 (E)" title="지우개 (E)" aria-pressed="false"><svg class="ic"><use id="eraserUse" href="#i-eraser"/></svg><span class="sub" id="eraserSub">부분</span></button>
+      <button id="tEraserMode" class="caret" aria-label="지우개 모드 선택" title="지우개 모드 선택" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-chevron"/></svg></button>
+    </div>
+    <button id="tHand" class="tool" aria-label="화면 이동 (H)" title="화면 이동 (H)" aria-pressed="false"><svg class="ic"><use href="#i-hand"/></svg></button>
+    <div class="toolsep"></div>
+    <button id="tColor" class="tool" aria-label="색상" title="색상" data-side="right" aria-expanded="false"><span class="sw" id="colorSw"></span></button>
+    <button id="tSize" class="tool" aria-label="크기" title="크기" data-side="right" aria-expanded="false"><span class="num" id="sizeNumBtn">4</span></button>
+    <button id="tView" class="tool" aria-label="보기·좌표 이동" title="보기·좌표 이동" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-view"/></svg></button>
+    <div class="toolsep"></div>
+    <button id="tClear" class="tool" aria-label="내 그림 지우기" title="내 그림 지우기"><svg class="ic"><use href="#i-trash"/></svg></button>
+  </nav>
+</main>
+
+<div id="scrim" hidden></div>
+
+<section id="popColor" class="pop" hidden aria-label="색상">
+  <div class="sheetgrab"></div><h3>색상</h3>
+  <div class="swatches" id="swatches"></div>
+  <div class="row" style="margin-top:12px"><label for="colorCustom" class="hint" style="margin:0;flex:1">직접 고르기</label><input type="color" id="colorCustom" value="#000000" style="width:56px;height:36px;border:0;background:none;padding:0"></div>
+</section>
+
+<section id="popSize" class="pop" hidden aria-label="크기">
+  <div class="sheetgrab"></div><h3><span id="sizeTitle">굵기</span><span id="sizeVal" class="hint" style="margin:0"></span></h3>
+  <div class="prev"><i id="sizePrevDot"></i><span id="sizePrevTxt"></span></div>
+  <div class="field" style="margin-top:12px"><input type="range" id="sizeRange" min="0" max="1000" step="1" aria-label="크기 슬라이더"></div>
+  <div class="row"><input type="text" id="sizeNum" class="inp" inputmode="numeric" autocomplete="off" aria-label="크기 숫자 입력"><span class="hint" style="margin:0" id="sizeUnit">px</span></div>
+  <div class="hint" id="sizeHint"></div>
+</section>
+
+<section id="popEraser" class="pop" hidden aria-label="지우개 모드">
+  <div class="sheetgrab"></div><h3>지우개 모드</h3>
+  <div class="seg2">
+    <button class="opt on" data-mode="part" id="optPart"><svg class="ic"><use href="#i-eraser"/></svg><b>부분 지우개</b><small>닿은 부분만 지워요</small></button>
+    <button class="opt" data-mode="stroke" id="optStroke"><svg class="ic"><use href="#i-eraser-stroke"/></svg><b>획 지우개</b><small>닿은 선 한 획 전체</small></button>
+  </div>
+  <div class="hint" id="eraserHint"></div>
+</section>
+
+<section id="popView" class="pop" hidden aria-label="보기">
+  <div class="sheetgrab"></div><h3>보기</h3>
+  <div class="row">
+    <button id="zOut" class="btn" aria-label="축소" title="축소"><svg class="ic"><use href="#i-minus"/></svg></button>
+    <button id="z100" class="btn" style="flex:1" aria-label="배율 100%">100%</button>
+    <button id="zIn" class="btn" aria-label="확대" title="확대"><svg class="ic"><use href="#i-plus"/></svg></button>
+  </div>
+  <h3 style="margin-top:16px">좌표로 이동</h3>
+  <div class="row">
+    <div class="field" style="flex:1"><label for="goX">x</label><input type="text" id="goX" class="inp" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="0"></div>
+    <div class="field" style="flex:1"><label for="goY">y</label><input type="text" id="goY" class="inp" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="0"></div>
+    <button id="goBtn" class="btn primary" style="align-self:flex-end">이동</button>
+  </div>
+  <div class="err" id="goErr"></div>
+  <div class="hint">월드 좌표예요. 오른쪽(+x), 아래쪽(+y)으로 갈수록 커져요.</div>
+  <div class="row" style="margin-top:12px">
+    <button id="goOrigin" class="btn" style="flex:1"><svg class="ic"><use href="#i-target"/></svg>원점(0,0)으로</button>
+    <button id="viewReset" class="btn" style="flex:1">보기 초기화</button>
+  </div>
+</section>
+
+<section id="popRoom" class="pop" hidden aria-label="방 메뉴">
+  <div class="sheetgrab"></div><h3>방</h3>
+  <div class="row"><span class="hint" style="margin:0">방 코드</span><code id="roomCode" style="background:var(--bg);padding:3px 8px;border-radius:8px"></code></div>
+  <button id="copyLink" class="btn block" style="margin-top:10px"><svg class="ic"><use href="#i-link"/></svg>링크 복사</button>
+  <button id="newRoom" class="btn block" style="margin-top:8px">새 방 만들기</button>
+  <div class="hint">새 방의 주소는 추측할 수 없어요. 링크를 보낸 사람만 들어올 수 있어요.</div>
+  <div class="row" style="margin-top:12px"><input type="text" id="joinInput" class="inp" placeholder="방 코드 또는 링크" autocomplete="off" autocapitalize="off"><button id="joinBtn" class="btn primary">들어가기</button></div>
+  <div class="err" id="joinErr"></div>
+</section>
+
+<section id="popSettings" class="pop" hidden aria-label="설정">
+  <div class="sheetgrab"></div><h3>설정</h3>
+  <div class="field"><label for="nick">닉네임 (최대 12자)</label><input type="text" id="nick" class="inp" autocomplete="off" placeholder="닉네임"></div>
+  <div class="switch"><div>그리드<small>배경 격자 표시</small></div><input type="checkbox" id="setGrid" aria-label="그리드"></div>
+  <div class="switch"><div>펜으로만 그리기<small>손가락은 이동·줌 전용</small></div><input type="checkbox" id="setPenOnly" aria-label="펜으로만 그리기"></div>
+  <div class="switch"><div>다른 사람 커서 표시</div><input type="checkbox" id="setCursors" aria-label="다른 사람 커서 표시"></div>
+  <div class="switch"><div>펜 모드에서 작성자 표시<small>선에 마우스를 올리면 이름 표시</small></div><input type="checkbox" id="setPenHover" aria-label="펜 모드에서 작성자 표시"></div>
+  <h3 style="margin-top:12px">단축키</h3>
+  <div class="kbd"><b>P</b><span>펜</span><b>E</b><span>지우개</span><b>H</b><span>화면 이동</span><b>Space</b><span>누르고 드래그하면 이동</span></div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 1단계 (2026-10-03)</div>
+</section>
+
+<aside id="side" hidden aria-label="사람·채팅">
+  <div class="tabs"><button id="tabPeople" class="on" disabled>사람</button><button id="tabChat" disabled>채팅</button></div>
+  <div class="body"><div id="sideMsg">사람 목록과 채팅은 다음 업데이트에서 추가돼요.</div></div>
+</aside>
+
+<div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <div class="card"><h3 id="mTitle"></h3><p id="mBody"></p><div class="acts"><button id="mCancel" class="btn">취소</button><button id="mOk" class="btn primary">확인</button></div></div>
 </div>
+<div id="toasts" aria-live="polite"></div>
+<div id="endScreen" hidden><div class="card"><h2 id="endTitle">연결이 종료되었어요</h2><p id="endText"></p><button id="endBtn" class="btn primary">다시 입장</button></div></div>
 <script>
 const $ = (id) => document.getElementById(id);
-const canvas = $('c'), wrap = $('wrap'), ctx = canvas.getContext('2d');
-const hud = $('hud'), statusEl = $('status'), colorEl = $('color'), sizeEl = $('size');
-const nickEl = $('nick'), curLayer = $('cursors'), tip = $('tip'), ring = $('ring'), panel = $('roomPanel');
 
-const MIN_S = 0.05, MAX_S = 8;
+/* ===== 상수 (이름 붙은 값은 여기서만 고친다) ===== */
+// 서버(server.js)와 값이 같아야 하는 한도
+const PEN_MAX = 200;                 // 펜 굵기
+const ERASER_R_MAX = 500;            // 지우개 반지름 (지름은 2배)
+const MAX_STROKES_PER_ERASE = 300;   // 획 지우개 한 번에 지울 수 있는 획 수
+const MAX_COORD = 1e7;
+// 줌
+const MIN_S = 0.02, MAX_S = 20;
+// 터치 입력은 '확정 후 전송': 그동안은 내 화면에만 보인다
+const TOUCH_CONFIRM_MS = 100;        // 한 손가락으로 이 시간이 지나면 확정
+const TOUCH_CONFIRM_PX = 10;         // 또는 화면에서 이만큼 움직이면 확정
+const TOUCH_CONFIRM_ERASE_MS = 200;  // 지우개는 되돌릴 수 없어서 더 신중하게
+const TOUCH_CONFIRM_ERASE_PX = 14;
+const CANCEL_WINDOW_MS = 300;        // 확정 직후 이 시간 안에 두 번째 손가락이 닿으면 방금 획을 취소
+const CANCEL_MAX_MOVE_PX = 30;
+const MIN_POINT_PX = 1.5, MIN_POINT_MS = 5;   // 너무 가깝거나 빠른 점은 생략 (초당 약 200선분 이하)
+// 작성자 표시
+const HOVER_MARGIN_MOUSE_PX = 8, HOVER_MARGIN_TOUCH_PX = 12, HOVER_THROTTLE_MS = 40;
+const TAP_MAX_PX = 8, TAP_MAX_MS = 400, TIP_TAP_HIDE_MS = 3000;
+// 그리드
+const GRID_BASE = 100, GRID_MAX_LINES = 300, GRID_FADE_LO_PX = 10, GRID_FADE_HI_PX = 40;
+// 연결 / 그리기
+const RECONNECT_BASE_MS = 500, RECONNECT_MAX_MS = 10000;
+const GESTURE_REPAINT_MS = 140;      // 줌·이동이 멈추고 이 시간 뒤에 정확히 다시 그린다
 const ROOM_RE = /^[A-Za-z0-9_-]{1,32}$/;
 const ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+const SID_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
 const ADJ = ['졸린', '배고픈', '용감한', '수줍은', '신난', '느긋한', '엉뚱한', '반짝이는', '씩씩한', '조용한'];
 const ANI = ['고양이', '강아지', '토끼', '판다', '수달', '여우', '펭귄', '곰', '다람쥐', '오리'];
+const PALETTE = ['#000000', '#555555', '#9e9e9e', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#7cb342', '#43a047', '#00acc1', '#1e88e5', '#3949ab', '#8e24aa', '#d81b60', '#6d4c41', '#ffb6c1'];
 
-let cam = { x: 0, y: 0 };   // 화면 왼쪽 위에 해당하는 월드 좌표
-let scale = 1, dpr = 1;
-let segs = [], names = {}, count = 0;
-let me = null, connected = false, ws = null; // me = 서버가 알려주는 내 주인 ID
-let tool = 'pen', spaceDown = false;
-
-const r1 = (n) => Math.round(n * 10) / 10;
+/* ===== 유틸 ===== */
 const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
-const rect = () => canvas.getBoundingClientRect();
+const clampInt = (v, a, b) => clamp(Math.round(+v || 0), a, b);
+const r1 = (n) => Math.round(n * 10) / 10;
+const now = () => performance.now();
+const rnd = (n) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-const rnd = (n) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
+const isEditable = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').matches : innerWidth <= 720);
+function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
-// ---- 방 / 내 키 / 닉네임 ----
-const roomRaw = new URLSearchParams(location.search).get('room') || 'lobby';
-const room = ROOM_RE.test(roomRaw) ? roomRaw : 'lobby';
-
-// 이 브라우저의 비밀 키(주인 확인용). 지우면 예전 그림의 주인 자격을 잃는다.
-function makeKey() {
-  const a = crypto.getRandomValues(new Uint8Array(18));
-  return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+/* ===== 설정(저장) ===== */
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000' };
+function loadSettings() {
+  const out = { ...DEFAULTS };
+  try {
+    const j = JSON.parse(lsGet('draw:settings') || '{}');
+    for (const k of Object.keys(DEFAULTS)) if (typeof j[k] === typeof DEFAULTS[k]) out[k] = j[k];
+  } catch {}
+  out.penSize = clampInt(out.penSize, 1, PEN_MAX);
+  out.eraserD = clampInt(out.eraserD, 2, ERASER_R_MAX * 2);
+  if (out.eraserMode !== 'part' && out.eraserMode !== 'stroke') out.eraserMode = 'part';
+  if (!/^#[0-9a-fA-F]{6}$/.test(out.color)) out.color = DEFAULTS.color;
+  return out;
 }
-function getKey() {
-  let k = lsGet('draw:key');
-  if (!k) { k = makeKey(); lsSet('draw:key', k); }
-  return k;
-}
-const myKey = getKey();
-
-function randomNick() { return ADJ[rnd(ADJ.length)] + ' ' + ANI[rnd(ANI.length)]; }
-let myNick = lsGet('draw:nick') || randomNick();
-lsSet('draw:nick', myNick);
-nickEl.value = myNick;
-
-function newRoomId() {
-  const b = crypto.getRandomValues(new Uint8Array(10));
-  return Array.from(b, (x) => ID_ALPHABET[x % ID_ALPHABET.length]).join('');
-}
-function parseRoom(s) {
-  s = String(s || '').trim();
-  if (!s) return null;
-  try { const r = new URL(s).searchParams.get('room'); if (r) s = r; } catch {}
-  return ROOM_RE.test(s) ? s : null;
-}
-function goRoom(id) { location.href = '/?room=' + encodeURIComponent(id); }
-
-// ---- 화면 / 좌표 ----
-function resetView() {
-  const r = rect();
-  scale = 1;
-  cam.x = -r.width / 2;
-  cam.y = -r.height / 2;
-  paint();
-}
-function resize() {
-  const r = wrap.getBoundingClientRect();
-  const first = !resize.done;
-  dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.max(1, Math.round(r.width * dpr));
-  canvas.height = Math.max(1, Math.round(r.height * dpr));
-  if (first) { resize.done = true; cam.x = -r.width / 2; cam.y = -r.height / 2; }
-  paint();
-}
-window.addEventListener('resize', resize);
-
-function applyTransform() {
-  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, -cam.x * scale * dpr, -cam.y * scale * dpr);
-}
-function strokeSeg(s) {
-  ctx.strokeStyle = s.color;
-  ctx.lineWidth = Math.max(s.size, 0.6 / scale);
-  ctx.beginPath();
-  ctx.moveTo(s.x0, s.y0);
-  ctx.lineTo(s.x1, s.y1);
-  ctx.stroke();
-}
-const toWorld = (p) => ({ x: cam.x + p.x / scale, y: cam.y + p.y / scale });
+let S = loadSettings();
+const saveSettings = () => lsSet('draw:settings', JSON.stringify(S));
 
 // ---- 지우개: 서버와 화면이 똑같은 함수를 써야 모두의 그림이 같아진다 (server.js와 index.html에 같은 내용) ----
 // 선(s)에서 지우개 경로(캡슐: 선분 + 반지름)와 겹치는 구간 [시작, 끝](0~1)을 구한다. 겹치지 않으면 null.
@@ -191,8 +397,9 @@ function erInterval(s, ex0, ey0, edx, edy, eL, rho) {
   return lo <= hi ? [lo, hi] : null;
 }
 // owner 가 null 이 아니면 그 사람의 선만 지운다. 지워진 곳이 없으면 null, 있으면 새 배열(잘린 조각 포함)을 돌려준다.
+// 잘린 조각은 원래 획의 sid 를 그대로 가진다.
 function eraseCapsule(list, owner, x0, y0, x1, y1, r) {
-  r = Math.min(Math.max(r, 1), 200);
+  r = Math.min(Math.max(r, 1), ERASER_R_MAX);
   const edx = x1 - x0, edy = y1 - y0;
   const eL = Math.sqrt(edx * edx + edy * edy);
   const minX = Math.min(x0, x1) - r, maxX = Math.max(x0, x1) + r;
@@ -218,319 +425,825 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r) {
     if (!iv) { out.push(s); continue; }
     const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
     const len = Math.sqrt(dx * dx + dy * dy);
-    const piece = (a, b) => ({ x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o });
+    const piece = (a, b) => ({ x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o, sid: s.sid });
     if (iv[0] * len >= 0.25) out.push(piece(0, iv[0]));
     if ((1 - iv[1]) * len >= 0.25) out.push(piece(iv[1], 1));
   }
   return out;
 }
-
-let raf = 0;
-function redraw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; paint(); }); }
-
-function paint() {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  applyTransform();
-  const w = canvas.width / dpr / scale, h = canvas.height / dpr / scale;
-
-  // 배경 격자
-  let step = 100;
-  while (step * scale < 28) step *= 5;
-  ctx.strokeStyle = '#ececec';
-  ctx.lineWidth = 1 / scale;
-  ctx.lineCap = 'butt';
-  ctx.beginPath();
-  for (let x = Math.floor(cam.x / step) * step; x <= cam.x + w; x += step) { ctx.moveTo(x, cam.y); ctx.lineTo(x, cam.y + h); }
-  for (let y = Math.floor(cam.y / step) * step; y <= cam.y + h; y += step) { ctx.moveTo(cam.x, y); ctx.lineTo(cam.x + w, y); }
-  ctx.stroke();
-
-  // 화면에 보이는 선만 그리기
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  const m = 30 / scale;
-  for (const s of segs) {
-    if (Math.max(s.x0, s.x1) + s.size < cam.x - m || Math.min(s.x0, s.x1) - s.size > cam.x + w + m ||
-        Math.max(s.y0, s.y1) + s.size < cam.y - m || Math.min(s.y0, s.y1) - s.size > cam.y + h + m) continue;
-    strokeSeg(s);
+// 지우개 경로에 한 번이라도 닿은 획의 [주인, sid] 목록 (최대 max개). owner 가 null 이 아니면 그 사람의 획만.
+function hitStrokes(list, owner, x0, y0, x1, y1, r, max) {
+  r = Math.min(Math.max(r, 1), ERASER_R_MAX);
+  const edx = x1 - x0, edy = y1 - y0;
+  const eL = Math.sqrt(edx * edx + edy * edy);
+  const minX = Math.min(x0, x1) - r, maxX = Math.max(x0, x1) + r;
+  const minY = Math.min(y0, y1) - r, maxY = Math.max(y0, y1) + r;
+  const keys = new Map();
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (!s.sid || !s.o) continue;
+    if (owner !== null && s.o !== owner) continue;
+    const k = s.o + '|' + s.sid;
+    if (keys.has(k)) continue;
+    const m = s.size / 2;
+    if (Math.max(s.x0, s.x1) + m < minX || Math.min(s.x0, s.x1) - m > maxX ||
+        Math.max(s.y0, s.y1) + m < minY || Math.min(s.y0, s.y1) - m > maxY) continue;
+    if (!erInterval(s, x0, y0, edx, edy, eL, r + m)) continue;
+    if (keys.size >= max) break;
+    keys.set(k, [s.o, s.sid]);
   }
-  hud.textContent = Math.round(scale * 100) + '%';
-  for (const c of cursors.values()) layoutCursor(c);
+  return [...keys.values()];
+}
+// 키 목록([[주인, sid], ...])에 해당하는 선분을 모두 뺀 새 배열. 지운 게 없으면 null.
+function removeStrokes(list, keys) {
+  const set = new Set(keys.map((k) => k[0] + '|' + k[1]));
+  const out = [];
+  for (const s of list) { if (s.sid && s.o && set.has(s.o + '|' + s.sid)) continue; out.push(s); }
+  return out.length === list.length ? null : out;
 }
 
+/* ===== 방 / 내 키 / 닉네임 ===== */
+const roomRaw = new URLSearchParams(location.search).get('room') || 'lobby';
+const room = ROOM_RE.test(roomRaw) ? roomRaw : 'lobby';
+
+// 이 브라우저의 비밀 키(주인 확인용). 지우면 예전 그림의 주인 자격을 잃는다.
+function makeKey() {
+  const a = crypto.getRandomValues(new Uint8Array(18));
+  return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function getKey() {
+  let k = lsGet('draw:key');
+  if (!k) { k = makeKey(); lsSet('draw:key', k); }
+  return k;
+}
+const myKey = getKey();
+const randomNick = () => ADJ[rnd(ADJ.length)] + ' ' + ANI[rnd(ANI.length)];
+let myNick = lsGet('draw:nick') || randomNick();
+lsSet('draw:nick', myNick);
+
+function newRoomId() {
+  const b = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(b, (x) => ID_ALPHABET[x % ID_ALPHABET.length]).join('');
+}
+function parseRoom(s) {
+  s = String(s || '').trim();
+  if (!s) return null;
+  try { const r = new URL(s).searchParams.get('room'); if (r) s = r; } catch {}
+  return ROOM_RE.test(s) ? s : null;
+}
+function goRoom(id) { location.href = '/?room=' + encodeURIComponent(id); }
+
+/* ===== 상태 ===== */
+const stage = $('stage'), board = $('board'), inkCv = $('c'), gridCv = $('grid'), hlCv = $('hl');
+const ctx = inkCv.getContext('2d'), gctx = gridCv.getContext('2d'), hctx = hlCv.getContext('2d');
+const tip = $('tip'), ring = $('ring'), curLayer = $('cursors'), nickEl = $('nick');
+let tool = 'pen', spaceDown = false;
+let cam = { x: 0, y: 0 }, scale = 1, cssW = 1, cssH = 1, dpr = 1;
+let inkView = { x: 0, y: 0, s: 1 }, exactT = 0, rafInk = 0, rafGrid = 0, rafHud = 0;
+let segs = [], names = {}, online = new Set(), count = 0;
+let me = null, connected = false, ws = null;
+let hl = null;                                        // 강조 중인 획 {o, sid}
+
+/* ===== 격자: 단계 간격 = 100 x 5^k, 화면에서의 간격(px)으로 불투명도를 연속 계산 ===== */
+function gridAlpha(px, lo, hi) { const t = (px - lo) / (hi - lo); return t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t); }
+function gridPlan(sc, w, h) {
+  const lo = Math.max(GRID_FADE_LO_PX, (w + h) / (GRID_MAX_LINES - 20)); // 선이 너무 많아지는 단계는 일찍 (연속적으로) 사라진다
+  const hi = Math.max(GRID_FADE_HI_PX, lo * 4);
+  const px0 = GRID_BASE * sc;
+  const kMin = Math.floor(Math.log(lo / px0) / Math.log(5));
+  const kMax = Math.ceil(Math.log(Math.max(w, h) * 4 / px0) / Math.log(5));
+  const out = [];
+  for (let k = kMin; k <= kMax; k++) {
+    const sp = GRID_BASE * Math.pow(5, k), px = sp * sc;
+    out.push({ k, sp, px, a: gridAlpha(px, lo, hi) });
+  }
+  return out;
+}
+function paintGrid() {
+  gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  gctx.clearRect(0, 0, cssW, cssH);
+  if (!S.grid) return;
+  const plan = gridPlan(scale, cssW, cssH);
+  const drawn = new Set();
+  let lines = 0;
+  for (let i = plan.length - 1; i >= 0; i--) {            // 성긴 단계부터 줄 수를 세어 상한을 지킨다
+    const L = plan[i];
+    if (L.a < 0.004) continue;
+    const n = Math.ceil(cssW / L.px) + Math.ceil(cssH / L.px) + 2;
+    if (lines + n > GRID_MAX_LINES) continue;
+    lines += n; drawn.add(i);
+  }
+  for (let i = 0; i < plan.length; i++) {                  // 촘촘한 단계를 먼저, 성긴 단계(주선)를 위에
+    if (!drawn.has(i)) continue;
+    const L = plan[i];
+    const aFiner = drawn.has(i - 1) ? plan[i - 1].a : 0;   // 더 촘촘한 단계가 보이면 이 단계는 '주선'으로 진해진다
+    const skip5 = drawn.has(i + 1);                        // 5칸마다 오는 선은 다음 단계가 주선으로 그린다
+    gctx.strokeStyle = `rgba(0,0,0,${(L.a * (0.06 + 0.13 * aFiner)).toFixed(4)})`;
+    gctx.lineWidth = 1 + 0.6 * aFiner;
+    gctx.beginPath();
+    const j0 = Math.floor(cam.x / L.sp), j1 = Math.ceil((cam.x + cssW / scale) / L.sp);
+    for (let j = j0; j <= j1; j++) {
+      if (skip5 && ((j % 5) + 5) % 5 === 0) continue;
+      const x = Math.round((j * L.sp - cam.x) * scale) + 0.5;
+      gctx.moveTo(x, 0); gctx.lineTo(x, cssH);
+    }
+    const m0 = Math.floor(cam.y / L.sp), m1 = Math.ceil((cam.y + cssH / scale) / L.sp);
+    for (let j = m0; j <= m1; j++) {
+      if (skip5 && ((j % 5) + 5) % 5 === 0) continue;
+      const y = Math.round((j * L.sp - cam.y) * scale) + 0.5;
+      gctx.moveTo(0, y); gctx.lineTo(cssW, y);
+    }
+    gctx.stroke();
+  }
+}
+
+/* ===== 그림 그리기: 정확한 다시 그리기 + 제스처 중에는 직전 비트맵을 변환 ===== */
+const ctxView = () => ctx.setTransform(scale * dpr, 0, 0, scale * dpr, -cam.x * scale * dpr, -cam.y * scale * dpr);
+const aligned = () => inkView.x === cam.x && inkView.y === cam.y && inkView.s === scale;
+function ensureAligned() { if (!aligned() || exactT) paintInkExact(); }
+
+function paintInkExact() {
+  clearTimeout(exactT); exactT = 0;
+  inkCv.style.transform = '';
+  inkView = { x: cam.x, y: cam.y, s: scale };
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, inkCv.width, inkCv.height);
+  ctxView();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const w = cssW / scale, h = cssH / scale, m = 30 / scale;
+  const xa = cam.x - m, xb = cam.x + w + m, ya = cam.y - m, yb = cam.y + h + m;
+  let open = false, rc = null, rs = -1, lx = NaN, ly = NaN;
+  for (const s of segs) {                                  // 같은 색·굵기가 이어지면 한 path 로 묶어 한 번에 그린다
+    const hs = s.size / 2;
+    if (Math.max(s.x0, s.x1) + hs < xa || Math.min(s.x0, s.x1) - hs > xb || Math.max(s.y0, s.y1) + hs < ya || Math.min(s.y0, s.y1) - hs > yb) continue;
+    if (!open || s.color !== rc || s.size !== rs) {
+      if (open) ctx.stroke();
+      ctx.beginPath(); ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, 0.6 / scale);
+      rc = s.color; rs = s.size; open = true; lx = NaN;
+    }
+    if (s.x0 !== lx || s.y0 !== ly) ctx.moveTo(s.x0, s.y0);
+    ctx.lineTo(s.x1, s.y1); lx = s.x1; ly = s.y1;
+  }
+  if (open) ctx.stroke();
+  paintPreview();
+}
+function paintPreview() {
+  const st = strokeSt;
+  if (!st || st.phase !== 'pending' || st.kind !== 'pen' || !st.pts.length) return;
+  ctx.strokeStyle = st.color; ctx.lineWidth = Math.max(st.size, 0.6 / scale);
+  ctx.beginPath(); ctx.moveTo(st.pts[0].x, st.pts[0].y);
+  for (const p of st.pts) ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+}
+function redrawInk() { if (!rafInk) rafInk = requestAnimationFrame(() => { rafInk = 0; paintInkExact(); }); }
+function incSeg(s) {                                       // 새 선분 하나만 덧그리기 (전체를 다시 그리지 않는다)
+  ensureAligned(); ctxView();
+  ctx.lineCap = 'round'; ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, 0.6 / scale);
+  ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(s.x1, s.y1); ctx.stroke();
+}
+function paintHighlight() {
+  hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  hctx.clearRect(0, 0, cssW, cssH);
+  if (!hl) return;
+  hctx.setTransform(scale * dpr, 0, 0, scale * dpr, -cam.x * scale * dpr, -cam.y * scale * dpr);
+  hctx.lineCap = 'round'; hctx.lineJoin = 'round'; hctx.strokeStyle = 'rgba(90,162,255,.5)';
+  for (const s of segs) {
+    if (s.o !== hl.o || s.sid !== hl.sid) continue;
+    hctx.lineWidth = s.size + 10 / scale;
+    hctx.beginPath(); hctx.moveTo(s.x0, s.y0); hctx.lineTo(s.x1, s.y1); hctx.stroke();
+  }
+}
+
+/* ===== 화면 이동·줌 ===== */
+const centerWorld = () => ({ x: cam.x + cssW / 2 / scale, y: cam.y + cssH / 2 / scale });
+function applyInkTransform() {
+  const f = scale / inkView.s, tx = (inkView.x - cam.x) * scale, ty = (inkView.y - cam.y) * scale;
+  inkCv.style.transform = (Math.abs(f - 1) < 1e-9 && Math.abs(tx) < 1e-6 && Math.abs(ty) < 1e-6) ? '' : `translate(${tx}px, ${ty}px) scale(${f})`;
+}
+function viewChanged(immediate) {
+  hideTip();
+  applyInkTransform();
+  if (!rafGrid) rafGrid = requestAnimationFrame(() => { rafGrid = 0; paintGrid(); });
+  hudSoon(); layoutCursors();
+  clearTimeout(exactT);
+  if (immediate) paintInkExact(); else exactT = setTimeout(paintInkExact, GESTURE_REPAINT_MS);
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+  const first = !resize.done;
+  const c = centerWorld();                                  // 회전·리사이즈 때 화면 중앙의 월드 좌표를 유지
+  cssW = w; cssH = h; dpr = window.devicePixelRatio || 1;
+  for (const cv of [inkCv, gridCv, hlCv]) { cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr)); }
+  if (first) { resize.done = true; cam.x = -w / 2; cam.y = -h / 2; }
+  else { cam.x = c.x - w / 2 / scale; cam.y = c.y - h / 2 / scale; }
+  paintGrid(); paintInkExact(); paintHighlight(); hudSoon(); layoutCursors();
+}
 function zoomAt(sx, sy, factor) {
   const wx = cam.x + sx / scale, wy = cam.y + sy / scale;
   scale = clamp(scale * factor, MIN_S, MAX_S);
-  cam.x = wx - sx / scale;
-  cam.y = wy - sy / scale;
-  redraw();
+  cam.x = wx - sx / scale; cam.y = wy - sy / scale;
+  viewChanged();
 }
-canvas.addEventListener('wheel', (e) => {
+function zoomCenter(factor) { zoomAt(cssW / 2, cssH / 2, factor); }
+let animId = 0;
+function flyTo(wx, wy) {                                    // 그 월드 좌표가 화면 중앙에 오도록 (줌 유지)
+  const tx = wx - cssW / 2 / scale, ty = wy - cssH / 2 / scale;
+  cancelAnimationFrame(animId);
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { cam.x = tx; cam.y = ty; viewChanged(true); return; }
+  const sx = cam.x, sy = cam.y, t0 = now(), D = 300;
+  const step = () => {
+    const k = Math.min(1, (now() - t0) / D), e = 1 - Math.pow(1 - k, 3);
+    cam.x = sx + (tx - sx) * e; cam.y = sy + (ty - sy) * e;
+    viewChanged(k >= 1);
+    if (k < 1) animId = requestAnimationFrame(step);
+  };
+  animId = requestAnimationFrame(step);
+}
+function resetView() { cancelAnimationFrame(animId); scale = 1; cam.x = -cssW / 2; cam.y = -cssH / 2; viewChanged(true); }
+board.addEventListener('wheel', (e) => {
   e.preventDefault();
-  const r = rect();
-  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+  const r = stage.getBoundingClientRect();
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015))); // 트랙패드 핀치(ctrl+휠)는 더 민감하게
 }, { passive: false });
 
-// ---- 다른 사람 커서 / 이름 ----
+/* ===== HUD: 연결·인원·배율·중앙 좌표 ===== */
+function updateHud() {
+  rafHud = 0;
+  $('hudDot').classList.toggle('on', connected);
+  $('hudCount').textContent = connected ? (count ? count + '명' : '연결됨') : '연결 끊김';
+  $('hudZoom').textContent = Math.round(scale * 100) + '%';
+  const c = centerWorld();
+  $('hudCenter').textContent = `(${Math.round(c.x)}, ${Math.round(c.y)})`;
+}
+function hudSoon() { if (!rafHud) rafHud = requestAnimationFrame(updateHud); }
+
+/* ===== 다른 사람 커서 / 이름 ===== */
 const hue = (o) => { let h = 0; for (const ch of String(o)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
 const colorOf = (o) => `hsl(${hue(o)} 65% 42%)`;
 const nameOf = (o) => names[o] || '알 수 없음';
-const cursors = new Map(); // 주인 ID -> { el, lbl, x, y, t }
-
-function layoutCursor(c) {
-  c.el.style.transform = `translate(${(c.x - cam.x) * scale}px, ${(c.y - cam.y) * scale}px)`;
-}
+const toWorld = (p) => ({ x: cam.x + p.x / scale, y: cam.y + p.y / scale });
+const cursors = new Map();                                   // 주인 ID -> { el, lbl, x, y, t }
+function layoutCursor(c) { c.el.style.transform = `translate(${(c.x - cam.x) * scale}px, ${(c.y - cam.y) * scale}px)`; }
+function layoutCursors() { for (const c of cursors.values()) layoutCursor(c); }
 function showCursor(o, x, y) {
-  if (o === me) return;
+  if (o === me || !S.showCursors) return;
   let c = cursors.get(o);
   if (!c) {
-    const el = document.createElement('div');
-    el.className = 'cur';
-    const dot = document.createElement('span');
-    dot.className = 'dot';
-    dot.style.background = colorOf(o);
-    const lbl = document.createElement('span');
-    lbl.className = 'lbl';
-    lbl.style.background = colorOf(o);
-    el.append(dot, lbl);
-    curLayer.appendChild(el);
-    c = { el, lbl, x, y, t: 0 };
-    cursors.set(o, c);
+    const el = document.createElement('div'); el.className = 'cur';
+    const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = colorOf(o);
+    const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.style.background = colorOf(o);
+    el.append(dot, lbl); curLayer.appendChild(el);
+    c = { el, lbl, x, y, t: 0 }; cursors.set(o, c);
   }
-  c.x = x; c.y = y; c.t = performance.now();
-  c.lbl.textContent = nameOf(o);
+  c.x = x; c.y = y; c.t = now(); c.lbl.textContent = nameOf(o);
   layoutCursor(c);
 }
-function hideCursor(o) {
-  const c = cursors.get(o);
-  if (c) { c.el.remove(); cursors.delete(o); }
-}
+function hideCursor(o) { const c = cursors.get(o); if (c) { c.el.remove(); cursors.delete(o); } }
 function refreshLabels() { for (const [o, c] of cursors) c.lbl.textContent = nameOf(o); }
-setInterval(() => {
-  const t = performance.now();
-  for (const [o, c] of cursors) if (t - c.t > 4000) hideCursor(o);
-}, 1000);
+setInterval(() => { const t = now(); for (const [o, c] of cursors) if (t - c.t > 4000) hideCursor(o); }, 1000);
 
-// ---- 마우스를 올리면 그린 사람 표시 ----
+/* ===== 선에 올리면(탭하면) 그린 사람 표시 + 해당 획 강조 ===== */
 function distToSeg(p, s) {
-  const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
-  const l2 = dx * dx + dy * dy;
+  const dx = s.x1 - s.x0, dy = s.y1 - s.y0, l2 = dx * dx + dy * dy;
   let t = l2 ? ((p.x - s.x0) * dx + (p.y - s.y0) * dy) / l2 : 0;
   t = Math.max(0, Math.min(1, t));
   return Math.hypot(p.x - (s.x0 + t * dx), p.y - (s.y0 + t * dy));
 }
-// 가장 위에 보이는 선을 찾는다.
-function hitTest(p) {
-  const tol = 4 / scale;
+// 판정 거리 = 선 굵기/2 + 화면 기준 여유(px, 줌과 무관하게 일정). 가장 위에 그려진 선을 돌려준다.
+function hitTest(w, marginPx) {
+  const tol = marginPx / scale;
   for (let i = segs.length - 1; i >= 0; i--) {
-    const s = segs[i];
-    const r = s.size / 2 + tol;
-    if (p.x < Math.min(s.x0, s.x1) - r || p.x > Math.max(s.x0, s.x1) + r ||
-        p.y < Math.min(s.y0, s.y1) - r || p.y > Math.max(s.y0, s.y1) + r) continue;
-    if (distToSeg(p, s) <= r) return s;
+    const s = segs[i], r = s.size / 2 + tol;
+    if (w.x < Math.min(s.x0, s.x1) - r || w.x > Math.max(s.x0, s.x1) + r || w.y < Math.min(s.y0, s.y1) - r || w.y > Math.max(s.y0, s.y1) + r) continue;
+    if (distToSeg(w, s) <= r) return s;
   }
   return null;
 }
-let lastHit = 0;
-function hover(np) {
-  if (mode) { tip.style.display = 'none'; return; }
-  const now = performance.now();
-  if (now - lastHit < 40) return;
-  lastHit = now;
-  const s = hitTest(toWorld(np));
-  if (!s) { tip.style.display = 'none'; return; }
-  tip.textContent = nameOf(s.o);
-  tip.style.background = colorOf(s.o);
-  tip.style.transform = `translate(${np.x + 14}px, ${np.y + 14}px)`;
-  tip.style.display = 'block';
+let tipTimer = 0, lastHover = 0;
+function showTip(s, px, py) {
+  tip.querySelector('.dot').style.background = colorOf(s.o);
+  tip.querySelector('b').textContent = nameOf(s.o);
+  tip.querySelector('i').textContent = online.has(s.o) ? '접속 중' : '오프라인';
+  tip.hidden = false;
+  const tw = tip.offsetWidth || 120, th = tip.offsetHeight || 30;
+  tip.style.transform = `translate(${clamp(px + 14, 4, Math.max(4, cssW - tw - 4))}px, ${clamp(py + 14, 4, Math.max(4, cssH - th - 4))}px)`;
+  if (!hl || hl.o !== s.o || hl.sid !== s.sid) { hl = { o: s.o, sid: s.sid }; paintHighlight(); }
+}
+function hideTip() {
+  if (tipTimer) { clearTimeout(tipTimer); tipTimer = 0; }
+  if (!tip.hidden) tip.hidden = true;
+  if (hl) { hl = null; paintHighlight(); }
+}
+function hoverTip(p) {
+  const t = now();
+  if (t - lastHover < HOVER_THROTTLE_MS) return;
+  lastHover = t;
+  const s = hitTest(toWorld(p), HOVER_MARGIN_MOUSE_PX);
+  if (s) showTip(s, p.x, p.y); else hideTip();
+}
+function tapTip(x, y) {                                        // 터치: 탭한 곳의 선 작성자를 잠깐 보여준다
+  const s = hitTest(toWorld({ x, y }), HOVER_MARGIN_TOUCH_PX);
+  hideTip();
+  if (!s) return;
+  showTip(s, x, y);
+  tipTimer = setTimeout(hideTip, TIP_TAP_HIDE_MS);
 }
 
-// ---- 상태 표시 ----
-function updateStatus() {
-  statusEl.textContent = connected ? `연결됨 · 방: ${room}${count ? ' · ' + count + '명' : ''}` : '재연결 중…';
+/* ===== 토스트 / 확인 모달 ===== */
+function toast(msg, kind) {
+  const box = $('toasts');
+  while (box.children.length >= 3) box.firstChild.remove();
+  const t = document.createElement('div');
+  t.className = 'toast' + (kind ? ' ' + kind : ''); t.textContent = msg; t.setAttribute('role', 'status');
+  box.appendChild(t);
+  setTimeout(() => t.remove(), 2800);
 }
-let flashT = 0;
-function flash(msg) {
-  statusEl.textContent = msg;
-  clearTimeout(flashT);
-  flashT = setTimeout(updateStatus, 2500);
+let modalResolve = null;
+function confirmModal({ title, body, ok = '확인', cancel = '취소', danger = false }) {
+  return new Promise((resolve) => {
+    if (modalResolve) modalResolve(false);
+    $('mTitle').textContent = title; $('mBody').textContent = body || '';
+    $('mOk').textContent = ok; $('mOk').className = 'btn ' + (danger ? 'danger' : 'primary'); $('mCancel').textContent = cancel;
+    $('modal').hidden = false; modalResolve = resolve;
+    (danger ? $('mCancel') : $('mOk')).focus();
+  });
 }
+function closeModal(v) { $('modal').hidden = true; const r = modalResolve; modalResolve = null; if (r) r(v); }
+$('mOk').onclick = () => closeModal(true);
+$('mCancel').onclick = () => closeModal(false);
+$('modal').addEventListener('pointerdown', (e) => { if (e.target === $('modal')) closeModal(false); });
 
-// ---- 서버 연결 ----
-function connect() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const q = `room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}`;
-  ws = new WebSocket(`${proto}://${location.host}/?${q}`);
-  ws.onopen = () => { connected = true; updateStatus(); };
-  ws.onclose = () => {
-    connected = false; me = null; count = 0;
-    for (const o of [...cursors.keys()]) hideCursor(o);
-    statusEl.textContent = '재연결 중…';
-    setTimeout(connect, 1500);
-  };
-  ws.onmessage = (e) => {
-    let m;
-    try { m = JSON.parse(e.data); } catch { return; }
-    if (m.type === 'hello') { me = m.me; }
-    else if (m.type === 'history') { segs = m.data; redraw(); }
-    else if (m.type === 'names') { names = m.names || {}; refreshLabels(); if (me && names[me]) nickEl.value = names[me]; }
-    else if (m.type === 'name') { names[m.o] = m.name; refreshLabels(); if (m.o === me) nickEl.value = m.name; }
-    else if (m.type === 'count') { count = m.n; updateStatus(); }
-    else if (m.type === 'seg') { segs.push(m); applyTransform(); ctx.lineCap = 'round'; strokeSeg(m); }
-    else if (m.type === 'clear') { segs = segs.filter((s) => s.o !== m.o); redraw(); }
-    else if (m.type === 'erase') { const res = eraseCapsule(segs, m.o, m.x0, m.y0, m.x1, m.y1, m.r); if (res) { segs = res; redraw(); } }
-    else if (m.type === 'cur') { showCursor(m.o, m.x, m.y); }
-    else if (m.type === 'curhide') { hideCursor(m.o); }
-  };
+/* ===== 팝오버(데스크톱) / 바텀시트(모바일): 한 번에 하나만, 바깥 클릭·ESC 로 닫힘 ===== */
+let openPopId = null, popAnchor = null;
+function closePop() {
+  if (!openPopId) return;
+  $(openPopId).hidden = true;
+  if (popAnchor) popAnchor.setAttribute('aria-expanded', 'false');
+  openPopId = null; popAnchor = null; $('scrim').hidden = true;
 }
-function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function placePop(el, anchor) {
+  if (isNarrow()) return;
+  const a = anchor.getBoundingClientRect(), pw = el.offsetWidth || 300, ph = el.offsetHeight || 200;
+  let left, top;
+  if (anchor.dataset.side === 'right') { left = a.right + 10; top = a.top + a.height / 2 - ph / 2; }
+  else { left = a.right - pw; top = a.bottom + 8; }
+  el.style.left = clamp(left, 8, Math.max(8, innerWidth - pw - 8)) + 'px';
+  el.style.top = clamp(top, 8, Math.max(8, innerHeight - ph - 8)) + 'px';
+}
+function openPop(id, anchor) {
+  if (openPopId === id) { closePop(); return; }
+  closePop(); closeSide();
+  const el = $(id);
+  el.hidden = false; openPopId = id; popAnchor = anchor;
+  anchor.setAttribute('aria-expanded', 'true');
+  placePop(el, anchor);
+  if (isNarrow()) $('scrim').hidden = false;
+}
+$('scrim').addEventListener('pointerdown', () => { closePop(); closeSide(); });
+document.addEventListener('pointerdown', (e) => {
+  if (openPopId && !$(openPopId).contains(e.target) && !(popAnchor && popAnchor.contains(e.target))) closePop();
+}, true);
 
-// ---- 버튼 ----
-const btns = { pen: $('pen'), eraser: $('eraser'), hand: $('hand') };
+/* ===== 우측 패널(사람·채팅) 자리: 1단계는 틀만 ===== */
+function openSide() { closePop(); $('side').hidden = false; if (isNarrow()) $('scrim').hidden = false; }
+function closeSide() { if (!$('side').hidden) { $('side').hidden = true; if (!openPopId) $('scrim').hidden = true; } }
+$('btnPeople').onclick = $('btnChat').onclick = () => { if ($('side').hidden) openSide(); else closeSide(); };
+
+/* ===== 크기 / 색 / 지우개 모드 UI ===== */
+const SIZE_RANGE = { pen: [1, PEN_MAX], eraser: [2, ERASER_R_MAX * 2] };   // 펜은 굵기, 지우개는 지름(= 반지름 x 2)
+const sizeTarget = () => (tool === 'eraser' ? 'eraser' : 'pen');
+const getSize = () => (sizeTarget() === 'eraser' ? S.eraserD : S.penSize);
+const sliderFromSize = (n, a, b) => Math.round(1000 * Math.log(n / a) / Math.log(b / a));   // 작은 값에서 섬세한 로그 매핑
+const sizeFromSlider = (v, a, b) => Math.round(a * Math.pow(b / a, v / 1000));
+function setSize(v) {
+  const t = sizeTarget(), [a, b] = SIZE_RANGE[t], n = clampInt(v, a, b);
+  if (t === 'eraser') S.eraserD = n; else S.penSize = n;
+  saveSettings(); syncSizeUI();
+}
+function syncSizeUI() {
+  const t = sizeTarget(), [a, b] = SIZE_RANGE[t], n = getSize();
+  $('sizeTitle').textContent = t === 'eraser' ? '지우개 지름' : '펜 굵기';
+  $('sizeVal').textContent = t === 'eraser' ? `${n} (반지름 ${n / 2})` : String(n);
+  $('sizeRange').value = sliderFromSize(n, a, b);
+  if (document.activeElement !== $('sizeNum')) $('sizeNum').value = n;
+  $('sizeNumBtn').textContent = n;
+  $('sizeHint').textContent = `${a}~${b} 범위예요. 슬라이더는 작은 값에서 더 섬세하게 움직여요.`;
+  const px = n * scale, d = clamp(px, 2, 96), dot = $('sizePrevDot');
+  dot.style.width = dot.style.height = d + 'px';
+  dot.style.background = t === 'eraser' ? 'transparent' : S.color;
+  dot.style.border = t === 'eraser' ? '2px dashed #666' : 'none';
+  dot.style.boxShadow = t === 'eraser' ? 'none' : '0 0 0 1px #ccc';
+  $('sizePrevTxt').textContent = `지금 배율에서 화면 지름 약 ${Math.round(px)}px` + (px > 96 ? ' (미리보기는 줄여서 보여줘요)' : '');
+  $('colorSw').style.background = S.color;
+}
+$('sizeRange').addEventListener('input', () => { const [a, b] = SIZE_RANGE[sizeTarget()]; setSize(sizeFromSlider(+$('sizeRange').value, a, b)); });
+$('sizeNum').addEventListener('change', () => { const v = parseFloat($('sizeNum').value); if (Number.isFinite(v)) setSize(v); else syncSizeUI(); });
+
+const swBox = $('swatches');
+for (const c of PALETTE) {
+  const b = document.createElement('button');
+  b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', '색 ' + c); b.title = c;
+  b.onclick = () => { setColor(c); closePop(); };
+  swBox.appendChild(b);
+}
+function setColor(c) {
+  S.color = c.toLowerCase(); saveSettings();
+  for (const b of swBox.children) b.classList.toggle('on', b.dataset.c === S.color);
+  $('colorCustom').value = S.color;
+  if (tool !== 'pen') setTool('pen');
+  syncSizeUI();
+}
+$('colorCustom').addEventListener('input', () => setColor($('colorCustom').value));
+
+const ERASER_HINT = { part: '부분 지우개: 닿은 부분만 지워져요 (내가 그린 선만)', stroke: '획 지우개: 닿은 선 한 획 전체가 지워져요 (내가 그린 선만)' };
+function syncEraserUI() {
+  const stroke = S.eraserMode === 'stroke';
+  $('eraserUse').setAttribute('href', stroke ? '#i-eraser-stroke' : '#i-eraser');
+  $('eraserSub').textContent = stroke ? '획' : '부분';
+  $('tEraser').title = $('tEraser').ariaLabel = '지우개: ' + (stroke ? '획 지우개' : '부분 지우개') + ' (E)';
+  $('optPart').classList.toggle('on', !stroke); $('optStroke').classList.toggle('on', stroke);
+  $('eraserHint').textContent = ERASER_HINT[S.eraserMode];
+}
+function selectEraser() { setTool('eraser'); toast(ERASER_HINT[S.eraserMode]); }
+for (const b of [$('optPart'), $('optStroke')]) b.onclick = () => { S.eraserMode = b.dataset.mode; saveSettings(); syncEraserUI(); selectEraser(); closePop(); };
+
+/* ===== 도구 / 보기 / 방 / 설정 버튼 ===== */
 function setTool(t) {
+  if (strokeSt) abortStroke();
   tool = t;
-  for (const k in btns) btns[k].classList.toggle('active', k === t);
-  if (t !== 'eraser') ring.style.display = 'none';
-  else flash('지우개: 내가 그린 선만 지워져요');
-  updateCursor();
+  for (const [b, n] of [[$('tPen'), 'pen'], [$('tEraser'), 'eraser'], [$('tHand'), 'hand']]) { b.classList.toggle('active', n === t); b.setAttribute('aria-pressed', String(n === t)); }
+  board.style.cursor = t === 'hand' ? 'grab' : 'crosshair';
+  ring.hidden = true; hideTip(); syncSizeUI();
 }
-function updateCursor() { canvas.style.cursor = (tool === 'hand' || spaceDown) ? 'grab' : 'crosshair'; }
-for (const k in btns) btns[k].onclick = () => setTool(k);
-$('reset').onclick = resetView;
-$('clear').onclick = () => {
+$('tPen').onclick = () => setTool('pen');
+$('tEraser').onclick = () => { if (tool === 'eraser') openPop('popEraser', $('tEraserMode')); else selectEraser(); };
+$('tEraserMode').onclick = () => openPop('popEraser', $('tEraserMode'));
+$('tHand').onclick = () => setTool('hand');
+$('tColor').onclick = () => openPop('popColor', $('tColor'));
+$('tSize').onclick = () => { syncSizeUI(); openPop('popSize', $('tSize')); };
+$('tView').onclick = () => openPop('popView', $('tView'));
+$('btnRoom').onclick = () => { $('roomCode').textContent = room; $('joinErr').textContent = ''; openPop('popRoom', $('btnRoom')); };
+$('btnSettings').onclick = () => openPop('popSettings', $('btnSettings'));
+$('tClear').onclick = async () => {
   if (!me) return;
-  if (confirm('내가 그린 그림만 지워져요. (다른 사람 그림은 그대로예요) 계속할까요?')) {
-    segs = segs.filter((s) => s.o !== me); redraw(); send({ type: 'clear' });
-  }
-};
-$('copy').onclick = async () => {
-  try { await navigator.clipboard.writeText(location.href); flash('링크 복사됨!'); }
-  catch { flash('주소창의 링크를 복사하세요'); }
+  const ok = await confirmModal({ title: '내 그림을 지울까요?', body: '내가 그린 그림만 모두 지워져요.\n다른 사람의 그림은 그대로 남아요.', ok: '지우기', danger: true });
+  if (!ok) return;
+  segs = segs.filter((s) => s.o !== me); redrawInk(); send({ type: 'clear' });
 };
 
-nickEl.addEventListener('change', () => {
-  const v = Array.from(nickEl.value.trim()).slice(0, 12).join('');
-  if (!v) { nickEl.value = (me && names[me]) || myNick; return; }
-  myNick = v;
-  lsSet('draw:nick', v);
-  send({ type: 'nick', name: v });
-});
-
-$('roomBtn').onclick = () => {
-  panel.hidden = !panel.hidden;
-  $('roomCode').textContent = room;
-  $('joinErr').textContent = '';
+$('zIn').onclick = () => zoomCenter(1.25);
+$('zOut').onclick = () => zoomCenter(0.8);
+$('z100').onclick = () => { const c = centerWorld(); scale = 1; cam.x = c.x - cssW / 2; cam.y = c.y - cssH / 2; viewChanged(true); };
+$('viewReset').onclick = resetView;
+$('goOrigin').onclick = () => { $('goErr').textContent = ''; flyTo(0, 0); };
+function checkCoord(raw) {
+  const s = String(raw).trim();
+  if (!s) return { err: '값을 입력해 주세요' };
+  const n = Number(s);
+  if (!Number.isFinite(n)) return { err: '숫자가 아니에요' };
+  if (Math.abs(n) > MAX_COORD) return { err: '범위를 벗어났어요 (±10,000,000)' };
+  return { n };
+}
+function goToCoords() {
+  const a = checkCoord($('goX').value), b = checkCoord($('goY').value);
+  const err = a.err ? 'x: ' + a.err : b.err ? 'y: ' + b.err : '';
+  $('goErr').textContent = err;
+  if (err) { toast('이동할 수 없어요 · ' + err, 'err'); return; }
+  flyTo(a.n, b.n);
+}
+$('goBtn').onclick = goToCoords;
+for (const id of ['goX', 'goY']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) goToCoords(); });
+$('hudCenter').onclick = async () => {
+  const c = centerWorld(), x = Math.round(c.x), y = Math.round(c.y);
+  $('goX').value = x; $('goY').value = y;
+  try { await navigator.clipboard.writeText(`${x}, ${y}`); toast('중앙 좌표를 복사했어요'); } catch { toast('좌표를 이동 입력칸에 채웠어요'); }
 };
-$('closePanel').onclick = () => { panel.hidden = true; };
+
+async function copyLink() {
+  try { await navigator.clipboard.writeText(location.href); toast('링크를 복사했어요', 'ok'); }
+  catch { toast('주소창의 링크를 복사해 주세요', 'warn'); }
+}
+$('copyLink').onclick = copyLink;
 $('newRoom').onclick = () => goRoom(newRoomId());
 $('joinBtn').onclick = () => {
   const id = parseRoom($('joinInput').value);
   if (!id) { $('joinErr').textContent = '올바른 방 코드나 링크가 아니에요'; return; }
   goRoom(id);
 };
-$('joinInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('joinBtn').click(); });
+$('joinInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) $('joinBtn').click(); });
 
-window.addEventListener('keydown', (e) => {
-  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return; // 닉네임 입력 중에는 무시
-  if (e.code === 'Space' && !spaceDown) { spaceDown = true; updateCursor(); e.preventDefault(); }
+nickEl.addEventListener('change', () => {
+  const v = Array.from(nickEl.value.trim()).slice(0, 12).join('');
+  if (!v) { nickEl.value = (me && names[me]) || myNick; return; }
+  myNick = v; lsSet('draw:nick', v); send({ type: 'nick', name: v });
 });
-window.addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; updateCursor(); } });
-
-// ---- 그리기 / 이동 / 핀치 ----
-const pts = new Map();   // pointerId -> 화면 좌표(캔버스 기준)
-let mode = null;         // 'draw' | 'pan' | 'pinch'
-let last = null, pinchPrev = null, lastCurSent = 0;
-
-function rel(e) { const r = rect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
-function pinchState() {
-  const [a, b] = [...pts.values()];
-  return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+const toggles = { setGrid: 'grid', setPenOnly: 'penOnly', setCursors: 'showCursors', setPenHover: 'penHover' };
+for (const [id, key] of Object.entries(toggles)) {
+  $(id).onchange = () => {
+    S[key] = $(id).checked; saveSettings();
+    if (key === 'grid') paintGrid();
+    if (key === 'showCursors' && !S.showCursors) for (const o of [...cursors.keys()]) hideCursor(o);
+  };
 }
+
+/* ===== 입력: 상태 머신 (none / pan / pinch / pending / draw) ===== */
+const ptr = new Map();                                       // pointerId -> { id, type, x, y, sx, sy, t0, tn }
+let gmode = 'none', strokeSt = null, pinchPrev = null, penActive = 0, lastCurSent = 0, qSeq = 0;
+const pendingQ = new Map();                                  // 획 지우개 요청 번호 -> 내가 예상한 지워질 획 키
+const rel = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+const touchRecs = () => [...ptr.values()].filter((r) => r.type === 'touch');
+const evT = (e) => (e && e.timeStamp) || now();
+function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
 function sendCursor(w) {
-  const t = performance.now();
+  const t = now();
   if (t - lastCurSent < 50) return;
   lastCurSent = t;
   send({ type: 'cur', x: r1(w.x), y: r1(w.y) });
 }
-function segTo(p) {
-  if (tool === 'eraser') eraseTo(p); else penTo(p);
+function pinchState() {
+  const [a, b] = touchRecs();
+  return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
 }
-function penTo(p) {
-  const s = {
-    x0: r1(last.x), y0: r1(last.y), x1: r1(p.x), y1: r1(p.y),
-    color: colorEl.value,
-    size: +sizeEl.value,
-    o: me,
-  };
-  segs.push(s);
-  applyTransform();
-  ctx.lineCap = 'round';
-  strokeSeg(s);
-  send({ type: 'seg', ...s });
-  last = p;
-}
-// 진짜 지우개: 내가 그린 선을 지우개 자리만큼 잘라낸다 (지우개 지름 = 굵기 x 3)
-function eraseTo(p) {
-  const a = { x0: r1(last.x), y0: r1(last.y), x1: r1(p.x), y1: r1(p.y), r: r1(+sizeEl.value * 1.5) };
-  const res = eraseCapsule(segs, me, a.x0, a.y0, a.x1, a.y1, a.r);
-  if (res) { segs = res; redraw(); send({ type: 'erase', ...a }); }
-  last = p;
-}
-function updateRing(np) {
-  if (tool !== 'eraser') { ring.style.display = 'none'; return; }
-  const d = +sizeEl.value * 3 * scale;
-  ring.style.width = d + 'px';
-  ring.style.height = d + 'px';
-  ring.style.transform = `translate(${np.x - d / 2}px, ${np.y - d / 2}px)`;
-  ring.style.display = 'block';
+function doPinch() {
+  if (touchRecs().length < 2) return;
+  const cur = pinchState();
+  const wx = cam.x + pinchPrev.cx / scale, wy = cam.y + pinchPrev.cy / scale;
+  scale = clamp(scale * cur.d / pinchPrev.d, MIN_S, MAX_S);
+  cam.x = wx - cur.cx / scale; cam.y = wy - cur.cy / scale;
+  pinchPrev = cur; viewChanged();
 }
 
-canvas.addEventListener('pointerdown', (e) => {
-  canvas.setPointerCapture(e.pointerId);
-  pts.set(e.pointerId, rel(e));
-  tip.style.display = 'none';
-  if (pts.size === 2) { mode = 'pinch'; last = null; pinchPrev = pinchState(); return; }
-  if (pts.size > 2) return;
-  if (e.button === 1 || tool === 'hand' || spaceDown) { mode = 'pan'; return; }
-  if (e.button !== 0) return;
-  if (!me) { flash('연결 중이에요. 잠시 후 다시 그려 주세요'); return; }
-  mode = 'draw';
-  last = toWorld(rel(e));
-  segTo(last);
+// --- 획 내보내기 (펜 / 부분 지우개 / 획 지우개) ---
+function penSeg(st, a, b) {
+  const s = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: st.color, size: st.size, o: me, sid: st.sid };
+  segs.push(s); incSeg(s); send({ type: 'seg', ...s });
+}
+function erasePart(st, a, b) {
+  const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r;
+  const res = eraseCapsule(segs, me, x0, y0, x1, y1, r);
+  if (res) { segs = res; redrawInk(); send({ type: 'erase', x0, y0, x1, y1, r }); }
+}
+function eraseStroke(st, a, b) {
+  const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r;
+  const keys = hitStrokes(segs, me, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
+  if (!keys.length) return;
+  const res = removeStrokes(segs, keys);
+  if (res) { segs = res; redrawInk(); }
+  const q = ++qSeq;
+  pendingQ.set(q, new Set(keys.map((k) => k[0] + '|' + k[1])));
+  if (pendingQ.size > 100) pendingQ.delete(pendingQ.keys().next().value);
+  send({ type: 'erasestroke', q, x0, y0, x1, y1, r });
+}
+function emit(st, a, b) { if (st.kind === 'pen') penSeg(st, a, b); else if (st.kind === 'epart') erasePart(st, a, b); else eraseStroke(st, a, b); }
+function previewSeg(st, a, b) {                                // 확정 전 터치 획: 내 화면에만 임시로 그린다
+  ensureAligned(); ctxView();
+  ctx.lineCap = 'round'; ctx.strokeStyle = st.color; ctx.lineWidth = Math.max(st.size, 0.6 / scale);
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+}
+function strokePoint(st, sx, sy, t, force) {                   // 너무 가깝거나 빠른 점은 생략 (마지막 점은 force 로 반드시 보낸다)
+  if (!force) { if (Math.hypot(sx - st.lsx, sy - st.lsy) < MIN_POINT_PX || t - st.lt < MIN_POINT_MS) return; }
+  else if (sx === st.lsx && sy === st.lsy) return;
+  st.lsx = sx; st.lsy = sy; st.lt = t;
+  const w = toWorld({ x: sx, y: sy });
+  if (st.phase === 'pending') { const prev = st.pts[st.pts.length - 1]; st.pts.push(w); if (st.kind === 'pen') previewSeg(st, prev, w); }
+  else { emit(st, st.last, w); st.last = w; }
+}
+function confirmStroke(st) {                                   // 이 시점부터 history 추가 + 서버 전송
+  if (st.phase !== 'pending') return;
+  clearTimeout(st.timer);
+  st.phase = 'live'; st.confirmedAt = now();
+  if (gmode === 'pending') gmode = 'draw';
+  const pts = st.pts; st.pts = [];
+  emit(st, pts[0], pts[0]); st.last = pts[0];
+  for (let i = 1; i < pts.length; i++) { emit(st, st.last, pts[i]); st.last = pts[i]; }
+}
+function discardPending(st) {                                  // 네트워크 전송 없이 임시 획을 버린다
+  clearTimeout(st.timer);
+  if (strokeSt === st) strokeSt = null;
+  if (st.kind === 'pen') redrawInk();
+}
+function cancelStroke(st) {                                    // 이미 전송된 획을 모두의 화면과 저장본에서 취소
+  if (strokeSt === st) strokeSt = null;
+  segs = segs.filter((s) => !(s.o === me && s.sid === st.sid));
+  send({ type: 'cancelstroke', sid: st.sid });
+  redrawInk();
+}
+function finishStroke(st) {
+  const rec = ptr.get(st.id);
+  if (rec) strokePoint(st, rec.x, rec.y, now(), true);
+  if (strokeSt === st) strokeSt = null;
+}
+function abortStroke() {
+  const st = strokeSt;
+  if (!st) return;
+  clearTimeout(st.timer);
+  if (st.phase === 'pending' && st.kind === 'pen') redrawInk();
+  strokeSt = null;
+  if (gmode === 'draw' || gmode === 'pending') gmode = 'none';
+}
+function startStroke(rec) {
+  const touch = rec.type === 'touch';
+  const kind = tool === 'eraser' ? (S.eraserMode === 'stroke' ? 'estroke' : 'epart') : 'pen';
+  const erase = kind !== 'pen';
+  const w = toWorld(rec);
+  const st = strokeSt = { id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: S.color, size: S.penSize,
+    r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, sx: rec.x, sy: rec.y, moved: 0, confirmedAt: 0, timer: 0 };
+  if (touch) {
+    gmode = 'pending'; st.pts.push(w);
+    if (kind === 'pen') previewSeg(st, w, w);
+    st.timer = setTimeout(() => confirmStroke(st), erase ? TOUCH_CONFIRM_ERASE_MS : TOUCH_CONFIRM_MS);
+  } else {                                                     // 마우스·펜은 지연 없이 즉시
+    gmode = 'draw'; st.confirmedAt = now();
+    emit(st, w, w);
+  }
+}
+function enterPinch() {                                        // 손가락이 2개 이상: 그리기 중단, 핀치 줌 + 두 손가락 이동
+  const st = strokeSt;
+  if (st) {
+    if (st.phase === 'pending') discardPending(st);
+    else if (st.kind === 'pen' && now() - st.confirmedAt <= CANCEL_WINDOW_MS && st.moved <= CANCEL_MAX_MOVE_PX) cancelStroke(st);
+    else finishStroke(st);
+    strokeSt = null;
+  }
+  gmode = 'pinch'; pinchPrev = pinchState(); hideTip();
+}
+function updateRing(p) {                                       // 마우스 커서 주변에 현재 펜/지우개 크기 원
+  if (tool === 'hand' || spaceDown) { ring.hidden = true; return; }
+  const d = Math.max((tool === 'eraser' ? S.eraserD : S.penSize) * scale, 6);
+  ring.style.width = ring.style.height = d + 'px';
+  ring.style.transform = `translate(${p.x - d / 2}px, ${p.y - d / 2}px)`;
+  ring.hidden = false;
+}
+
+board.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch' && penActive > 0) return;      // 펜이 닿아 있는 동안의 touch 는 손바닥으로 보고 무시
+  if (board.setPointerCapture) { try { board.setPointerCapture(e.pointerId); } catch {} }
+  const p = rel(e);
+  const rec = { id: e.pointerId, type: e.pointerType || 'mouse', x: p.x, y: p.y, sx: p.x, sy: p.y, t0: evT(e), tn: now() };
+  ptr.set(e.pointerId, rec);
+  if (rec.type === 'pen') penActive++;
+  hideTip();
+  if (rec.type !== 'mouse') ring.hidden = true;
+  if (rec.type === 'touch' && touchRecs().length >= 2) { enterPinch(); return; }
+  if (ptr.size > 1) return;                                    // 서로 다른 종류 입력이 겹치면 첫 입력만
+  const panWanted = e.button === 1 || tool === 'hand' || spaceDown || (rec.type === 'touch' && S.penOnly);
+  if (panWanted) { gmode = 'pan'; return; }
+  if (rec.type === 'mouse' && e.button !== 0) return;
+  if (!me) { toast('연결 중이에요. 잠시 후 다시 그려 주세요', 'warn'); return; }
+  startStroke(rec);
 });
-canvas.addEventListener('pointermove', (e) => {
-  const np = rel(e);
-  sendCursor(toWorld(np));
-  if (e.pointerType !== 'touch') { updateRing(np); if (tool === 'eraser') tip.style.display = 'none'; else hover(np); }
-  const p = pts.get(e.pointerId);
-  if (!p) return;
-  const dx = np.x - p.x, dy = np.y - p.y;
-  p.x = np.x; p.y = np.y;
-  if (mode === 'pan') {
-    cam.x -= dx / scale; cam.y -= dy / scale; redraw();
-  } else if (mode === 'pinch' && pts.size === 2) {
-    const cur = pinchState();
-    const wx = cam.x + pinchPrev.cx / scale, wy = cam.y + pinchPrev.cy / scale;
-    scale = clamp(scale * cur.d / pinchPrev.d, MIN_S, MAX_S);
-    cam.x = wx - cur.cx / scale; cam.y = wy - cur.cy / scale;
-    pinchPrev = cur; redraw();
-  } else if (mode === 'draw') {
-    segTo(toWorld(np));
+board.addEventListener('pointermove', (e) => {
+  const p = rel(e), rec = ptr.get(e.pointerId);
+  sendCursor(toWorld(p));
+  if (e.pointerType !== 'touch') {
+    updateRing(p);
+    if (gmode === 'none' && (tool === 'hand' || spaceDown || (tool === 'pen' && S.penHover))) hoverTip(p); else hideTip();
+  }
+  if (!rec) return;
+  const dx = p.x - rec.x, dy = p.y - rec.y;
+  rec.x = p.x; rec.y = p.y;
+  if (gmode === 'pan') { cam.x -= dx / scale; cam.y -= dy / scale; viewChanged(); }
+  else if (gmode === 'pinch') doPinch();
+  else if ((gmode === 'pending' || gmode === 'draw') && strokeSt && strokeSt.id === e.pointerId) {
+    const st = strokeSt;
+    const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    for (const ce of (list.length ? list : [e])) { const q = rel(ce); strokePoint(st, q.x, q.y, evT(ce), false); }
+    st.moved = Math.max(st.moved, Math.hypot(rec.x - st.sx, rec.y - st.sy));
+    if (st.phase === 'pending') {
+      const erase = st.kind !== 'pen';
+      if (st.moved >= (erase ? TOUCH_CONFIRM_ERASE_PX : TOUCH_CONFIRM_PX)) confirmStroke(st);   // 충분히 움직였으면 확정
+    }
   }
 });
-canvas.addEventListener('pointerleave', (e) => {
-  if (e.pointerType === 'mouse') { tip.style.display = 'none'; ring.style.display = 'none'; send({ type: 'curhide' }); }
+board.addEventListener('pointerleave', (e) => {
+  if (e.pointerType === 'mouse') { hideTip(); ring.hidden = true; send({ type: 'curhide' }); }
 });
-function endPointer(e) {
-  pts.delete(e.pointerId);
-  if (pts.size === 0) { mode = null; last = null; }
-  else if (mode === 'pinch' || mode === 'draw') { mode = 'pan'; last = null; }
-  if (e.pointerType === 'touch') send({ type: 'curhide' });
+function endPtr(e) {
+  const rec = ptr.get(e.pointerId);
+  if (!rec) return;
+  const st = strokeSt, wasPan = gmode === 'pan', solo = ptr.size === 1;
+  if (st && st.id === e.pointerId) {
+    if (st.phase === 'pending') { if (e.type === 'pointercancel') discardPending(st); else { confirmStroke(st); finishStroke(st); } }   // 짧은 탭은 점 하나로 확정
+    else finishStroke(st);
+    strokeSt = null;
+  }
+  ptr.delete(e.pointerId);
+  if (rec.type === 'pen') penActive = Math.max(0, penActive - 1);
+  if (rec.type === 'touch') send({ type: 'curhide' });
+  if (wasPan && solo && rec.type === 'touch' && e.type === 'pointerup' && Math.hypot(rec.x - rec.sx, rec.y - rec.sy) < TAP_MAX_PX && now() - rec.tn < TAP_MAX_MS) tapTip(rec.x, rec.y);
+  const tc = touchRecs().length;
+  if (gmode === 'pinch') { if (tc >= 2) pinchPrev = pinchState(); else gmode = tc === 1 ? 'pan' : 'none'; }   // 2→1: 선을 긋지 않고 이동으로 이어진다
+  if (ptr.size === 0) { gmode = 'none'; strokeSt = null; }
+  else if ((gmode === 'draw' || gmode === 'pending') && !strokeSt) gmode = 'none';
 }
-canvas.addEventListener('pointerup', endPointer);
-canvas.addEventListener('pointercancel', endPointer);
+board.addEventListener('pointerup', endPtr);
+board.addEventListener('pointercancel', endPtr);
+board.addEventListener('lostpointercapture', endPtr);
 
+/* ===== 브라우저 기본 동작 차단 (입력창은 예외) ===== */
+for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false }); // iOS Safari / 맥 트랙패드 핀치 확대
+document.addEventListener('contextmenu', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
+document.addEventListener('selectstart', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
+document.addEventListener('dblclick', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(false); else if (openPopId) closePop(); else closeSide(); return; }
+  if (isEditable(e.target) || e.ctrlKey || e.metaKey || e.altKey || !$('modal').hidden) return;     // 입력창에 있을 때는 단축키 없음
+  const k = e.key.toLowerCase();
+  if (k === 'p') setTool('pen'); else if (k === 'e') selectEraser(); else if (k === 'h') setTool('hand');
+  else if (e.code === 'Space' && !spaceDown) { spaceDown = true; board.style.cursor = 'grab'; ring.hidden = true; e.preventDefault(); }
+});
+window.addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; board.style.cursor = tool === 'hand' ? 'grab' : 'crosshair'; } });
+
+/* ===== 서버 연결: 지수 백오프 재접속, 앱이 다시 보이거나 네트워크가 돌아오면 즉시 ===== */
+let ended = false, retry = 0, retryT = 0, lastMsgAt = 0;
+const updateBanner = () => { $('banner').hidden = connected || ended; };
+function showEnd(code) {
+  $('endTitle').textContent = '연결이 종료되었어요';
+  $('endText').textContent = '서버가 연결을 종료했어요. (코드 ' + code + ')';
+  $('endScreen').hidden = false; $('banner').hidden = true;
+}
+$('endBtn').onclick = () => location.reload();
+function scheduleReconnect(immediate) {
+  if (ended) return;
+  clearTimeout(retryT);
+  const base = Math.min(RECONNECT_BASE_MS * Math.pow(2, retry), RECONNECT_MAX_MS);
+  retry++;
+  retryT = setTimeout(connect, immediate ? 0 : base * (0.75 + Math.random() * 0.5));
+}
+function connect() {
+  clearTimeout(retryT);
+  if (ended || (ws && (ws.readyState === 0 || ws.readyState === 1))) return;      // 중복 소켓 금지
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const sock = new WebSocket(`${proto}://${location.host}/?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}`);
+  ws = sock;
+  sock.onopen = () => { if (sock !== ws) return; retry = 0; connected = true; lastMsgAt = now(); updateBanner(); hudSoon(); };
+  sock.onclose = (e) => { if (sock === ws) onDisconnected(e.code); };
+  sock.onmessage = (e) => { if (sock === ws) { lastMsgAt = now(); onMessage(e.data); } };
+}
+function onDisconnected(code) {
+  connected = false; me = null; count = 0; online = new Set();
+  for (const o of [...cursors.keys()]) hideCursor(o);
+  abortStroke(); hudSoon();
+  if (code >= 4000 && code < 5000) { ended = true; showEnd(code); return; }       // 서버가 의도적으로 끊음: 자동 재접속 안 함
+  updateBanner(); scheduleReconnect(false);
+}
+function wake() {                                                                  // 앱이 다시 보이거나 네트워크가 돌아왔을 때
+  if (ended) return;
+  if (!ws || ws.readyState > 1) { retry = 0; clearTimeout(retryT); retryT = setTimeout(connect, 0); return; }
+  if (ws.readyState === 1) {                                                       // 열려 있어도 죽어 있을 수 있으니 확인
+    const sock = ws, t0 = lastMsgAt;
+    send({ type: 'resync' });
+    setTimeout(() => { if (sock === ws && lastMsgAt === t0) { ws = null; try { sock.close(); } catch {} onDisconnected(0); retry = 0; scheduleReconnect(true); } }, 4000);
+  }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+window.addEventListener('online', wake);
+
+function onMessage(data) {
+  let m;
+  try { m = JSON.parse(data); } catch { return; }
+  switch (m.type) {
+    case 'hello': me = m.me; break;
+    case 'history': segs = Array.isArray(m.data) ? m.data : []; redrawInk(); break;
+    case 'names': names = m.names || {}; refreshLabels(); if (me && names[me]) nickEl.value = names[me]; break;
+    case 'name': names[m.o] = m.name; refreshLabels(); if (m.o === me) nickEl.value = m.name; break;
+    case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); break;
+    case 'count': if (!online.size) { count = m.n; hudSoon(); } break;
+    case 'seg': segs.push(m); if (aligned() && !exactT) incSeg(m); else redrawInk(); break;
+    case 'clear': segs = segs.filter((s) => s.o !== m.o); redrawInk(); break;
+    case 'erase': { const res = eraseCapsule(segs, m.o, m.x0, m.y0, m.x1, m.y1, m.r); if (res) { segs = res; redrawInk(); } break; }
+    case 'strokesgone': {
+      const keys = Array.isArray(m.keys) ? m.keys : [];
+      const res = removeStrokes(segs, keys);
+      if (res) { segs = res; redrawInk(); }
+      if (m.by === me && m.q != null && pendingQ.has(m.q)) {                       // 내 예상과 서버 결과가 다르면 서버 기준으로 맞춘다
+        const predicted = pendingQ.get(m.q); pendingQ.delete(m.q);
+        const got = new Set(keys.map((k) => k[0] + '|' + k[1]));
+        if (predicted.size !== got.size || [...predicted].some((k) => !got.has(k))) send({ type: 'resync' });
+      }
+      break;
+    }
+    case 'cur': showCursor(m.o, m.x, m.y); break;
+    case 'curhide': hideCursor(m.o); break;
+    case 'notice': toast(m.text || '알림', 'warn'); break;
+  }
+}
+
+/* ===== 시작 ===== */
+if (window.visualViewport) {                                                       // 가상 키보드가 올라와도 시트·입력창이 가려지지 않게
+  const upd = () => { const v = visualViewport; document.documentElement.style.setProperty('--kb', Math.max(0, innerHeight - v.height - v.offsetTop) + 'px'); };
+  visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
+}
+nickEl.value = myNick;
+$('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
+for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
+setColor(S.color); syncEraserUI(); setTool('pen');
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 resize();
 connect();
 </script>
