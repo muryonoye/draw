@@ -153,6 +153,54 @@
     #hud { top: 8px; }
     #brand span { display: none; }
   }
+
+  /* ===== 2단계: 사람 · 채팅 · 방 관리 ===== */
+  .ibtn { position: relative; }
+  .badge { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+  #side { z-index: 35; }
+  #side .tabs { align-items: center; }
+  #side .tabs button.tabbtn { flex: 1; min-height: 44px; border: 0; background: transparent; color: var(--muted); }
+  #side .tabs button.tabbtn.on { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+  #side .tabs .xbtn { flex: none; width: 44px; height: 44px; border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; }
+  .bdg { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--accent); color: #07121f; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+  .bdg:empty { display: none; }
+  .pane { flex: 1; min-height: 0; overflow: auto; padding: 8px; touch-action: pan-y; position: relative; }
+  #paneC { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+  .chatlist { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; touch-action: pan-y; }
+  .cmsg { max-width: 92%; align-self: flex-start; background: var(--panel-2); border-radius: 12px; padding: 6px 10px; overflow-wrap: anywhere; }
+  .cmsg.mine { align-self: flex-end; background: var(--accent-bg); }
+  .cmsg.sys { align-self: center; max-width: 100%; background: transparent; color: var(--muted); font-size: 12px; text-align: center; padding: 2px 6px; font-style: italic; }
+  .chead { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .chead b { color: var(--text); font-weight: 600; }
+  .cdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .ctext { white-space: pre-wrap; }
+  .chatbar { display: flex; gap: 8px; padding: 8px; border-top: 1px solid var(--line); }
+  .chatbar .inp { flex: 1; min-width: 0; }
+  .newmsg { position: absolute; left: 50%; transform: translateX(-50%); bottom: 64px; box-shadow: var(--shadow); }
+  .plist { list-style: none; margin: 0; padding: 0; }
+  .prow { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 4px 6px; border-radius: var(--r); }
+  .prow:hover { background: var(--panel-2); }
+  .prow .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .prow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); display: inline-flex; align-items: center; gap: 3px; flex: none; }
+  .tag.own { background: rgba(255,204,102,.18); color: var(--warn); }
+  .tag.warn { background: rgba(255,107,107,.16); color: var(--danger); }
+  .tag svg.ic { width: 12px; height: 12px; fill: currentColor; stroke: none; }
+  .rowmenu { width: 40px; height: 40px; flex: none; border: 0; border-radius: var(--r); background: transparent; display: grid; place-items: center; }
+  .rowmenu:hover { background: var(--panel-2); }
+  .rowmenu svg.ic { fill: currentColor; stroke: none; }
+  .menu button { display: flex; width: 100%; align-items: center; min-height: 44px; padding: 0 10px; border: 0; border-radius: var(--r); background: transparent; text-align: left; }
+  .menu button:hover { background: var(--panel-2); }
+  .menu button.danger { color: var(--danger); }
+  .asec { margin-bottom: 16px; }
+  .asec h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .arow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .arow .nm { flex: 1; min-width: 0; }
+  .arow small { display: block; color: var(--muted); font-size: 11px; }
+  .empty { color: var(--muted); font-size: 12px; padding: 4px 0; }
+  #modal .field { margin-bottom: 12px; }
+  #modal .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  #modal p:empty { display: none; }
 </style>
 </head>
 <body>
@@ -175,6 +223,10 @@
     <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+    <symbol id="i-crown" viewBox="0 0 24 24"><path d="M3 18h18l-1.5-10-4.5 4-3-7-3 7-4.5-4z"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></symbol>
   </defs>
 </svg>
 
@@ -183,7 +235,7 @@
   <button id="btnRoom" class="chip" aria-label="방 메뉴" title="방 메뉴" aria-expanded="false"><svg class="ic"><use href="#i-link"/></svg><span id="roomLabel">방</span></button>
   <div class="spacer"></div>
   <button id="btnPeople" class="ibtn" aria-label="사람" title="사람"><svg class="ic"><use href="#i-users"/></svg></button>
-  <button id="btnChat" class="ibtn" aria-label="채팅" title="채팅"><svg class="ic"><use href="#i-chat"/></svg></button>
+  <button id="btnChat" class="ibtn" aria-label="채팅" title="채팅"><svg class="ic"><use href="#i-chat"/></svg><span id="chatBadge" class="badge" hidden></span></button>
   <button id="btnSettings" class="ibtn" aria-label="설정" title="설정" aria-expanded="false"><svg class="ic"><use href="#i-sliders"/></svg></button>
 </header>
 
@@ -210,6 +262,9 @@
       <button id="tEraserMode" class="caret" aria-label="지우개 모드 선택" title="지우개 모드 선택" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-chevron"/></svg></button>
     </div>
     <button id="tHand" class="tool" aria-label="화면 이동 (H)" title="화면 이동 (H)" aria-pressed="false"><svg class="ic"><use href="#i-hand"/></svg></button>
+    <div class="toolsep"></div>
+    <button id="tUndo" class="tool" aria-label="이전 (실행 취소, Ctrl+Z)" title="이전 (실행 취소, Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo"/></svg></button>
+    <button id="tRedo" class="tool" aria-label="되돌리기 (다시 실행, Ctrl+Shift+Z)" title="되돌리기 (다시 실행, Ctrl+Shift+Z)" disabled><svg class="ic"><use href="#i-redo"/></svg></button>
     <div class="toolsep"></div>
     <button id="tColor" class="tool" aria-label="색상" title="색상" data-side="right" aria-expanded="false"><span class="sw" id="colorSw"></span></button>
     <button id="tSize" class="tool" aria-label="크기" title="크기" data-side="right" aria-expanded="false"><span class="num" id="sizeNumBtn">4</span></button>
@@ -242,6 +297,7 @@
     <button class="opt" data-mode="stroke" id="optStroke"><svg class="ic"><use href="#i-eraser-stroke"/></svg><b>획 지우개</b><small>닿은 선 한 획 전체</small></button>
   </div>
   <div class="hint" id="eraserHint"></div>
+  <div id="eraseScopeRow"></div>
 </section>
 
 <section id="popView" class="pop" hidden aria-label="보기">
@@ -284,16 +340,29 @@
   <div class="switch"><div>펜 모드에서 작성자 표시<small>선에 마우스를 올리면 이름 표시</small></div><input type="checkbox" id="setPenHover" aria-label="펜 모드에서 작성자 표시"></div>
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P</b><span>펜</span><b>E</b><span>지우개</span><b>H</b><span>화면 이동</span><b>Space</b><span>누르고 드래그하면 이동</span></div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 1단계 (2026-10-03)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 2단계 (2026-10-03)</div>
 </section>
 
-<aside id="side" hidden aria-label="사람·채팅">
-  <div class="tabs"><button id="tabPeople" class="on" disabled>사람</button><button id="tabChat" disabled>채팅</button></div>
-  <div class="body"><div id="sideMsg">사람 목록과 채팅은 다음 업데이트에서 추가돼요.</div></div>
+<section id="popRow" class="pop" hidden aria-label="사용자 관리">
+  <div class="sheetgrab"></div><h3 id="rowMenuTitle"></h3><div id="rowMenuBody" class="menu"></div>
+</section>
+
+<aside id="side" hidden aria-label="사람·채팅·방 관리">
+  <div class="tabs" role="tablist">
+    <button id="tabPeople" class="tabbtn on" role="tab" aria-selected="true" type="button">사람<span id="peopleN" class="bdg"></span></button>
+    <button id="tabChat" class="tabbtn" role="tab" aria-selected="false" type="button">채팅<span id="chatTabBdg" class="bdg"></span></button>
+    <button id="sideClose" class="xbtn" aria-label="패널 닫기" title="닫기" type="button"><svg class="ic"><use href="#i-x"/></svg></button>
+  </div>
+  <div id="paneP" class="pane"><ul id="peopleList" class="plist"></ul></div>
+  <div id="paneC" class="pane" hidden>
+    <div id="chatList" class="chatlist" role="log" aria-live="polite" aria-label="채팅 메시지"></div>
+    <button id="chatNew" class="btn primary newmsg" type="button" hidden>새 메시지 ↓</button>
+    <div class="chatbar"><input type="text" id="chatInput" class="inp" placeholder="메시지 보내기" autocomplete="off" enterkeyhint="send" aria-label="채팅 입력"><button id="chatSend" class="btn primary" type="button" aria-label="보내기">보내기</button></div>
+  </div>
 </aside>
 
 <div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
-  <div class="card"><h3 id="mTitle"></h3><p id="mBody"></p><div class="acts"><button id="mCancel" class="btn">취소</button><button id="mOk" class="btn primary">확인</button></div></div>
+  <div class="card"><h3 id="mTitle"></h3><p id="mBody"></p><div id="mFields"></div><div id="mErr" class="err"></div><div class="acts"><button id="mCancel" class="btn">취소</button><button id="mOk" class="btn primary">확인</button></div></div>
 </div>
 <div id="toasts" aria-live="polite"></div>
 <div id="endScreen" hidden><div class="card"><h2 id="endTitle">연결이 종료되었어요</h2><p id="endText"></p><button id="endBtn" class="btn primary">다시 입장</button></div></div>
@@ -320,7 +389,7 @@ const MIN_POINT_PX = 1.5, MIN_POINT_MS = 5;   // 너무 가깝거나 빠른 점�
 const HOVER_MARGIN_MOUSE_PX = 8, HOVER_MARGIN_TOUCH_PX = 12, HOVER_THROTTLE_MS = 40;
 const TAP_MAX_PX = 8, TAP_MAX_MS = 400, TIP_TAP_HIDE_MS = 3000;
 // 그리드
-const GRID_BASE = 100, GRID_MAX_LINES = 300, GRID_FADE_LO_PX = 10, GRID_FADE_HI_PX = 40;
+const GRID_STEP = 100, GRID_MIN_PX = 3;
 // 연결 / 그리기
 const RECONNECT_BASE_MS = 500, RECONNECT_MAX_MS = 10000;
 const GESTURE_REPAINT_MS = 140;      // 줌·이동이 멈추고 이 시간 뒤에 정확히 다시 그린다
@@ -344,7 +413,7 @@ const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').mat
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000' };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -397,8 +466,8 @@ function erInterval(s, ex0, ey0, edx, edy, eL, rho) {
   return lo <= hi ? [lo, hi] : null;
 }
 // owner 가 null 이 아니면 그 사람의 선만 지운다. 지워진 곳이 없으면 null, 있으면 새 배열(잘린 조각 포함)을 돌려준다.
-// 잘린 조각은 원래 획의 sid 를 그대로 가진다.
-function eraseCapsule(list, owner, x0, y0, x1, y1, r) {
+// 잘린 조각은 원래 획의 sid 를 그대로 가진다. diff({removed:[], added:[]})를 넘기면 지워진 원본/새 조각을 담아 준다(이전·되돌리기용).
+function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
   r = Math.min(Math.max(r, 1), ERASER_R_MAX);
   const edx = x1 - x0, edy = y1 - y0;
   const eL = Math.sqrt(edx * edx + edy * edy);
@@ -423,11 +492,12 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r) {
     const s = list[i];
     const iv = hits.get(i);
     if (!iv) { out.push(s); continue; }
+    if (diff) diff.removed.push(s);
     const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
     const len = Math.sqrt(dx * dx + dy * dy);
     const piece = (a, b) => ({ x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o, sid: s.sid });
-    if (iv[0] * len >= 0.25) out.push(piece(0, iv[0]));
-    if ((1 - iv[1]) * len >= 0.25) out.push(piece(iv[1], 1));
+    if (iv[0] * len >= 0.25) { const p = piece(0, iv[0]); out.push(p); if (diff) diff.added.push(p); }
+    if ((1 - iv[1]) * len >= 0.25) { const p = piece(iv[1], 1); out.push(p); if (diff) diff.added.push(p); }
   }
   return out;
 }
@@ -455,11 +525,21 @@ function hitStrokes(list, owner, x0, y0, x1, y1, r, max) {
   return [...keys.values()];
 }
 // 키 목록([[주인, sid], ...])에 해당하는 선분을 모두 뺀 새 배열. 지운 게 없으면 null.
-function removeStrokes(list, keys) {
+function removeStrokes(list, keys, diff) {
   const set = new Set(keys.map((k) => k[0] + '|' + k[1]));
   const out = [];
-  for (const s of list) { if (s.sid && s.o && set.has(s.o + '|' + s.sid)) continue; out.push(s); }
+  for (const s of list) { if (s.sid && s.o && set.has(s.o + '|' + s.sid)) { if (diff) diff.removed.push(s); continue; } out.push(s); }
   return out.length === list.length ? null : out;
+}
+// 같은 값(주인·sid·좌표)의 선분을 하나씩 지운 새 배열. 지운 게 없으면 null. (이전·되돌리기가 잘린 조각을 정확히 되돌릴 때 쓴다)
+function removeExactSegs(list, items) {
+  const need = new Map();
+  const key = (s) => s.o + '|' + s.sid + '|' + s.x0 + '|' + s.y0 + '|' + s.x1 + '|' + s.y1;
+  for (const s of items) need.set(key(s), (need.get(key(s)) || 0) + 1);
+  const out = [];
+  let n = 0;
+  for (const s of list) { const k = key(s), c = need.get(k); if (c) { need.set(k, c - 1); n++; continue; } out.push(s); }
+  return n ? out : null;
 }
 
 /* ===== 방 / 내 키 / 닉네임 ===== */
@@ -504,57 +584,17 @@ let segs = [], names = {}, online = new Set(), count = 0;
 let me = null, connected = false, ws = null;
 let hl = null;                                        // 강조 중인 획 {o, sid}
 
-/* ===== 격자: 단계 간격 = 100 x 5^k, 화면에서의 간격(px)으로 불투명도를 연속 계산 ===== */
-function gridAlpha(px, lo, hi) { const t = (px - lo) / (hi - lo); return t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t); }
-function gridPlan(sc, w, h) {
-  const lo = Math.max(GRID_FADE_LO_PX, (w + h) / (GRID_MAX_LINES - 20)); // 선이 너무 많아지는 단계는 일찍 (연속적으로) 사라진다
-  const hi = Math.max(GRID_FADE_HI_PX, lo * 4);
-  const px0 = GRID_BASE * sc;
-  const kMin = Math.floor(Math.log(lo / px0) / Math.log(5));
-  const kMax = Math.ceil(Math.log(Math.max(w, h) * 4 / px0) / Math.log(5));
-  const out = [];
-  for (let k = kMin; k <= kMax; k++) {
-    const sp = GRID_BASE * Math.pow(5, k), px = sp * sc;
-    out.push({ k, sp, px, a: gridAlpha(px, lo, hi) });
-  }
-  return out;
-}
+/* ===== 격자: 월드에 고정된 한 장의 판. 줌에 따라 그냥 커지고 작아질 뿐 다른 효과는 없다 ===== */
 function paintGrid() {
   gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   gctx.clearRect(0, 0, cssW, cssH);
-  if (!S.grid) return;
-  const plan = gridPlan(scale, cssW, cssH);
-  const drawn = new Set();
-  let lines = 0;
-  for (let i = plan.length - 1; i >= 0; i--) {            // 성긴 단계부터 줄 수를 세어 상한을 지킨다
-    const L = plan[i];
-    if (L.a < 0.004) continue;
-    const n = Math.ceil(cssW / L.px) + Math.ceil(cssH / L.px) + 2;
-    if (lines + n > GRID_MAX_LINES) continue;
-    lines += n; drawn.add(i);
-  }
-  for (let i = 0; i < plan.length; i++) {                  // 촘촘한 단계를 먼저, 성긴 단계(주선)를 위에
-    if (!drawn.has(i)) continue;
-    const L = plan[i];
-    const aFiner = drawn.has(i - 1) ? plan[i - 1].a : 0;   // 더 촘촘한 단계가 보이면 이 단계는 '주선'으로 진해진다
-    const skip5 = drawn.has(i + 1);                        // 5칸마다 오는 선은 다음 단계가 주선으로 그린다
-    gctx.strokeStyle = `rgba(0,0,0,${(L.a * (0.06 + 0.13 * aFiner)).toFixed(4)})`;
-    gctx.lineWidth = 1 + 0.6 * aFiner;
-    gctx.beginPath();
-    const j0 = Math.floor(cam.x / L.sp), j1 = Math.ceil((cam.x + cssW / scale) / L.sp);
-    for (let j = j0; j <= j1; j++) {
-      if (skip5 && ((j % 5) + 5) % 5 === 0) continue;
-      const x = Math.round((j * L.sp - cam.x) * scale) + 0.5;
-      gctx.moveTo(x, 0); gctx.lineTo(x, cssH);
-    }
-    const m0 = Math.floor(cam.y / L.sp), m1 = Math.ceil((cam.y + cssH / scale) / L.sp);
-    for (let j = m0; j <= m1; j++) {
-      if (skip5 && ((j % 5) + 5) % 5 === 0) continue;
-      const y = Math.round((j * L.sp - cam.y) * scale) + 0.5;
-      gctx.moveTo(0, y); gctx.lineTo(cssW, y);
-    }
-    gctx.stroke();
-  }
+  if (!S.grid || GRID_STEP * scale < GRID_MIN_PX) return;      // 칸이 3px 미만이 되도록 멀리 축소하면 선이 뭉개져서 그리지 않는다
+  gctx.strokeStyle = 'rgba(0,0,0,0.09)'; gctx.lineWidth = 1; gctx.beginPath();
+  const j0 = Math.floor(cam.x / GRID_STEP), j1 = Math.ceil((cam.x + cssW / scale) / GRID_STEP);
+  for (let j = j0; j <= j1; j++) { const x = (j * GRID_STEP - cam.x) * scale; gctx.moveTo(x, 0); gctx.lineTo(x, cssH); }
+  const m0 = Math.floor(cam.y / GRID_STEP), m1 = Math.ceil((cam.y + cssH / scale) / GRID_STEP);
+  for (let j = m0; j <= m1; j++) { const y = (j * GRID_STEP - cam.y) * scale; gctx.moveTo(0, y); gctx.lineTo(cssW, y); }
+  gctx.stroke();
 }
 
 /* ===== 그림 그리기: 정확한 다시 그리기 + 제스처 중에는 직전 비트맵을 변환 ===== */
@@ -761,20 +801,44 @@ function toast(msg, kind) {
   box.appendChild(t);
   setTimeout(() => t.remove(), 2800);
 }
-let modalResolve = null;
-function confirmModal({ title, body, ok = '확인', cancel = '취소', danger = false }) {
+let modalResolve = null, modalCtl = null;
+// 확인 모달 + 선택/입력칸. 확인하면 입력값 객체를, 취소하면 null 을 돌려준다.
+function formModal({ title, body, ok = '확인', cancel = '취소', danger = false, fields = [], validate }) {
   return new Promise((resolve) => {
-    if (modalResolve) modalResolve(false);
+    if (modalResolve) closeModal(null);
     $('mTitle').textContent = title; $('mBody').textContent = body || '';
+    const box = $('mFields'); box.textContent = ''; $('mErr').textContent = '';
+    const ctl = {};
+    for (const f of fields) {
+      const wrap = document.createElement('div'); wrap.className = 'field';
+      const lab = document.createElement('label'); lab.htmlFor = 'mf_' + f.key; lab.textContent = f.label;
+      let inp;
+      if (f.type === 'select') { inp = document.createElement('select'); for (const [v, tx] of f.options) { const op = document.createElement('option'); op.value = v; op.textContent = tx; inp.appendChild(op); } }
+      else { inp = document.createElement('input'); inp.type = 'text'; inp.autocomplete = 'off'; if (f.placeholder) inp.placeholder = f.placeholder; }
+      inp.id = 'mf_' + f.key; inp.className = 'inp'; if (f.value !== undefined) inp.value = f.value;
+      wrap.append(lab, inp); box.appendChild(wrap); ctl[f.key] = { f, inp, wrap };
+    }
+    const values = () => { const v = {}; for (const k in ctl) { let s = ctl[k].inp.value; if (ctl[k].f.maxChars) s = Array.from(s).slice(0, ctl[k].f.maxChars).join(''); v[k] = s; } return v; };
+    const refresh = () => { const v = values(); for (const k in ctl) if (ctl[k].f.showIf) ctl[k].wrap.hidden = !ctl[k].f.showIf(v); };
+    box.oninput = box.onchange = refresh; refresh();
+    modalCtl = { values, validate };
     $('mOk').textContent = ok; $('mOk').className = 'btn ' + (danger ? 'danger' : 'primary'); $('mCancel').textContent = cancel;
     $('modal').hidden = false; modalResolve = resolve;
-    (danger ? $('mCancel') : $('mOk')).focus();
+    const first = box.querySelector('input,select');
+    (first || (danger ? $('mCancel') : $('mOk'))).focus();
   });
 }
-function closeModal(v) { $('modal').hidden = true; const r = modalResolve; modalResolve = null; if (r) r(v); }
-$('mOk').onclick = () => closeModal(true);
-$('mCancel').onclick = () => closeModal(false);
-$('modal').addEventListener('pointerdown', (e) => { if (e.target === $('modal')) closeModal(false); });
+function closeModal(v) { $('modal').hidden = true; const r = modalResolve; modalResolve = null; modalCtl = null; if (r) r(v); }
+const confirmModal = (o) => formModal(o).then((v) => v !== null);
+$('mOk').onclick = () => {
+  const v = modalCtl ? modalCtl.values() : {};
+  const err = modalCtl && modalCtl.validate ? modalCtl.validate(v) : '';
+  if (err) { $('mErr').textContent = err; return; }
+  closeModal(v);
+};
+$('mCancel').onclick = () => closeModal(null);
+$('modal').addEventListener('pointerdown', (e) => { if (e.target === $('modal')) closeModal(null); });
+$('modal').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.target.tagName === 'INPUT') { e.preventDefault(); $('mOk').click(); } });
 
 /* ===== 팝오버(데스크톱) / 바텀시트(모바일): 한 번에 하나만, 바깥 클릭·ESC 로 닫힘 ===== */
 let openPopId = null, popAnchor = null;
@@ -793,9 +857,9 @@ function placePop(el, anchor) {
   el.style.left = clamp(left, 8, Math.max(8, innerWidth - pw - 8)) + 'px';
   el.style.top = clamp(top, 8, Math.max(8, innerHeight - ph - 8)) + 'px';
 }
-function openPop(id, anchor) {
+function openPop(id, anchor, keepSide) {
   if (openPopId === id) { closePop(); return; }
-  closePop(); closeSide();
+  closePop(); if (isNarrow() && !keepSide) closeSide();
   const el = $(id);
   el.hidden = false; openPopId = id; popAnchor = anchor;
   anchor.setAttribute('aria-expanded', 'true');
@@ -807,10 +871,6 @@ document.addEventListener('pointerdown', (e) => {
   if (openPopId && !$(openPopId).contains(e.target) && !(popAnchor && popAnchor.contains(e.target))) closePop();
 }, true);
 
-/* ===== 우측 패널(사람·채팅) 자리: 1단계는 틀만 ===== */
-function openSide() { closePop(); $('side').hidden = false; if (isNarrow()) $('scrim').hidden = false; }
-function closeSide() { if (!$('side').hidden) { $('side').hidden = true; if (!openPopId) $('scrim').hidden = true; } }
-$('btnPeople').onclick = $('btnChat').onclick = () => { if ($('side').hidden) openSide(); else closeSide(); };
 
 /* ===== 크기 / 색 / 지우개 모드 UI ===== */
 const SIZE_RANGE = { pen: [1, PEN_MAX], eraser: [2, ERASER_R_MAX * 2] };   // 펜은 굵기, 지우개는 지름(= 반지름 x 2)
@@ -858,16 +918,19 @@ function setColor(c) {
 }
 $('colorCustom').addEventListener('input', () => setColor($('colorCustom').value));
 
-const ERASER_HINT = { part: '부분 지우개: 닿은 부분만 지워져요 (내가 그린 선만)', stroke: '획 지우개: 닿은 선 한 획 전체가 지워져요 (내가 그린 선만)' };
+function eraserHint() {
+  const base = S.eraserMode === 'stroke' ? '획 지우개: 닿은 선 한 획 전체가 지워져요' : '부분 지우개: 닿은 부분만 지워져요';
+  return base + (isOwner() && S.eraseAll ? ' (모든 사람의 선)' : ' (내가 그린 선만)');
+}
 function syncEraserUI() {
   const stroke = S.eraserMode === 'stroke';
   $('eraserUse').setAttribute('href', stroke ? '#i-eraser-stroke' : '#i-eraser');
   $('eraserSub').textContent = stroke ? '획' : '부분';
   $('tEraser').title = $('tEraser').ariaLabel = '지우개: ' + (stroke ? '획 지우개' : '부분 지우개') + ' (E)';
   $('optPart').classList.toggle('on', !stroke); $('optStroke').classList.toggle('on', stroke);
-  $('eraserHint').textContent = ERASER_HINT[S.eraserMode];
+  $('eraserHint').textContent = eraserHint();
 }
-function selectEraser() { setTool('eraser'); toast(ERASER_HINT[S.eraserMode]); }
+function selectEraser() { setTool('eraser'); toast(eraserHint()); }
 for (const b of [$('optPart'), $('optStroke')]) b.onclick = () => { S.eraserMode = b.dataset.mode; saveSettings(); syncEraserUI(); selectEraser(); closePop(); };
 
 /* ===== 도구 / 보기 / 방 / 설정 버튼 ===== */
@@ -888,10 +951,17 @@ $('tView').onclick = () => openPop('popView', $('tView'));
 $('btnRoom').onclick = () => { $('roomCode').textContent = room; $('joinErr').textContent = ''; openPop('popRoom', $('btnRoom')); };
 $('btnSettings').onclick = () => openPop('popSettings', $('btnSettings'));
 $('tClear').onclick = async () => {
-  if (!me) return;
-  const ok = await confirmModal({ title: '내 그림을 지울까요?', body: '내가 그린 그림만 모두 지워져요.\n다른 사람의 그림은 그대로 남아요.', ok: '지우기', danger: true });
-  if (!ok) return;
-  segs = segs.filter((s) => s.o !== me); redrawInk(); send({ type: 'clear' });
+  if (!me || myRestr.spectator) return;
+  if (isOwner()) {                                                       // 방장: 내 그림만 / 모든 사람 그림
+    const v = await formModal({ title: '그림을 지울까요?', body: '지운 그림은 되돌릴 수 없어요.', ok: '지우기', danger: true,
+      fields: [{ key: 'scope', type: 'select', label: '범위', options: [['mine', '내 그림만'], ['all', '모든 사람 그림']], value: 'mine' }] });
+    if (!v) return;
+    if (v.scope === 'all') { sendCmd({ cmd: 'clearall' }); return; }     // 서버가 모두에게 clearall 을 보낸다 (내 화면도 그때 지워진다)
+  } else {
+    const ok = await confirmModal({ title: '내 그림을 지울까요?', body: '내가 그린 그림만 모두 지워져요.\n다른 사람의 그림은 그대로 남아요.', ok: '지우기', danger: true });
+    if (!ok) return;
+  }
+  segs = segs.filter((s) => s.o !== me); resetUndo(); redrawInk(); send({ type: 'clear' });
 };
 
 $('zIn').onclick = () => zoomCenter(1.25);
@@ -979,23 +1049,25 @@ function doPinch() {
 // --- 획 내보내기 (펜 / 부분 지우개 / 획 지우개) ---
 function penSeg(st, a, b) {
   const s = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: st.color, size: st.size, o: me, sid: st.sid };
-  segs.push(s); incSeg(s); send({ type: 'seg', ...s });
+  segs.push(s); if (st.act) st.act.segs.push(s); incSeg(s); send({ type: 'seg', ...s });
 }
 function erasePart(st, a, b) {
-  const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r;
-  const res = eraseCapsule(segs, me, x0, y0, x1, y1, r);
-  if (res) { segs = res; redrawInk(); send({ type: 'erase', x0, y0, x1, y1, r }); }
+  const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
+  const diff = st.act ? { removed: [], added: [] } : undefined;
+  const res = eraseCapsule(segs, sc, x0, y0, x1, y1, r, diff);
+  if (res) { segs = res; if (diff) mergeDiff(st.act, diff); redrawInk(); send({ type: 'erase', x0, y0, x1, y1, r, ...(sc === null ? { all: true } : {}) }); }
 }
 function eraseStroke(st, a, b) {
-  const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r;
-  const keys = hitStrokes(segs, me, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
+  const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
+  const keys = hitStrokes(segs, sc, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
   if (!keys.length) return;
-  const res = removeStrokes(segs, keys);
-  if (res) { segs = res; redrawInk(); }
+  const diff = st.act ? { removed: [], added: [] } : undefined;
+  const res = removeStrokes(segs, keys, diff);
+  if (res) { segs = res; if (diff) mergeDiff(st.act, diff); redrawInk(); }
   const q = ++qSeq;
   pendingQ.set(q, new Set(keys.map((k) => k[0] + '|' + k[1])));
   if (pendingQ.size > 100) pendingQ.delete(pendingQ.keys().next().value);
-  send({ type: 'erasestroke', q, x0, y0, x1, y1, r });
+  send({ type: 'erasestroke', q, x0, y0, x1, y1, r, ...(sc === null ? { all: true } : {}) });
 }
 function emit(st, a, b) { if (st.kind === 'pen') penSeg(st, a, b); else if (st.kind === 'epart') erasePart(st, a, b); else eraseStroke(st, a, b); }
 function previewSeg(st, a, b) {                                // 확정 전 터치 획: 내 화면에만 임시로 그린다
@@ -1034,6 +1106,7 @@ function cancelStroke(st) {                                    // 이미 전송�
 function finishStroke(st) {
   const rec = ptr.get(st.id);
   if (rec) strokePoint(st, rec.x, rec.y, now(), true);
+  commitAct(st);
   if (strokeSt === st) strokeSt = null;
 }
 function abortStroke() {
@@ -1050,7 +1123,8 @@ function startStroke(rec) {
   const erase = kind !== 'pen';
   const w = toWorld(rec);
   const st = strokeSt = { id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: S.color, size: S.penSize,
-    r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, sx: rec.x, sy: rec.y, moved: 0, confirmedAt: 0, timer: 0 };
+    r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, sx: rec.x, sy: rec.y, moved: 0, confirmedAt: 0, timer: 0, act: null };
+  st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
   if (touch) {
     gmode = 'pending'; st.pts.push(w);
     if (kind === 'pen') previewSeg(st, w, w);
@@ -1093,6 +1167,7 @@ board.addEventListener('pointerdown', (e) => {
   if (panWanted) { gmode = 'pan'; return; }
   if (rec.type === 'mouse' && e.button !== 0) return;
   if (!me) { toast('연결 중이에요. 잠시 후 다시 그려 주세요', 'warn'); return; }
+  if (myRestr.spectator) { toast('방장이 그리기를 제한했어요 (보기만 가능)', 'warn'); return; }
   startStroke(rec);
 });
 board.addEventListener('pointermove', (e) => {
@@ -1149,7 +1224,12 @@ document.addEventListener('contextmenu', (e) => { if (!isEditable(e.target)) e.p
 document.addEventListener('selectstart', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
 document.addEventListener('dblclick', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(false); else if (openPopId) closePop(); else closeSide(); return; }
+  if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(null); else if (openPopId) closePop(); else closeSide(); return; }
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && $('modal').hidden && !isEditable(e.target)) {      // 이전 / 되돌리기
+    const k0 = e.key.toLowerCase();
+    if (k0 === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
+    if ((k0 === 'z' && e.shiftKey) || k0 === 'y') { e.preventDefault(); doRedo(); return; }
+  }
   if (isEditable(e.target) || e.ctrlKey || e.metaKey || e.altKey || !$('modal').hidden) return;     // 입력창에 있을 때는 단축키 없음
   const k = e.key.toLowerCase();
   if (k === 'p') setTool('pen'); else if (k === 'e') selectEraser(); else if (k === 'h') setTool('hand');
@@ -1157,14 +1237,265 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; board.style.cursor = tool === 'hand' ? 'grab' : 'crosshair'; } });
 
+/* ===== 방장 / 사람 / 채팅 / 방 관리 (2단계) ===== */
+let ownerId = null, locked = false, admin = null, adminAt = 0, byeInfo = null;
+let myRestr = { muted: null, spectator: false };
+let chatMsgs = [], unread = 0, sideTab = 'people';
+const isOwner = () => !!me && !!ownerId && me === ownerId;
+const eraseScope = () => (isOwner() && S.eraseAll ? null : me);   // 지우개 범위: 방장이 켜면 모든 사람, 아니면 내 것만
+const fmtTime = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+function fmtRemain(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  if (s < 60) return s + '초';
+  if (s < 3600) return Math.ceil(s / 60) + '분';
+  return Math.floor(s / 3600) + '시간 ' + Math.floor((s % 3600) / 60) + '분';
+}
+function icon(id) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('class', 'ic');
+  const u = document.createElementNS('http://www.w3.org/2000/svg', 'use'); u.setAttribute('href', '#' + id);
+  s.appendChild(u); return s;
+}
+const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };   // 사용자 입력은 항상 textContent 로만 넣는다
+const sendCmd = (c) => send({ type: 'cmd', ...c });
+
+/* --- 패널 열고 닫기 / 탭 --- */
+const sideOpen = () => !$('side').hidden;
+function showTab(t) {
+  if (t === 'admin' && !isOwner()) t = 'people';
+  sideTab = t;
+  const tabs = { people: $('tabPeople'), chat: $('tabChat'), admin: $('tabAdmin') };
+  for (const k in tabs) if (tabs[k]) { tabs[k].classList.toggle('on', k === t); tabs[k].setAttribute('aria-selected', String(k === t)); }
+  $('paneP').hidden = t !== 'people'; $('paneC').hidden = t !== 'chat';
+  if ($('paneA')) $('paneA').hidden = t !== 'admin';
+  if (t === 'chat') { unread = 0; updateChatBadge(); scrollChatBottom(); }
+  if (t === 'admin') renderAdmin();
+}
+function openSide(t) {
+  if (isNarrow()) { closePop(); $('scrim').hidden = false; }
+  $('side').hidden = false; showTab(t || sideTab); renderPeople();
+}
+function closeSide() { if (!$('side').hidden) { $('side').hidden = true; if (!openPopId) $('scrim').hidden = true; } }
+$('btnPeople').onclick = () => { if (sideOpen() && sideTab === 'people') closeSide(); else openSide('people'); };
+$('btnChat').onclick = () => { if (sideOpen() && sideTab === 'chat') closeSide(); else openSide('chat'); };
+$('tabPeople').onclick = () => showTab('people');
+$('tabChat').onclick = () => showTab('chat');
+$('sideClose').onclick = closeSide;
+
+/* --- 방장에게만 보이는 것: 방 관리 탭, 지우개 범위 (방장이 아니면 DOM 에 아예 만들지 않는다) --- */
+function syncOwnerUI() {
+  const own = isOwner();
+  if (own && !$('tabAdmin')) {
+    const b = mk('button', 'tabbtn', '방 관리'); b.id = 'tabAdmin'; b.type = 'button'; b.setAttribute('role', 'tab'); b.onclick = () => showTab('admin');
+    $('sideClose').before(b);
+    const p = mk('div', 'pane'); p.id = 'paneA'; p.hidden = true; $('side').appendChild(p);
+  } else if (!own && $('tabAdmin')) {
+    $('tabAdmin').remove(); $('paneA').remove(); admin = null;
+    if (sideTab === 'admin') showTab('people');
+  }
+  const row = $('eraseScopeRow'); row.textContent = '';
+  if (own) {
+    const lab = mk('label', 'switch'), d = mk('div', '', '남의 그림도 지우기'); d.appendChild(mk('small', '', '방장 전용'));
+    const cb = mk('input'); cb.type = 'checkbox'; cb.id = 'setEraseAll'; cb.checked = !!S.eraseAll; cb.setAttribute('aria-label', '남의 그림도 지우기 (방장 전용)');
+    cb.onchange = () => { S.eraseAll = cb.checked; saveSettings(); syncEraserUI(); toast(eraserHint()); };
+    lab.append(d, cb); row.appendChild(lab);
+  }
+  renderPeople(); renderAdmin(); syncEraserUI(); updateRestrUi();
+}
+function updateRestrUi() {
+  $('chatInput').placeholder = myRestr.muted ? '채팅이 금지되었어요' : '메시지 보내기';
+  syncUndoUi();
+}
+
+/* --- 사람 목록 --- */
+function renderPeople() {
+  const box = $('peopleList'); box.textContent = '';
+  const list = [...online];
+  list.sort((a, b) => (b === ownerId) - (a === ownerId) || (b === me) - (a === me) || nameOf(a).localeCompare(nameOf(b), 'ko'));
+  $('peopleN').textContent = list.length ? String(list.length) : '';
+  const own = isOwner();
+  for (const o of list) {
+    const li = mk('li', 'prow'); li.dataset.o = o;
+    const dot = mk('span', 'dot'); dot.style.background = colorOf(o);
+    li.append(dot, mk('span', 'nm', nameOf(o)));
+    if (o === ownerId) { const t = mk('span', 'tag own'); t.append(icon('i-crown'), document.createTextNode('방장')); li.appendChild(t); }
+    if (o === me) li.appendChild(mk('span', 'tag', '나'));
+    const muted = o === me ? !!myRestr.muted : !!(own && admin && admin.mutes.some((x) => x.o === o));   // 제한 배지는 방장과 당사자에게만 보인다
+    const spec = o === me ? myRestr.spectator : !!(own && admin && admin.spectators.some((x) => x.o === o));
+    if (muted) li.appendChild(mk('span', 'tag warn', '채팅 금지'));
+    if (spec) li.appendChild(mk('span', 'tag warn', '관전'));
+    if (own && o !== me) {                                                                              // ⋯ 메뉴는 방장에게만 그린다
+      const b = mk('button', 'rowmenu'); b.type = 'button'; b.setAttribute('aria-label', nameOf(o) + ' 관리'); b.title = '관리';
+      b.appendChild(icon('i-dots')); b.onclick = () => openRowMenu(o, b); li.appendChild(b);
+    }
+    box.appendChild(li);
+  }
+}
+function openRowMenu(o, anchor) {
+  if (openPopId === 'popRow') closePop();
+  $('rowMenuTitle').textContent = nameOf(o);
+  const body = $('rowMenuBody'); body.textContent = '';
+  const muted = !!(admin && admin.mutes.some((x) => x.o === o)), spec = !!(admin && admin.spectators.some((x) => x.o === o));
+  const items = [
+    ['강퇴…', () => doKick(o), true], ['밴…', () => doBan(o), true],
+    [muted ? '채팅 금지 해제' : '채팅 금지…', () => (muted ? sendCmd({ cmd: 'unmute', target: o }) : doMute(o)), false],
+    [spec ? '관전 해제 (그리기 허용)' : '관전으로 전환 (보기만 가능)', () => sendCmd({ cmd: 'spectate', target: o, on: !spec }), false],
+    ['방장 위임…', () => doTransfer(o), false], ['이 사람의 그림 모두 지우기…', () => doClearUser(o), true],
+  ];
+  for (const [label, fn, danger] of items) {
+    const b = mk('button', danger ? 'danger' : '', label); b.type = 'button';
+    b.onclick = () => { closePop(); fn(); }; body.appendChild(b);
+  }
+  openPop('popRow', anchor, true);
+}
+function durFields(zeroLabel) {
+  return [
+    { key: 'dur', type: 'select', label: '기간', options: [['10', '10분'], ['30', '30분'], ['60', '1시간'], ['1440', '24시간'], ['custom', '직접 입력 (분)'], ['0', zeroLabel]], value: '30' },
+    { key: 'custom', type: 'text', label: '분 (1~43200)', placeholder: '예: 90', showIf: (v) => v.dur === 'custom' },
+  ];
+}
+const minutesOf = (v) => (v.dur === 'custom' ? (/^\d+$/.test(v.custom.trim()) ? parseInt(v.custom, 10) : NaN) : Number(v.dur));
+const durCheck = (v) => { const m = minutesOf(v); return Number.isInteger(m) && (m === 0 || (m >= 1 && m <= 43200)) ? '' : '분은 1~43200 사이의 정수로 입력해 주세요'; };
+async function doKick(o) {
+  const v = await formModal({ title: `${nameOf(o)}님을 강퇴할까요?`, body: '강퇴되어도 바로 다시 들어올 수 있어요.', ok: '강퇴', danger: true, fields: [{ key: 'reason', type: 'text', label: '사유 (선택, 최대 50자)', maxChars: 50 }] });
+  if (v) sendCmd({ cmd: 'kick', target: o, reason: v.reason.trim() });
+}
+async function doBan(o) {
+  const v = await formModal({ title: `${nameOf(o)}님을 밴할까요?`, body: '밴되면 이 방에 들어올 수 없어요. (브라우저 데이터를 지우면 우회될 수 있어요)', ok: '밴', danger: true,
+    fields: [...durFields('영구'), { key: 'reason', type: 'text', label: '사유 (선택, 최대 50자)', maxChars: 50 }], validate: durCheck });
+  if (v) sendCmd({ cmd: 'ban', target: o, minutes: minutesOf(v), reason: v.reason.trim() });
+}
+async function doMute(o) {
+  const v = await formModal({ title: `${nameOf(o)}님의 채팅을 금지할까요?`, body: '그림은 계속 그릴 수 있어요.', ok: '채팅 금지', fields: durFields('해제할 때까지'), validate: durCheck });
+  if (v) sendCmd({ cmd: 'mute', target: o, minutes: minutesOf(v) });
+}
+async function doTransfer(o) {
+  if (await confirmModal({ title: `${nameOf(o)}님에게 방장을 넘길까요?`, body: '넘기면 나는 일반 사용자가 돼요.', ok: '방장 위임', danger: true })) sendCmd({ cmd: 'transfer', target: o });
+}
+async function doClearUser(o) {
+  if (await confirmModal({ title: `${nameOf(o)}님의 그림을 모두 지울까요?`, body: '되돌릴 수 없어요.', ok: '지우기', danger: true })) sendCmd({ cmd: 'clearuser', target: o });
+}
+
+/* --- 방 관리 패널 (방장 전용) --- */
+function renderAdmin() {
+  const pane = $('paneA'); if (!pane) return;
+  pane.textContent = '';
+  const a = admin || { locked, bans: [], mutes: [], spectators: [] };
+  const sec = (title) => { const s = mk('div', 'asec'); s.appendChild(mk('h4', '', title)); pane.appendChild(s); return s; };
+  const s1 = sec('접속'), lab = mk('label', 'switch'), d = mk('div', '', '방 잠금'); d.appendChild(mk('small', '', '켜면 새 접속을 막아요 (이미 있는 사람과 방장은 그대로)'));
+  const cb = mk('input'); cb.type = 'checkbox'; cb.id = 'adminLock'; cb.checked = !!locked; cb.setAttribute('aria-label', '방 잠금');
+  cb.onchange = () => sendCmd({ cmd: 'lock', on: cb.checked });
+  lab.append(d, cb); s1.appendChild(lab);
+  const srvNow = a.now ? a.now + (now() - adminAt) : Date.now();
+  const list = (title, arr, kind) => {
+    const s = sec(title + ' (' + arr.length + ')');
+    if (!arr.length) { s.appendChild(mk('div', 'empty', '없어요')); return; }
+    for (const it of arr) {
+      const row = mk('div', 'arow'), nm = mk('div', 'nm', it.name);
+      nm.appendChild(mk('small', '', (kind === 'spec' ? '보기만 가능' : it.until === 0 ? (kind === 'ban' ? '영구' : '해제할 때까지') : '남은 시간 ' + fmtRemain(it.until - srvNow)) + (it.reason ? ' · ' + it.reason : '')));
+      const btn = mk('button', 'btn', '해제'); btn.type = 'button'; btn.setAttribute('aria-label', it.name + ' 해제');
+      btn.onclick = () => sendCmd(kind === 'ban' ? { cmd: 'unban', target: it.o } : kind === 'mute' ? { cmd: 'unmute', target: it.o } : { cmd: 'spectate', target: it.o, on: false });
+      row.append(nm, btn); s.appendChild(row);
+    }
+  };
+  list('밴 목록', a.bans, 'ban'); list('채팅 금지', a.mutes, 'mute'); list('관전 (보기만 가능)', a.spectators, 'spec');
+}
+setInterval(() => { if (sideOpen() && sideTab === 'admin') renderAdmin(); }, 15000);
+
+/* --- 채팅 --- */
+const chatList = $('chatList'), chatInput = $('chatInput');
+const atBottom = () => chatList.scrollTop + chatList.clientHeight >= chatList.scrollHeight - 24;
+function scrollChatBottom() { chatList.scrollTop = chatList.scrollHeight; $('chatNew').hidden = true; }
+function updateChatBadge() {
+  const t = unread > 99 ? '99+' : String(unread);
+  $('chatBadge').hidden = unread === 0; $('chatBadge').textContent = t;
+  $('chatTabBdg').textContent = unread ? t : '';
+}
+function chatEl(m) {                                              // 모든 글자는 textContent 로만 넣는다 (XSS 방지, 자동 링크 없음)
+  if (m.sys) return mk('div', 'cmsg sys', m.text);
+  const el = mk('div', 'cmsg' + (m.o === me ? ' mine' : '')), head = mk('div', 'chead'), dot = mk('span', 'cdot');
+  dot.style.background = colorOf(m.o);
+  head.append(dot, mk('b', '', m.name), mk('span', '', fmtTime(m.t)));
+  el.append(head, mk('div', 'ctext', m.text)); return el;
+}
+function renderChatAll() { chatList.textContent = ''; for (const m of chatMsgs) chatList.appendChild(chatEl(m)); scrollChatBottom(); }
+function addChat(m) {
+  chatMsgs.push(m); if (chatMsgs.length > 100) chatMsgs.shift();
+  const stick = atBottom();                                       // 위로 올려 읽는 중이면 강제로 내리지 않는다
+  chatList.appendChild(chatEl(m));
+  while (chatList.children.length > 100) chatList.firstChild.remove();
+  const visible = sideOpen() && sideTab === 'chat';
+  if (visible) { if (stick || m.o === me) scrollChatBottom(); else $('chatNew').hidden = false; }
+  else if (!m.sys && m.o !== me) { unread++; updateChatBadge(); }
+}
+chatList.addEventListener('scroll', () => { if (atBottom()) $('chatNew').hidden = true; });
+$('chatNew').onclick = scrollChatBottom;
+function sendChat() {
+  const text = Array.from(chatInput.value.trim()).slice(0, 200).join('');
+  if (!text) return;
+  if (myRestr.muted) { toast('채팅이 금지되었어요', 'warn'); return; }
+  if (!connected || !me) { toast('연결 중이에요', 'warn'); return; }
+  send({ type: 'chat', text }); chatInput.value = '';
+}
+chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); sendChat(); } });   // 한글 조합 중 Enter 는 전송하지 않는다
+$('chatSend').onclick = sendChat;
+
+/* --- 이전(실행 취소) / 되돌리기(다시 실행): 내가 그린 획과 내 지우개 동작 --- */
+const UNDO_MAX = 50;
+let undoSt = [], redoSt = [];
+const plain = (s) => ({ x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1, color: s.color, size: s.size, sid: s.sid });
+function syncUndoUi() {
+  $('tUndo').disabled = !undoSt.length || myRestr.spectator; $('tRedo').disabled = !redoSt.length || myRestr.spectator;
+}
+function resetUndo() { undoSt = []; redoSt = []; syncUndoUi(); }
+function pushAct(a) { undoSt.push(a); if (undoSt.length > UNDO_MAX) undoSt.shift(); redoSt = []; syncUndoUi(); }
+function sendSegs(type, list) { for (let i = 0; i < list.length; i += 100) send({ type, segs: list.slice(i, i + 100).map(plain) }); }
+const addLocal = (list) => { for (const s of list) segs.push({ ...s, o: me }); };      // 복사본을 맨 위에 다시 올린다
+function mergeDiff(act, diff) {                                                         // 지우개를 끄는 동안의 변화를 한 동작으로 모은다
+  for (const s of diff.removed) { const i = act.added.indexOf(s); if (i >= 0) act.added.splice(i, 1); else act.removed.push(s); }
+  for (const p of diff.added) act.added.push(p);
+}
+function commitAct(st) {
+  const a = st.act; if (!a || st.phase !== 'live') return;
+  if (a.t === 'draw' ? a.segs.length : (a.removed.length || a.added.length)) pushAct(a);
+}
+function doUndo() {
+  if (!me || strokeSt || myRestr.spectator) return;
+  const a = undoSt.pop(); if (!a) return;
+  if (a.t === 'draw') { segs = segs.filter((s) => !(s.o === me && s.sid === a.sid)); send({ type: 'cancelstroke', sid: a.sid }); }
+  else { const r = removeExactSegs(segs, a.added); if (r) segs = r; addLocal(a.removed); sendSegs('removesegs', a.added); sendSegs('addsegs', a.removed); }
+  redoSt.push(a); redrawInk(); syncUndoUi();
+}
+function doRedo() {
+  if (!me || strokeSt || myRestr.spectator) return;
+  const a = redoSt.pop(); if (!a) return;
+  if (a.t === 'draw') { addLocal(a.segs); sendSegs('addsegs', a.segs); }
+  else { const r = removeExactSegs(segs, a.removed); if (r) segs = r; addLocal(a.added); sendSegs('removesegs', a.removed); sendSegs('addsegs', a.added); }
+  undoSt.push(a); redrawInk(); syncUndoUi();
+}
+$('tUndo').onclick = doUndo; $('tRedo').onclick = doRedo;
+
+/* --- 서버가 의도적으로 끊었을 때의 안내 화면 --- */
+let endTimer = 0;
+function showEnd(code) {
+  const b = byeInfo, titles = { kicked: '강퇴되었어요', banned: '이 방에서 밴되었어요', locked: '방이 잠겨 있어요' };
+  $('endTitle').textContent = (b && titles[b.code]) || '연결이 종료되었어요';
+  const base = b ? b.text : '서버가 연결을 종료했어요. (코드 ' + code + ')';
+  $('endText').textContent = base; $('endScreen').hidden = false; $('banner').hidden = true;
+  clearInterval(endTimer);
+  if (b && b.code === 'banned') {
+    const rem0 = b.until === 0 ? Infinity : b.until - b.now, t0 = now();      // 서버가 준 만료 시각 - 서버 시각 (기기 시계와 무관)
+    const upd = () => {
+      if (rem0 === Infinity) { $('endText').textContent = base + '\n영구 밴이에요.'; return; }
+      const rem = rem0 - (now() - t0);
+      $('endText').textContent = base + '\n' + (rem > 0 ? '남은 시간: ' + fmtRemain(rem) : '밴이 끝났어요. 다시 입장해 보세요.');
+    };
+    upd(); endTimer = setInterval(upd, 1000);
+  }
+}
+
 /* ===== 서버 연결: 지수 백오프 재접속, 앱이 다시 보이거나 네트워크가 돌아오면 즉시 ===== */
 let ended = false, retry = 0, retryT = 0, lastMsgAt = 0;
 const updateBanner = () => { $('banner').hidden = connected || ended; };
-function showEnd(code) {
-  $('endTitle').textContent = '연결이 종료되었어요';
-  $('endText').textContent = '서버가 연결을 종료했어요. (코드 ' + code + ')';
-  $('endScreen').hidden = false; $('banner').hidden = true;
-}
 $('endBtn').onclick = () => location.reload();
 function scheduleReconnect(immediate) {
   if (ended) return;
@@ -1185,8 +1516,9 @@ function connect() {
 }
 function onDisconnected(code) {
   connected = false; me = null; count = 0; online = new Set();
+  ownerId = null; admin = null; myRestr = { muted: null, spectator: false };
   for (const o of [...cursors.keys()]) hideCursor(o);
-  abortStroke(); hudSoon();
+  abortStroke(); resetUndo(); syncOwnerUI(); hudSoon();
   if (code >= 4000 && code < 5000) { ended = true; showEnd(code); return; }       // 서버가 의도적으로 끊음: 자동 재접속 안 함
   updateBanner(); scheduleReconnect(false);
 }
@@ -1207,13 +1539,13 @@ function onMessage(data) {
   try { m = JSON.parse(data); } catch { return; }
   switch (m.type) {
     case 'hello': me = m.me; break;
-    case 'history': segs = Array.isArray(m.data) ? m.data : []; redrawInk(); break;
-    case 'names': names = m.names || {}; refreshLabels(); if (me && names[me]) nickEl.value = names[me]; break;
-    case 'name': names[m.o] = m.name; refreshLabels(); if (m.o === me) nickEl.value = m.name; break;
-    case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); break;
+    case 'history': segs = Array.isArray(m.data) ? m.data : []; resetUndo(); redrawInk(); break;
+    case 'names': names = m.names || {}; refreshLabels(); renderPeople(); if (me && names[me]) nickEl.value = names[me]; break;
+    case 'name': names[m.o] = m.name; refreshLabels(); renderPeople(); if (m.o === me) nickEl.value = m.name; break;
+    case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); renderPeople(); break;
     case 'count': if (!online.size) { count = m.n; hudSoon(); } break;
     case 'seg': segs.push(m); if (aligned() && !exactT) incSeg(m); else redrawInk(); break;
-    case 'clear': segs = segs.filter((s) => s.o !== m.o); redrawInk(); break;
+    case 'clear': segs = segs.filter((s) => s.o !== m.o); if (m.o === me) resetUndo(); redrawInk(); break;
     case 'erase': { const res = eraseCapsule(segs, m.o, m.x0, m.y0, m.x1, m.y1, m.r); if (res) { segs = res; redrawInk(); } break; }
     case 'strokesgone': {
       const keys = Array.isArray(m.keys) ? m.keys : [];
@@ -1229,6 +1561,24 @@ function onMessage(data) {
     case 'cur': showCursor(m.o, m.x, m.y); break;
     case 'curhide': hideCursor(m.o); break;
     case 'notice': toast(m.text || '알림', 'warn'); break;
+    case 'roomstate': ownerId = m.owner || null; locked = !!m.locked; syncOwnerUI(); break;
+    case 'me': {
+      const was = myRestr;
+      myRestr = { muted: m.muted ? { ...m.muted } : null, spectator: !!m.spectator };
+      if (!was.spectator && myRestr.spectator) toast('방장이 그리기를 제한했어요 (보기만 가능)', 'warn');
+      if (was.spectator && !myRestr.spectator) toast('그리기 제한이 풀렸어요', 'ok');
+      if (!was.muted && myRestr.muted) toast('채팅이 금지되었어요', 'warn');
+      if (was.muted && !myRestr.muted) toast('채팅 금지가 풀렸어요', 'ok');
+      renderPeople(); updateRestrUi(); break;
+    }
+    case 'admin': admin = m; adminAt = now(); renderAdmin(); renderPeople(); break;
+    case 'chats': chatMsgs = Array.isArray(m.list) ? m.list : []; renderChatAll(); break;
+    case 'chat': if (m.m) addChat(m.m); break;
+    case 'bye': byeInfo = m; break;
+    case 'cmderr': toast(m.text || '명령을 실행하지 못했어요', 'err'); break;
+    case 'clearall': segs = []; resetUndo(); redrawInk(); break;
+    case 'segs': for (const s of (Array.isArray(m.list) ? m.list : [])) segs.push(s); redrawInk(); break;
+    case 'unsegs': { const res = removeExactSegs(segs, Array.isArray(m.list) ? m.list : []); if (res) { segs = res; redrawInk(); } break; }
   }
 }
 
@@ -1238,9 +1588,10 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
+if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: 2단계 (2026-10-03) · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전'); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
-setColor(S.color); syncEraserUI(); setTool('pen');
+setColor(S.color); syncEraserUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
