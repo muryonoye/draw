@@ -14,7 +14,7 @@ const wss = new WebSocketServer({ server, maxPayload: MAX_FILL_BYTES });
 // ---- 한도 (public/index.html 의 같은 이름 상수와 값이 같아야 한다) ----
 const PEN_MAX = 2000;         // 펜 굵기 (멀리 축소해서도 굵게 그릴 수 있게)
 const ERASER_R_MAX = 5000;    // 지우개 반지름
-const FILL_CELL_MAX = 1000;   // 칠하기 칸 크기 상한 = 화면 1px 의 월드 크기 (가장 멀리 축소 0.1% 일 때 1000). 칠하기 줄 굵기(칸 x 2)는 PEN_MAX 이하여야 한다
+const FILL_CELL_MAX = 1000;   // 칠하기 칸 크기 상한 = 화면 1px 의 월드 크기 (0.1% 배율일 때 1000, 더 멀리 축소하면 화면이 채우기를 막는다). 칠하기 줄 굵기(칸 x 2)는 PEN_MAX 이하여야 한다
 const MAX_STROKES_PER_ERASE = 300; // 획 지우개 한 번에 지울 수 있는 획 수
 const FILL_THICK = 2;         // 칠하기 줄 두께 = 칸 크기 x 이 값 (줄끼리 겹쳐서 이음새가 안 보이게)
 const MAX_FILL_SPANS = 3000;  // 한 번 칠하기에 들어갈 수 있는 가로줄 수

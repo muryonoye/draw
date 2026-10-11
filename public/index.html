@@ -283,7 +283,7 @@
   <div id="dropPrev" hidden aria-hidden="true"><i></i><b></b></div>
   <div id="hud" role="status">
     <span id="hudDot" class="dot"></span><span id="hudCount">연결 중…</span>
-    <span class="sepv"></span><span id="hudZoom">100%</span>
+    <span class="sepv"></span><button id="hudZoom" class="linkbtn" title="배율 (누르면 전체 그림 한눈에 보기)" aria-label="배율, 누르면 전체 그림 보기">100%</button>
     <span class="sepv"></span><button id="hudCenter" class="linkbtn" title="중앙 좌표 (누르면 복사)" aria-label="중앙 좌표">(0, 0)</button>
     <span id="hudPersistSep" class="sepv" hidden></span><button id="hudPersist" class="linkbtn warnbtn" hidden title="그림이 저장되지 않고 있어요 (눌러서 자세히)" aria-label="저장 꺼짐">⚠ 저장 꺼짐</button>
   </div>
@@ -339,6 +339,7 @@
 
 <section id="popView" class="pop" hidden aria-label="보기">
   <div class="sheetgrab"></div><h3>보기</h3>
+  <button id="fitAll" class="btn primary block" style="margin-bottom:10px"><svg class="ic"><use href="#i-view"/></svg>전체 그림 한눈에 보기</button>
   <div class="row">
     <button id="zOut" class="btn" aria-label="축소" title="축소"><svg class="ic"><use href="#i-minus"/></svg></button>
     <button id="z100" class="btn" style="flex:1" aria-label="배율 100%">100%</button>
@@ -378,7 +379,7 @@
   <div class="switch"><div>손가락 탭으로 이전·되돌리기<small>두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기</small></div><input type="checkbox" id="setTapUndo" aria-label="손가락 탭으로 이전 되돌리기"></div>
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P</b><span>펜</span><b>E</b><span>지우개</span><b>H</b><span>화면 이동</span><b>F</b><span>채우기</span><b>I</b><span>스포이드</span><b>Space</b><span>누르고 드래그하면 이동</span></div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 2차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 3차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -417,7 +418,8 @@ const MAX_FILL_SPANS = 3000;         // 한 번 칠하기에 들어갈 수 있�
 const FILL_MIN_PX = 1.5;             // 멀리 축소해서 칠하기 줄이 화면에서 1.5px 보다 가늘어지면, 이 두께로 그려서 색이 흐려지지 않게 한다
 const MAX_COORD = 1e7;
 // 줌
-const MIN_S = 0.001, MAX_S = 20;     // 0.1% ~ 2000%. 가장 멀리 축소했을 때 화면 1px = 월드 1000 (서버 FILL_CELL_MAX 와 맞춤)
+const MIN_S = 0.0001, MAX_S = 20;    // 0.01% ~ 2000%
+const FILL_CELL_MAX = 1000;          // 서버와 같은 값: 칠하기 칸 상한 (화면 1px = 월드 1000, 즉 0.1% 보다 멀리 축소하면 채우기는 안 된다)
 const PINCH_MIN_D = 24;              // 두 손가락 사이가 이보다 가까우면 이 거리로 계산 (가까울 때 배율이 튀지 않게)
 const PINCH_MAX_STEP = 1.6;          // 손가락 움직임 한 번에 배율이 바뀌는 최대 비율 (튀는 터치 값 하나로 끝까지 확대되지 않게)
 // 터치 입력은 '확정 후 전송': 그동안은 내 화면에만 보인다
@@ -797,6 +799,36 @@ function flyTo(wx, wy) {                                    // 그 월드 좌표
   animId = requestAnimationFrame(step);
 }
 function resetView() { cancelAnimationFrame(animId); scale = 1; cam.x = -cssW / 2; cam.y = -cssH / 2; viewChanged(true); }
+function flyView(ts, wx, wy) {                              // 배율 ts 로 바꾸면서 월드 (wx, wy) 가 화면 가운데 오도록 부드럽게
+  cancelAnimationFrame(animId);
+  const set = (s, x, y) => { scale = s; cam.x = x - cssW / 2 / s; cam.y = y - cssH / 2 / s; };
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { set(ts, wx, wy); viewChanged(true); return; }
+  const s0 = scale, c0 = centerWorld(), t0 = now(), D = 450;
+  const step = () => {
+    const k = Math.min(1, (now() - t0) / D), e = 1 - Math.pow(1 - k, 3);
+    set(s0 * Math.pow(ts / s0, e), c0.x + (wx - c0.x) * e, c0.y + (wy - c0.y) * e);   // 배율은 곱셈으로 바뀌어야 자연스럽다
+    viewChanged(k >= 1);
+    if (k < 1) animId = requestAnimationFrame(step);
+  };
+  animId = requestAnimationFrame(step);
+}
+// 전체 그림 한눈에 보기: 모든 선이 도구 모음·상태 알약에 가리지 않고 화면에 들어오게 축소 (작은 그림은 100% 까지만)
+function fitAll() {
+  if (!segs.length) { resetView(); toast('아직 그림이 없어요'); return; }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of segs) {
+    const h = s.size / 2;
+    x0 = Math.min(x0, s.x0 - h, s.x1 - h); x1 = Math.max(x1, s.x0 + h, s.x1 + h);
+    y0 = Math.min(y0, s.y0 - h, s.y1 - h); y1 = Math.max(y1, s.y0 + h, s.y1 + h);
+  }
+  const st = stage.getBoundingClientRect(), tr = $('tools').getBoundingClientRect(), hr = $('hud').getBoundingClientRect();
+  let padL = 16, padR = 16, padB = 16;
+  const padT = hr.bottom - st.top + 10;
+  if (tr.width < tr.height) padL = tr.right - st.left + 12; else padB = st.bottom - tr.top + 12;   // 도구 모음이 왼쪽 세로(데스크톱) / 아래 가로(폰)
+  const aw = Math.max(40, cssW - padL - padR), ah = Math.max(40, cssH - padT - padB);
+  const ts = clamp(Math.min(aw / Math.max(x1 - x0, 1e-6), ah / Math.max(y1 - y0, 1e-6)), MIN_S, 1);
+  flyView(ts, (x0 + x1) / 2 - (padL - padR) / 2 / ts, (y0 + y1) / 2 - (padT - padB) / 2 / ts);   // 여백을 뺀 영역의 가운데에 그림 가운데가 오게
+}
 board.addEventListener('wheel', (e) => {
   e.preventDefault();
   const r = stage.getBoundingClientRect();
@@ -1094,6 +1126,8 @@ $('zIn').onclick = () => zoomCenter(1.25);
 $('zOut').onclick = () => zoomCenter(0.8);
 $('z100').onclick = () => { const c = centerWorld(); scale = 1; cam.x = c.x - cssW / 2; cam.y = c.y - cssH / 2; viewChanged(true); };
 $('viewReset').onclick = resetView;
+$('fitAll').onclick = () => { closePop(); fitAll(); };
+$('hudZoom').onclick = fitAll;
 $('goOrigin').onclick = () => { $('goErr').textContent = ''; flyTo(0, 0); };
 function checkCoord(raw) {
   const s = String(raw).trim();
@@ -1163,6 +1197,7 @@ const FILL_ERR = {
   same: '이미 같은 색이에요',
   out: '화면 밖이에요',
   big: '화면이 너무 커서 채울 수 없어요. 조금 줄여 주세요',
+  far: '너무 멀리 축소했어요. 조금 확대해서 (0.1% 이상) 채워 주세요',
 };
 // 그 자리에 지금 보이는 '칠하기' 색 (없으면 하얀 바탕)
 function fillColorAt(wx, wy) {
@@ -1180,6 +1215,7 @@ function fillColorAt(wx, wy) {
 // 칠하기는 선 아래에 깔리므로(그리고 줄이 칸보다 조금 굵으므로) 가장자리가 선 밑으로 살짝 들어가 틈이 보이지 않는다.
 function computeFill(wx, wy) {
   const k = Math.max(1, Math.ceil(FILL_CELL_PX / scale / 0.2 - 1e-9)), cell = k / 5;   // 칸 크기: 화면 1픽셀 이상, 0.2 의 배수
+  if (cell > FILL_CELL_MAX) return { err: 'far' };
   const gx0 = Math.floor(cam.x / cell), gy0 = Math.floor(cam.y / cell);
   const gw = Math.ceil((cam.x + cssW / scale) / cell) - gx0 + 1, gh = Math.ceil((cam.y + cssH / scale) / cell) - gy0 + 1;
   if (gw * gh > MAX_FILL_CELLS) return { err: 'big' };
@@ -1928,7 +1964,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 2차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 3차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
