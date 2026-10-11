@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
+const { promisify } = require('util');
 const { WebSocketServer } = require('ws');
 const { Pool } = require('pg');
 
@@ -18,7 +20,7 @@ const FILL_CELL_MAX = 1000;   // 칠하기 칸 크기 상한 = 화면 1px 의 �
 const MAX_STROKES_PER_ERASE = 300; // 획 지우개 한 번에 지울 수 있는 획 수
 const FILL_THICK = 2;         // 칠하기 줄 두께 = 칸 크기 x 이 값 (줄끼리 겹쳐서 이음새가 안 보이게)
 const MAX_FILL_SPANS = 3000;  // 한 번 칠하기에 들어갈 수 있는 가로줄 수
-const MAX_HISTORY = +process.env.MAX_HISTORY || 100000;   // 방 하나에 둘 수 있는 선분 수 (테스트에서만 줄인다)
+const MAX_HISTORY = +process.env.MAX_HISTORY || 200000;   // 방 하나에 둘 수 있는 선분 수 (테스트에서만 줄인다). 메모리 약 100MB·압축 사본 약 3MB 까지
 const PING_MS = +process.env.PING_MS || 30000;
 const SID_RE = /^[0-9a-z]{1,12}$/;
 const SID_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
@@ -128,11 +130,11 @@ function hitStrokes(list, owner, x0, y0, x1, y1, r, max) {
     const s = list[i];
     if (!s.sid || !s.o) continue;
     if (owner !== null && s.o !== owner) continue;
-    const k = s.o + '|' + s.sid;
-    if (keys.has(k)) continue;
-    const m = s.size / 2;
+    const m = s.size / 2;                                 // 범위 밖은 먼저 거른다 (획 이름을 만드는 것보다 훨씬 싸다)
     if (Math.max(s.x0, s.x1) + m < minX || Math.min(s.x0, s.x1) - m > maxX ||
         Math.max(s.y0, s.y1) + m < minY || Math.min(s.y0, s.y1) - m > maxY) continue;
+    const k = s.o + '|' + s.sid;
+    if (keys.has(k)) continue;
     if (!erInterval(s, x0, y0, edx, edy, eL, r + m)) continue;
     if (keys.size >= max) break;
     keys.set(k, [s.o, s.sid]);
@@ -175,6 +177,179 @@ function fillSegs(o, sid, color, cell, rows) {
   return out;
 }
 // @@SHARED_END
+
+// ---- 방 그림 보관: 선분을 덩어리(BLOCK 개 안팎)로 나눠 두고, 덩어리마다 범위(선 굵기 포함)를 기억한다 ----
+// 지우개는 지우개 범위와 겹치는 덩어리만 계산한다 (그림이 많은 방에서 지우개를 움직일 때마다 전체를 훑으면 무료 서버(CPU 0.1개)가 버티지 못한다).
+// 순서는 '덩어리 순서 + 덩어리 안 순서' = 원래 목록 순서. 계산은 위 공용 함수를 덩어리 배열에 그대로 쓴다 (선분마다 따로 계산되므로 결과가 같다).
+// 그림을 바꾸는 곳은 모두 hist* 함수를 거친다: 바뀔 때마다 room.ver 가 올라 압축 사본(room.zc)이 낡은 것으로 처리된다.
+const BLOCK = 512;
+function growBlock(b, s) {
+  const m = s.size / 2;
+  const xa = Math.min(s.x0, s.x1) - m, xb = Math.max(s.x0, s.x1) + m, ya = Math.min(s.y0, s.y1) - m, yb = Math.max(s.y0, s.y1) + m;
+  if (xa < b.x0) b.x0 = xa;
+  if (xb > b.x1) b.x1 = xb;
+  if (ya < b.y0) b.y0 = ya;
+  if (yb > b.y1) b.y1 = yb;
+}
+function blockOf(a) { const b = { a, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; for (const s of a) growBlock(b, s); return b; }
+function histBump(room) { room.ver++; room.flat = null; }
+function histChanged(room) { histBump(room); room.dirty = true; }
+function histSet(room, arr) {                           // 목록 통째로 바꾸기 (불러오기·전체 지우기 등). 저장 표시는 부르는 쪽에서
+  room.hb = [];
+  for (let i = 0; i < arr.length; i += BLOCK) room.hb.push(blockOf(arr.slice(i, i + BLOCK)));
+  room.hn = arr.length;
+  histBump(room);
+}
+function histArr(room) {                                // 한 줄로 이은 목록 (바뀌기 전까지 다시 만들지 않는다)
+  if (!room.flat) {
+    const out = new Array(room.hn);
+    let i = 0;
+    for (const b of room.hb) for (const s of b.a) out[i++] = s;
+    room.flat = out;
+  }
+  return room.flat;
+}
+function splitBlock(room, i) {                          // 너무 커진 덩어리는 나눈다
+  const a = room.hb[i].a;
+  if (a.length <= BLOCK * 2) return;
+  const parts = [];
+  for (let k = 0; k < a.length; k += BLOCK) parts.push(blockOf(a.slice(k, k + BLOCK)));
+  room.hb.splice(i, 1, ...parts);
+}
+function appendSegs(room, list) {                       // 맨 끝에 붙이기
+  for (const s of list) {
+    let b = room.hb[room.hb.length - 1];
+    if (!b || b.a.length >= BLOCK) { b = blockOf([]); room.hb.push(b); }
+    b.a.push(s); growBlock(b, s);
+  }
+  room.hn += list.length;
+}
+function histPush(room, s) { appendSegs(room, [s]); histChanged(room); }
+// 공용 insertSegs 와 같은 자리에 넣는다: 칠하기 조각(f)은 목록에서 처음 나오는 일반 선 바로 앞(= 앞쪽 칠하기들 뒤), 일반 선은 맨 끝
+function histInsert(room, items) {
+  const fs = [], ls = [];
+  for (const s of items) (s.f ? fs : ls).push(s);
+  if (fs.length) {
+    let bi = -1, at = -1;
+    for (let i = 0; i < room.hb.length && bi < 0; i++) { const k = room.hb[i].a.findIndex((s) => !s.f); if (k >= 0) { bi = i; at = k; } }
+    if (bi < 0) appendSegs(room, fs);
+    else {
+      const b = room.hb[bi];
+      b.a.splice(at, 0, ...fs);
+      for (const s of fs) growBlock(b, s);
+      room.hn += fs.length;
+      splitBlock(room, bi);
+    }
+  }
+  if (ls.length) appendSegs(room, ls);
+  histChanged(room);
+}
+const capsuleBox = (x0, y0, x1, y1, r) => { const rr = Math.min(Math.max(r, 1), ERASER_R_MAX); return { xa: Math.min(x0, x1) - rr, xb: Math.max(x0, x1) + rr, ya: Math.min(y0, y1) - rr, yb: Math.max(y0, y1) + rr }; };
+const blockOut = (b, c) => b.x1 < c.xa || b.x0 > c.xb || b.y1 < c.ya || b.y0 > c.yb;   // 덩어리 안 모든 선이 지우개 범위 밖 (공용 함수의 선분별 검사와 같은 기준)
+// 부분 지우개: 바뀌었으면 true. 결과가 너무 커지면(잘게 잘려서) 하지 않는다.
+function histErase(room, owner, x0, y0, x1, y1, r) {
+  const c = capsuleBox(x0, y0, x1, y1, r), ch = [];
+  let n = room.hn;
+  for (let i = 0; i < room.hb.length; i++) {
+    const b = room.hb[i];
+    if (blockOut(b, c)) continue;
+    const res = eraseCapsule(b.a, owner, x0, y0, x1, y1, r);
+    if (res) { ch.push([i, res]); n += res.length - b.a.length; }
+  }
+  if (!ch.length || n > MAX_HISTORY * 1.5) return false;
+  for (let k = ch.length - 1; k >= 0; k--) {           // 뒤에서부터 바꿔야 앞의 번호가 그대로다
+    const [i, res] = ch[k];
+    if (res.length) { room.hb[i] = blockOf(res); splitBlock(room, i); } else room.hb.splice(i, 1);
+  }
+  room.hn = n;
+  histChanged(room);
+  return true;
+}
+// 획 지우개: 지우개에 닿은 획 [주인, sid] 목록 (목록 순서대로 최대 max 개)
+function histHit(room, owner, x0, y0, x1, y1, r, max) {
+  const c = capsuleBox(x0, y0, x1, y1, r), keys = new Map();
+  for (const b of room.hb) {
+    if (blockOut(b, c)) continue;
+    for (const k of hitStrokes(b.a, owner, x0, y0, x1, y1, r, max)) {
+      const key = k[0] + '|' + k[1];
+      if (keys.has(key)) continue;
+      if (keys.size >= max) return [...keys.values()];
+      keys.set(key, k);
+    }
+  }
+  return [...keys.values()];
+}
+// 획 통째로 빼기 (공용 removeStrokes 와 같은 기준). 바뀌었으면 true.
+function histRemoveStrokes(room, keys) {
+  const set = new Set(keys.map((k) => k[0] + '|' + k[1])), owners = new Set(keys.map((k) => k[0]));
+  let changed = false;
+  for (let i = room.hb.length - 1; i >= 0; i--) {
+    const b = room.hb[i];
+    if (!b.a.some((s) => s.sid && owners.has(s.o) && set.has(s.o + '|' + s.sid))) continue;
+    const a = b.a.filter((s) => !(s.sid && owners.has(s.o) && set.has(s.o + '|' + s.sid)));
+    room.hn -= b.a.length - a.length; changed = true;
+    if (a.length) room.hb[i] = blockOf(a); else room.hb.splice(i, 1);
+  }
+  if (changed) histChanged(room);
+  return changed;
+}
+// 같은 값(주인·sid·좌표)의 선분을 하나씩 빼기 (공용 removeExactSegs 와 같은 기준: 목록에서 먼저 나오는 것부터). 바뀌었으면 true.
+function histRemoveExact(room, items) {
+  const key = (s) => s.o + '|' + s.sid + '|' + s.x0 + '|' + s.y0 + '|' + s.x1 + '|' + s.y1;
+  const need = new Map(), owners = new Set();
+  for (const s of items) { need.set(key(s), (need.get(key(s)) || 0) + 1); owners.add(s.o); }
+  const ch = [];
+  for (let i = 0; i < room.hb.length; i++) {
+    const a = room.hb[i].a;
+    let out = null;
+    for (let k = 0; k < a.length; k++) {
+      const s = a[k];
+      if (owners.has(s.o)) {                            // (다른 사람 선분은 키가 같을 수 없다)
+        const kk = key(s), c = need.get(kk);
+        if (c) { need.set(kk, c - 1); if (!out) out = a.slice(0, k); continue; }
+      }
+      if (out) out.push(s);
+    }
+    if (out) ch.push([i, out]);
+  }
+  if (!ch.length) return false;
+  for (let k = ch.length - 1; k >= 0; k--) {
+    const [i, a] = ch[k];
+    room.hn -= room.hb[i].a.length - a.length;
+    if (a.length) room.hb[i] = blockOf(a); else room.hb.splice(i, 1);
+  }
+  histChanged(room);
+  return true;
+}
+function histReplace(room, arr) { histSet(room, arr); room.dirty = true; }   // 드문 작업(사람별 지우기·이전의 정확한 빼기)은 한 줄 목록으로 계산해서 통째로 바꾼다
+
+// ---- 방 그림 압축 사본 (zlib): DB 저장과 새로 들어온 사람에게 보내기에 같이 쓴다. 그림이 바뀌지 않았으면 다시 만들지 않는다 ----
+// 그림 10만 조각이면 JSON 이 약 11MB 인데 압축하면 약 1.5MB. (무료 서버는 한 달 전송량이 5GB 라 들어올 때마다 11MB 를 보내면 금방 바닥난다)
+// JSON 은 덩어리별로 만들면서 중간중간 쉬어서(setImmediate) 큰 방에서도 서버가 한 번에 오래 멈추지 않는다.
+const deflateP = promisify(zlib.deflate), inflateP = promisify(zlib.inflate);
+function makeSnap(room) {
+  if (room.zc && room.zc.ver === room.ver) return Promise.resolve(room.zc);
+  if (room.zp && room.zp.ver === room.ver) return room.zp.p;
+  const ver = room.ver, parts = room.hb.map((b) => b.a.slice());   // 지금 모습을 붙잡아 둔다 (선분 객체 자체는 바뀌지 않는다)
+  const p = (async () => {
+    const strs = [];
+    let cpu = 0, mark = Date.now();
+    for (const a of parts) {
+      if (a.length) strs.push(JSON.stringify(a).slice(1, -1));
+      if (Date.now() - mark >= 8) { cpu += Date.now() - mark; await new Promise((r) => setImmediate(r)); mark = Date.now(); }
+    }
+    const json = '[' + strs.join(',') + ']';
+    cpu += Date.now() - mark;
+    room.snapMs = cpu;
+    const z = { ver, buf: await deflateP(json, { level: 1 }) };
+    if (room.ver === ver) room.zc = z;
+    return z;
+  })();
+  room.zp = { ver, p };
+  p.then(() => { if (room.zp && room.zp.p === p) room.zp = null; }, () => { if (room.zp && room.zp.p === p) room.zp = null; });
+  return p;
+}
+const saveGap = (room) => Math.max(SAVE_MS, (room.snapMs || 0) * 20);   // 큰 방은 만드는 데 걸린 시간의 20배마다만 저장 (서버 시간의 5% 이하)
 
 function newRoomId() {
   let s = '';
@@ -259,7 +434,13 @@ async function loadRoom(id, attempts = 3) {
   if (!ok) { setDbState('error'); return { ...empty, failed: true }; }
   if (!row) return empty;
   try {
-    return { history: JSON.parse(row.history), names: JSON.parse(row.names || '{}'), meta: JSON.parse(row.meta || '{}') };
+    // 그림은 'z1:' + base64(zlib 압축 JSON) 으로 저장한다 (예전 방은 JSON 그대로 — 둘 다 읽는다)
+    let history, zbuf = null;
+    if (typeof row.history === 'string' && row.history.startsWith('z1:')) {
+      zbuf = Buffer.from(row.history.slice(3), 'base64');
+      history = JSON.parse((await inflateP(zbuf)).toString('utf8'));
+    } else history = JSON.parse(row.history);
+    return { history, names: JSON.parse(row.names || '{}'), meta: JSON.parse(row.meta || '{}'), zbuf };
   } catch (e) {
     console.error('저장된 데이터를 읽을 수 없어요 (이 방은 저장하지 않아요):', e.message);
     return { ...empty, failed: true, corrupt: true };
@@ -268,15 +449,18 @@ async function loadRoom(id, attempts = 3) {
 
 // 같은 방의 저장은 순서대로 한다 (먼저 시작한 오래된 내용이 나중의 새 내용을 덮어쓰지 않게)
 function enqueue(room, fn) { room.q = (room.q || Promise.resolve()).then(fn, fn); return room.q; }
-function saveRoom(id, room) {
+// force: 바로 저장 (마지막 사람이 나갈 때·종료 신호·전체 지우기 등). 아니면 큰 방은 saveGap 간격으로만.
+function saveRoom(id, room, force) {
   if (!pool || !room.dirty || room.noSave) return Promise.resolve();
+  if (!force && Date.now() - (room.lastSave || 0) < saveGap(room)) return Promise.resolve();
   return enqueue(room, async () => {
     if (!room.dirty || room.noSave) return;           // 앞선 저장이 이미 최신 내용을 저장했을 수 있다
-    room.dirty = false;
+    room.dirty = false; room.lastSave = Date.now();
     try {
+      const z = await makeSnap(room);                 // (이 시점의 그림. 그사이 바뀐 건 dirty 가 다시 켜져 다음에 저장된다)
       await pool.query(
         'INSERT INTO rooms (id, history, names, updated_at) VALUES ($1, $2, $3, now()) ON CONFLICT (id) DO UPDATE SET history = $2, names = $3, updated_at = now()',
-        [id, JSON.stringify(room.history), JSON.stringify(room.names)]
+        [id, 'z1:' + z.buf.toString('base64'), JSON.stringify(room.names)]
       );
       setDbState('ok');
     } catch (e) {
@@ -322,7 +506,7 @@ function setName(room, owner, want) {
 // 접속 중이 아니고 그림도 없는 사람의 이름은 정리한다
 function pruneNames(room) {
   const alive = new Set();
-  for (const s of room.history) alive.add(s.o);
+  for (const b of room.hb) for (const s of b.a) alive.add(s.o);
   for (const c of room.clients) alive.add(c.owner);
   for (const o of Object.keys(room.names)) {
     if (!alive.has(o)) { delete room.names[o]; room.dirty = true; }
@@ -336,15 +520,15 @@ async function recoverRoom(id, room) {
   try {
     const d = await loadRoom(id, 1);
     if (d.failed) { if (d.corrupt) room.corrupt = true; return; }
-    const mem = room.history;
-    room.history = cleanHistory(d.history);
-    assignLegacySids(room.history);
-    insertSegs(room.history, mem);
+    const mem = histArr(room), h = cleanHistory(d.history);
+    assignLegacySids(h);
+    insertSegs(h, mem);
+    histReplace(room, h);
     room.names = { ...(isPlainObj(d.names) ? d.names : {}), ...room.names };
     room.meta = normalizeMeta(d.meta);
     room.noSave = false; room.loadFailed = false; room.dirty = true;
     console.log(`방 ${id}: 저장돼 있던 그림을 다시 불러와 합쳤어요`);
-    broadcastAll(room, { type: 'history', data: room.history });
+    for (const c of room.clients) sendHistory(c, room);
     broadcastAll(room, { type: 'names', names: room.names });
     broadcastAll(room, roomStateMsg(room));
     for (const c of [...room.clients]) {                 // 이제 방장·밴·잠금 정보를 알 수 있으니 다시 확인한다
@@ -358,7 +542,7 @@ async function recoverRoom(id, room) {
 
 // 주기 점검: 저장 → (실패했던 방 복구) → 오래 비어 있던 방을 메모리에서 내림. 겹쳐 돌지 않고 순서대로 돈다.
 let saveBusy = false, saveChain = Promise.resolve();
-async function runSaveAll() {
+async function runSaveAll(force) {
   saveBusy = true;
   try {
     if (pool && dbState === 'error') await initDb();     // 연결이 끊겨 있었다면 먼저 복구해 본다
@@ -367,7 +551,7 @@ async function runSaveAll() {
       pruneNames(room);
       purgeMeta(room);
       if (room.loadFailed) await recoverRoom(id, room);
-      await saveRoom(id, room);
+      await saveRoom(id, room, force || room.clients.size === 0);   // 아무도 없는 방은 기다릴 이유가 없다
       await saveMeta(id, room);
       const clean = !pool || (!room.dirty && !room.metaDirty);       // DB 가 없으면 dirty 표시는 의미가 없다
       const keep = dbState === 'ok' ? ROOM_EMPTY_MS : NO_DB_KEEP_MS;  // 저장된 빈 방은 곧 내리고, 메모리가 유일한 사본일 땐 오래 둔다
@@ -376,7 +560,7 @@ async function runSaveAll() {
   } catch (e) { console.error('저장 점검 오류:', e.message); }
   finally { saveBusy = false; }
 }
-const saveAll = () => (saveChain = saveChain.then(runSaveAll, runSaveAll));
+const saveAll = (force) => (saveChain = saveChain.then(() => runSaveAll(force), () => runSaveAll(force)));
 setInterval(() => { if (!saveBusy) saveAll(); }, SAVE_MS);
 let stopping = false;
 async function shutdown(why) {                           // Render 가 재시작·잠재우기 전에 보내는 신호: 저장하고 끝낸다
@@ -384,14 +568,14 @@ async function shutdown(why) {                           // Render 가 재시작
   stopping = true;
   console.log(`${why}: 마지막 저장 중…`);
   const guard = setTimeout(() => process.exit(0), 8000);
-  try { await saveAll(); } catch {}
+  try { await saveAll(true); } catch {}
   clearTimeout(guard);
   process.exit(0);
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e));
-process.on('uncaughtException', (e) => { console.error('uncaughtException:', e); saveAll().catch(() => {}); });   // 죽지 않고 계속하되, 일단 저장은 해 둔다
+process.on('uncaughtException', (e) => { console.error('uncaughtException:', e); saveAll(true).catch(() => {}); });   // 죽지 않고 계속하되, 일단 저장은 해 둔다
 
 // ---- 획 ID(sid) ----
 // sid 없는 옛 선: 같은 주인·같은 색·같은 굵기이고 앞 선분의 끝점에서 이어지는 선분들을 한 획으로 보고 임시 sid 를 붙인다.
@@ -430,17 +614,21 @@ const cleanHistory = (h) => (Array.isArray(h) ? h.filter(isSeg) : []);
 function getRoom(id) {
   let room = rooms.get(id);
   if (!room) {
-    room = { id, clients: new Set(), history: [], names: {}, meta: normalizeMeta(null), dirty: false, metaDirty: false, noSave: false,
+    room = { id, clients: new Set(), hb: [], hn: 0, ver: 0, flat: null, zc: null, zp: null, snapMs: 0, lastSave: 0,
+      names: {}, meta: normalizeMeta(null), dirty: false, metaDirty: false, noSave: false,
       loaded: false, loadFailed: false, corrupt: false, recovering: false, lastActive: Date.now(), q: null,
       chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map() };
     const r = room;
     r.ready = loadRoom(id).then((d) => {
-      r.history = cleanHistory(d.history);
+      const h = cleanHistory(d.history);
+      const legacy = assignLegacySids(h);
+      histSet(r, h);
+      if (legacy) r.dirty = true;
+      else if (d.zbuf && Array.isArray(d.history) && h.length === d.history.length) r.zc = { ver: r.ver, buf: d.zbuf };   // 저장돼 있던 압축본이 지금 그림과 똑같으면 그대로 보낸다
       r.names = isPlainObj(d.names) ? d.names : {};
       r.loadFailed = !!d.failed; r.corrupt = !!d.corrupt;
       r.noSave = r.loadFailed;
       r.meta = normalizeMeta(d.meta);
-      if (assignLegacySids(r.history)) r.dirty = true;
       r.loaded = true;
     });
     rooms.set(id, room);
@@ -451,7 +639,20 @@ function getRoom(id) {
 
 function broadcast(room, sender, obj) {
   const data = JSON.stringify(obj);
-  for (const c of room.clients) if (c !== sender && c.readyState === 1) c.send(data);
+  for (const c of room.clients) if (c !== sender) sendRaw(c, data);
+}
+// 압축한 그림을 보내는 중인 사람(ws.hold)에게 갈 메시지는 모아 뒀다가 그림 다음에 순서대로 보낸다
+function sendRaw(ws, data) { if (ws.readyState !== 1) return; if (ws.hold) ws.hold.push(data); else ws.send(data); }
+// 그림 전체 보내기: 압축을 받을 수 있는 화면(z=1)에는 압축본을 바이너리로, 아니면(옛 브라우저·작은 그림) JSON 으로
+const Z_MIN = 2000;
+function sendHistory(ws, room) {
+  if (ws.readyState !== 1 || ws.hold) return;            // (이미 보내는 중이면 그게 최신 상태를 알려 준다)
+  if (!ws.zOk || room.hn < Z_MIN || room.zFail) { send(ws, { type: 'history', data: histArr(room) }); return; }
+  if (room.zc && room.zc.ver === room.ver) { ws.send(room.zc.buf); return; }
+  ws.hold = [];
+  makeSnap(room).then((z) => { if (ws.readyState === 1) ws.send(z.buf); }, (e) => {
+    console.error('그림 압축 실패:', e && e.message); room.zFail = true; ws.hold = null; try { ws.terminate(); } catch {}   // 다시 접속하면 JSON 으로 받는다
+  }).then(() => { const q = ws.hold; ws.hold = null; if (q && ws.readyState === 1) for (const d of q) ws.send(d); });
 }
 const broadcastAll = (room, obj) => broadcast(room, null, obj);
 // 접속자 수와 목록은 소켓 수가 아니라 주인 ID 기준 고유 인원이다 (탭을 여러 개 열어도 1명)
@@ -479,7 +680,7 @@ function allowSeg(ws) {
 
 // ---- 방 설정(meta): 방장, 밴, 채팅 금지, 관전, 잠금 + 채팅 (2단계) ----
 const OWNER_RE = /^[A-Za-z0-9_-]{1,32}$/;
-const send = (ws, obj) => { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); };
+const send = (ws, obj) => { if (ws.readyState === 1) sendRaw(ws, JSON.stringify(obj)); };
 const isGuest = (o) => String(o).startsWith('g');                       // 키 없는 접속은 방장이 될 수 없다
 const isRoomOwner = (room, o) => !room.noSave && !!room.meta.owner && room.meta.owner === o;
 const hasOwner = (room, o) => { for (const c of room.clients) if (c.owner === o) return true; return false; };
@@ -555,7 +756,7 @@ function saveMeta(id, room) {
 }
 function persistMeta(room) { room.metaDirty = true; saveMeta(room.id, room); }
 
-const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked, persist: dbState === 'ok' && !room.noSave });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
+const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked, persist: dbState === 'ok' && !room.noSave, max: MAX_HISTORY });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
 function meMsg(room, o, now = Date.now()) {
   const mu = room.meta.mutes[o];
   return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: !!room.meta.spectators[o] };
@@ -609,7 +810,7 @@ function approve(ws, room, wantName) {
   room.recent.set(owner, Date.now());
   const name = setName(room, owner, wantName);
   send(ws, { type: 'hello', me: owner });
-  send(ws, { type: 'history', data: room.history });
+  sendHistory(ws, room);
   send(ws, { type: 'names', names: room.names });
   send(ws, roomStateMsg(room));
   send(ws, meMsg(room, owner));
@@ -699,14 +900,13 @@ function handleCmd(ws, room, roomId, msg) {
     sendMe(room, old); sendMe(room, target); sendAdmin(room);
     sysChat(room, `${oldName}님이 ${nm}님에게 방장을 넘겼습니다`);
   } else if (cmd === 'clearall') {
-    room.history = []; room.dirty = true;
+    histReplace(room, []);
     broadcastAll(room, { type: 'clearall' });
-    saveRoom(roomId, room);
+    saveRoom(roomId, room, true);
     sysChat(room, '방장이 모든 그림을 지웠습니다');
   } else if (cmd === 'clearuser') {
-    const before = room.history.length;
-    room.history = room.history.filter((s) => s.o !== target);
-    if (room.history.length !== before) { room.dirty = true; broadcastAll(room, { type: 'clear', o: target }); saveRoom(roomId, room); }
+    const kept = histArr(room).filter((s) => s.o !== target);
+    if (kept.length !== room.hn) { histReplace(room, kept); broadcastAll(room, { type: 'clear', o: target }); saveRoom(roomId, room, true); }
     sysChat(room, `${nm}님의 그림이 모두 지워졌습니다`);
   } else {
     cmdErr(ws, '알 수 없는 명령이에요');
@@ -813,26 +1013,21 @@ function onMessage(ws, room, roomId, owner, raw) {
       };
       if (![s.x0, s.y0, s.x1, s.y1].every(okNum)) return;
       s.sid = typeof msg.sid === 'string' && SID_RE.test(msg.sid) ? msg.sid : autoSid(ws, s);
-      if (room.history.length >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return; }
-      room.history.push(s);
-      room.dirty = true;
+      if (room.hn >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return; }
+      histPush(room, s);
       broadcast(room, ws, { type: 'seg', ...s });
     } else if (msg.type === 'clear') {
       // 내가 그린 선만 지운다 (다른 사람 그림은 그대로)
-      room.history = room.history.filter((s) => s.o !== owner);
-      room.dirty = true;
+      histReplace(room, histArr(room).filter((s) => s.o !== owner));
       broadcast(room, ws, { type: 'clear', o: owner });
-      saveRoom(roomId, room);
+      saveRoom(roomId, room, true);
     } else if (msg.type === 'erase') {
       // 지우개: 기본은 내가 그린 선만. 방장은 all 로 남의 선도 지울 수 있다. 잘린 결과를 다른 사람 화면도 같은 함수로 계산한다.
       if (!allowSeg(ws)) return;
       const x0 = r1(msg.x0), y0 = r1(msg.y0), x1 = r1(msg.x1), y1 = r1(msg.y1), r = r1(msg.r);
       if (![x0, y0, x1, y1, r].every(okNum)) return;
       const all = msg.all === true && isRoomOwner(room, owner);
-      const res = eraseCapsule(room.history, all ? null : owner, x0, y0, x1, y1, r);
-      if (!res || res.length > MAX_HISTORY * 1.5) return;
-      room.history = res;
-      room.dirty = true;
+      if (!histErase(room, all ? null : owner, x0, y0, x1, y1, r)) return;
       broadcast(room, ws, { type: 'erase', o: all ? null : owner, x0, y0, x1, y1, r });
     } else if (msg.type === 'erasestroke') {
       // 획 지우개: 경로에 닿은 획 전체를 지우고, 지워진 획 목록을 모두에게 알린다 (받는 쪽은 재계산하지 않는다)
@@ -841,10 +1036,9 @@ function onMessage(ws, room, roomId, owner, raw) {
       if (![x0, y0, x1, y1, r].every(okNum)) return;
       const all = msg.all === true && isRoomOwner(room, owner);
       const q = Number.isInteger(msg.q) && msg.q >= 0 && msg.q < 1e9 ? msg.q : 0;
-      const keys = hitStrokes(room.history, all ? null : owner, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
+      const keys = histHit(room, all ? null : owner, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
       if (keys.length) {
-        const res = removeStrokes(room.history, keys);
-        if (res) { room.history = res; room.dirty = true; }
+        histRemoveStrokes(room, keys);
         broadcastAll(room, { type: 'strokesgone', keys, by: owner, q });
       } else send(ws, { type: 'strokesgone', keys: [], by: owner, q }); // 보낸 사람이 예상과 다른지 확인할 수 있게
     } else if (msg.type === 'cancelstroke') {
@@ -852,8 +1046,7 @@ function onMessage(ws, room, roomId, owner, raw) {
       if (!allowSeg(ws)) return;
       if (typeof msg.sid !== 'string' || !SID_RE.test(msg.sid)) return;
       const keys = [[owner, msg.sid]];
-      const res = removeStrokes(room.history, keys);
-      if (res) { room.history = res; room.dirty = true; broadcastAll(room, { type: 'strokesgone', keys, by: owner, cancel: true }); }
+      if (histRemoveStrokes(room, keys)) broadcastAll(room, { type: 'strokesgone', keys, by: owner, cancel: true });
     } else if (msg.type === 'addsegs') {
       // 되돌리기(redo)·지우개 이전(undo)으로 내 선분을 다시 넣는다 (최대 100개, 주인은 항상 나). 칠하기 조각(f)은 선 아래로 들어간다.
       if (!Array.isArray(msg.segs) || !undoAllow(ws, Math.min(msg.segs.length, 100))) return;
@@ -864,12 +1057,11 @@ function onMessage(ws, room, roomId, owner, raw) {
         const s = { x0: r1(m.x0), y0: r1(m.y0), x1: r1(m.x1), y1: r1(m.y1), color: String(m.color).slice(0, 9), size: Math.min(Math.max(+m.size || 4, f ? 0.1 : 1), PEN_MAX), o: owner, sid: m.sid };
         if (f) s.f = 1;
         if (![s.x0, s.y0, s.x1, s.y1].every(okNum) || typeof s.sid !== 'string' || !SID_RE.test(s.sid)) continue;
-        if (room.history.length + list.length >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); break; }
+        if (room.hn + list.length >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); break; }
         list.push(s);
       }
       if (!list.length) return;
-      insertSegs(room.history, list);
-      room.dirty = true;
+      histInsert(room, list);
       broadcast(room, ws, { type: 'segs', list });
     } else if (msg.type === 'fill') {
       // 칠하기: 화면에서 계산한 가로줄 목록을 받아 검사하고, 선분(f)으로 바꿔 선 아래에 넣는다. 한 번에 통째로 들어가거나 통째로 거절된다.
@@ -878,9 +1070,8 @@ function onMessage(ws, room, roomId, owner, raw) {
       if (ws.fillPaid) ws.fillPaid = false; else if (!fillAllow(ws)) return no('rate');
       const f = checkFill(msg);
       if (!f) return no('bad');
-      if (room.history.length + f.rows.length > MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return no('full'); }
-      insertSegs(room.history, fillSegs(owner, f.sid, f.color, f.cell, f.rows));
-      room.dirty = true;
+      if (room.hn + f.rows.length > MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return no('full'); }
+      histInsert(room, fillSegs(owner, f.sid, f.color, f.cell, f.rows));
       broadcast(room, ws, { type: 'fill', o: owner, sid: f.sid, color: f.color, cell: f.cell, rows: f.rows });
     } else if (msg.type === 'removesegs') {
       // 이전(undo): 내 선분 중 값이 같은 것을 정확히 지운다 (잘린 조각 되돌리기)
@@ -892,15 +1083,14 @@ function onMessage(ws, room, roomId, owner, raw) {
         if ([s.x0, s.y0, s.x1, s.y1].every(okNum)) items.push(s);
       }
       if (!items.length) return;
-      const res = removeExactSegs(room.history, items);
-      if (!res) return;
-      room.history = res;
-      room.dirty = true;
+      if (!histRemoveExact(room, items)) return;
       broadcast(room, ws, { type: 'unsegs', list: items });
     } else if (msg.type === 'resync') {
       if (now - ws.lastSync < 2000) return;
       ws.lastSync = now;
-      send(ws, { type: 'history', data: room.history });
+      sendHistory(ws, room);
+    } else if (msg.type === 'ping') {
+      send(ws, { type: 'pong' });                         // 화면이 다시 보일 때 연결이 살아 있는지 확인 (그림 전체를 다시 받지 않는다)
     } else if (msg.type === 'cur') {
       if (now - ws.lastCur < 25) return;
       ws.lastCur = now;
@@ -963,6 +1153,7 @@ wss.on('connection', async (ws, req) => {
   const room = getRoom(roomId);                        // (방의 마지막 활동 시각도 여기서 갱신된다)
 
   // 브라우저가 보낸 비밀 키를 해시해 '주인 ID'로 쓴다. 키가 없으면 이번 접속에서만 주인.
+  ws.zOk = url.searchParams.get('z') === '1';          // 화면이 압축된 그림(바이너리)을 풀 수 있다
   const key = url.searchParams.get('k') || '';
   const owner = /^[A-Za-z0-9_-]{16,64}$/.test(key)
     ? crypto.createHash('sha256').update(key).digest('base64url').slice(0, 10)

@@ -380,6 +380,7 @@
   <button id="copyLink" class="btn block" style="margin-top:10px"><svg class="ic"><use href="#i-link"/></svg>링크 복사</button>
   <button id="newRoom" class="btn block" style="margin-top:8px">새 방 만들기</button>
   <div class="hint">새 방의 주소는 추측할 수 없어요. 링크를 보낸 사람만 들어올 수 있어요.</div>
+  <div class="hint" id="capTxt"></div>
   <div class="row" style="margin-top:12px"><input type="text" id="joinInput" class="inp" placeholder="방 코드 또는 링크" autocomplete="off" autocapitalize="off"><button id="joinBtn" class="btn primary">들어가기</button></div>
   <div class="err" id="joinErr"></div>
 </section>
@@ -396,7 +397,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 12차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 13차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -449,6 +450,8 @@ const TOUCH_CONFIRM_ERASE_PX = 14;
 const CANCEL_WINDOW_MS = 300;        // 확정 직후 이 시간 안에 두 번째 손가락이 닿으면 방금 획을 취소
 const CANCEL_MAX_MOVE_PX = 30;
 const MIN_POINT_PX = 1.5, MIN_POINT_MS = 5;   // 너무 가깝거나 빠른 점은 생략 (초당 약 200선분 이하)
+const PEN_STEP_PX = 6, PEN_DEV_PX = 0.3;      // 펜: 거의 곧은 곳은 최대 6px 마다 한 점, 건너뛴 점이 선분에서 0.3px 넘게 벗어나면 남긴다 (보이는 모양은 같고 조각 수는 크게 준다)
+const ERASE_STEP = 0.35, ERASE_MIN_MS = 30;   // 지우개: 반지름의 0.35 배 이상 움직였을 때, 반지름보다 덜 움직였으면 30ms 에 한 번만 보낸다
 // 작성자 표시
 const HOVER_MARGIN_MOUSE_PX = 8, HOVER_MARGIN_TOUCH_PX = 12, HOVER_THROTTLE_MS = 40;
 const TAP_MAX_PX = 8, TAP_MAX_MS = 400, TIP_TAP_HIDE_MS = 3000;
@@ -591,11 +594,11 @@ function hitStrokes(list, owner, x0, y0, x1, y1, r, max) {
     const s = list[i];
     if (!s.sid || !s.o) continue;
     if (owner !== null && s.o !== owner) continue;
-    const k = s.o + '|' + s.sid;
-    if (keys.has(k)) continue;
-    const m = s.size / 2;
+    const m = s.size / 2;                                 // 범위 밖은 먼저 거른다 (획 이름을 만드는 것보다 훨씬 싸다)
     if (Math.max(s.x0, s.x1) + m < minX || Math.min(s.x0, s.x1) - m > maxX ||
         Math.max(s.y0, s.y1) + m < minY || Math.min(s.y0, s.y1) - m > maxY) continue;
+    const k = s.o + '|' + s.sid;
+    if (keys.has(k)) continue;
     if (!erInterval(s, x0, y0, edx, edy, eL, r + m)) continue;
     if (keys.size >= max) break;
     keys.set(k, [s.o, s.sid]);
@@ -1078,12 +1081,13 @@ function tapTip(x, y) {                                        // 터치: 탭한
 
 /* ===== 토스트 / 확인 모달 ===== */
 function toast(msg, kind) {
-  const box = $('toasts');
+  const box = $('toasts'), last = box.lastElementChild;
+  if (last && last !== flashEl && last.textContent === msg) { clearTimeout(last._t); last._t = setTimeout(() => last.remove(), 2800); return; }   // 같은 알림이 연달아 오면 하나만 (조금 더 오래)
   while (box.children.length >= 3) box.firstChild.remove();
   const t = document.createElement('div');
   t.className = 'toast' + (kind ? ' ' + kind : ''); t.textContent = msg; t.setAttribute('role', 'status');
   box.appendChild(t);
-  setTimeout(() => t.remove(), 2800);
+  t._t = setTimeout(() => t.remove(), 2800);
 }
 let flashEl = null, flashT = 0;
 function flash(msg) {                                        // 한 자리에서 글만 바뀌는 짧은 알림 (노브를 빨리 돌려도 토스트가 쌓이지 않게)
@@ -1277,7 +1281,19 @@ $('tHand').onclick = () => setTool('hand');
 $('tColor').onclick = () => openPop('popColor', $('tColor'));
 $('tSize').onclick = () => { syncSizeUI(); openPop('popSize', $('tSize')); };
 $('tView').onclick = () => openPop('popView', $('tView'));
-$('btnRoom').onclick = () => { $('roomCode').textContent = room; $('joinErr').textContent = ''; openPop('popRoom', $('btnRoom')); };
+$('btnRoom').onclick = () => { $('roomCode').textContent = room; $('joinErr').textContent = ''; $('capTxt').textContent = capText(); openPop('popRoom', $('btnRoom')); };
+// 방 하나에 담을 수 있는 선 조각 수 (서버가 roomstate 로 알려 준다). 90% 를 넘으면 한 번 알려 준다.
+let roomMax = 100000, capWarned = false;
+const FULL_MSG = '그림이 가득 찼어요. 안 쓰는 그림을 지우거나 새 방을 만들어 주세요';
+const fmtN = (n) => (n >= 10000 ? Math.round(n / 1000) / 10 + '만' : String(n));
+const capPct = () => Math.min(100, Math.round(segs.length / roomMax * 100));
+const capText = () => `그림 용량 ${capPct()}% (${fmtN(segs.length)} / ${fmtN(roomMax)} 조각)`;
+function checkCap() {
+  if (capWarned || segs.length < roomMax * 0.9) return;
+  capWarned = true;
+  toast(`그림이 거의 가득 찼어요 (${capPct()}%). 안 쓰는 그림을 지우거나 새 방을 만들어 주세요`, 'warn');
+}
+setInterval(checkCap, 5000);
 $('btnSettings').onclick = () => openPop('popSettings', $('btnSettings'));
 $('tClear').onclick = async () => {
   if (!me || myRestr.spectator) return;
@@ -1479,6 +1495,7 @@ function doFill(p) {
   if (myRestr.spectator) { toast('방장이 그리기를 제한했어요 (보기만 가능)', 'warn'); return; }
   const w = toWorld(p), r = computeFill(w.x, w.y);
   if (r.err) { toast(FILL_ERR[r.err] || '채울 수 없어요', 'warn'); return; }
+  if (segs.length + r.rows.length > roomMax) { toast(FULL_MSG, 'warn'); return; }
   const sid = newSid(), color = S.color;
   const list = fillSegs(me, sid, color, r.cell, r.rows);
   const msg = { type: 'fill', sid, color, cell: r.cell, rows: r.rows };
@@ -1662,12 +1679,27 @@ function previewSeg(st, a, b) {                                // 확정 전 터
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
 }
 function strokePoint(st, sx, sy, t, force) {                   // 너무 가깝거나 빠른 점은 생략 (마지막 점은 force 로 반드시 보낸다)
-  if (!force) { if (Math.hypot(sx - st.lsx, sy - st.lsy) < MIN_POINT_PX || t - st.lt < MIN_POINT_MS) return; }
-  else if (sx === st.lsx && sy === st.lsy) return;
-  st.lsx = sx; st.lsy = sy; st.lt = t;
-  const w = toWorld({ x: sx, y: sy });
+  const same = sx === st.lsx && sy === st.lsy;
+  if (!force) {
+    const d = Math.hypot(sx - st.lsx, sy - st.lsy);
+    if (d < MIN_POINT_PX || t - st.lt < MIN_POINT_MS) return;
+    if (st.kind !== 'pen') { const rs = st.r * scale; if (d < rs * ERASE_STEP || (t - st.lt < ERASE_MIN_MS && d < rs)) return; }
+  } else if (same && !st.skip.length) return;
+  if (!same) { st.lsx = sx; st.lsy = sy; st.lt = t; }
+  const w = same ? st.skip[st.skip.length - 1] : toWorld({ x: sx, y: sy });   // (끝낼 때 마지막 점이 건너뛴 채 남아 있으면 그 점까지)
+  if (st.kind === 'pen') penPoint(st, w, force); else keepPoint(st, w);
+}
+function keepPoint(st, w) {                                    // 이 점까지 선을 잇는다 (터치는 확정 전이면 내 화면에만)
   if (st.phase === 'pending') { const prev = st.pts[st.pts.length - 1]; st.pts.push(w); if (st.kind === 'pen') previewSeg(st, prev, w); }
   else { emit(st, st.last, w); st.last = w; }
+}
+// 펜 선 줄이기: 거의 곧게 이어지는 점은 건너뛰고(st.skip), 건너뛴 점이 새 선분에서 PEN_DEV_PX 넘게 벗어나게 되면 바로 앞 점을 남긴다.
+function penPoint(st, w, force) {
+  const a = st.phase === 'pending' ? st.pts[st.pts.length - 1] : st.last, sk = st.skip, eps = PEN_DEV_PX / scale;
+  const fits = (b) => { const s = { x0: a.x, y0: a.y, x1: b.x, y1: b.y }; for (const p of sk) if (distToSeg(p, s) > eps) return false; return true; };
+  if (!force && Math.hypot(w.x - a.x, w.y - a.y) < PEN_STEP_PX / scale && fits(w)) { sk.push(w); return; }
+  if (sk.length && !fits(w)) { const q = sk.pop(); sk.length = 0; keepPoint(st, q); penPoint(st, w, force); return; }
+  sk.length = 0; keepPoint(st, w);
 }
 function confirmStroke(st) {                                   // 이 시점부터 history 추가 + 서버 전송
   if (st.phase !== 'pending') return;
@@ -1711,7 +1743,7 @@ function startStroke(rec) {
   const erase = kind !== 'pen';
   const w = toWorld(rec);
   const st = strokeSt = { id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: S.color, size: S.penSize,
-    r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, sx: rec.x, sy: rec.y, moved: 0, confirmedAt: 0, timer: 0, act: null };
+    r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, skip: [], sx: rec.x, sy: rec.y, moved: 0, confirmedAt: 0, timer: 0, act: null };
   st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
   if (touch) {
     gmode = 'pending'; st.pts.push(w);
@@ -1772,6 +1804,7 @@ board.addEventListener('pointerdown', (e) => {
   if (!me) { toast('연결 중이에요. 잠시 후 다시 그려 주세요', 'warn'); return; }
   if (myRestr.spectator) { toast('방장이 그리기를 제한했어요 (보기만 가능)', 'warn'); return; }
   if (tool === 'fill') { gmode = 'tap'; return; }              // 채우기: 가만히 떼면 채우고, 끌면 화면 이동
+  if (tool === 'pen' && segs.length >= roomMax) { toast(FULL_MSG, 'warn'); return; }   // 가득 찬 방: 그어도 저장되지 않으니 미리 막는다 (지우개는 된다)
   startStroke(rec);
 });
 board.addEventListener('pointermove', (e) => {
@@ -2204,15 +2237,41 @@ function scheduleReconnect(immediate) {
   retry++;
   retryT = setTimeout(connect, immediate ? 0 : base * (0.75 + Math.random() * 0.5));
 }
+// 서버가 그림 전체를 zlib 으로 압축해 바이너리로 보낼 수 있다 (약 1/8 크기). 풀 수 있는 브라우저만 z=1 로 알린다 (옛 사파리는 JSON 으로 받는다).
+let zOk = (() => { try { new DecompressionStream('deflate'); return true; } catch { return false; } })();
+const inflateText = (buf) => new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('deflate'))).text();
+// 받은 메시지는 순서대로 처리한다: 압축된 그림을 푸는 동안 뒤에 온 메시지는 기다렸다가 그 다음에 (그림보다 먼저 처리되면 안 된다)
+const rxQ = [];
+let rxBusy = false;
+function onRx(sock, data) {
+  if (!rxBusy && typeof data === 'string') { onMessage(data); return; }
+  rxQ.push([sock, data]);
+  if (!rxBusy) pumpRx();
+}
+async function pumpRx() {
+  rxBusy = true;
+  while (rxQ.length) {
+    const [sock, d] = rxQ.shift();
+    if (sock !== ws) continue;                                                     // 끊긴 연결에서 온 것은 버린다
+    if (typeof d === 'string') { onMessage(d); continue; }
+    let data = null;
+    try { data = JSON.parse(await inflateText(d)); } catch {}
+    if (sock !== ws) continue;
+    if (Array.isArray(data)) handleMsg({ type: 'history', data });
+    else { zOk = false; rxQ.length = 0; try { sock.close(); } catch {} }           // 풀지 못하면 압축 없이 다시 접속한다
+  }
+  rxBusy = false;
+}
 function connect() {
   clearTimeout(retryT);
   if (ended || (ws && (ws.readyState === 0 || ws.readyState === 1))) return;      // 중복 소켓 금지
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const sock = new WebSocket(`${proto}://${location.host}/?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}`);
+  const sock = new WebSocket(`${proto}://${location.host}/?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=1' : ''}`);
+  sock.binaryType = 'arraybuffer';
   ws = sock;
   sock.onopen = () => { if (sock !== ws) return; retry = 0; connected = true; lastMsgAt = now(); updateBanner(); hudSoon(); };
   sock.onclose = (e) => { if (sock === ws) onDisconnected(e.code); };
-  sock.onmessage = (e) => { if (sock === ws) { lastMsgAt = now(); onMessage(e.data); } };
+  sock.onmessage = (e) => { if (sock === ws) { lastMsgAt = now(); onRx(sock, e.data); } };
 }
 function onDisconnected(code) {
   connected = false; me = null; count = 0; online = new Set();
@@ -2225,9 +2284,9 @@ function onDisconnected(code) {
 function wake() {                                                                  // 앱이 다시 보이거나 네트워크가 돌아왔을 때
   if (ended) return;
   if (!ws || ws.readyState > 1) { retry = 0; clearTimeout(retryT); retryT = setTimeout(connect, 0); return; }
-  if (ws.readyState === 1) {                                                       // 열려 있어도 죽어 있을 수 있으니 확인
+  if (ws.readyState === 1) {                                                       // 열려 있어도 죽어 있을 수 있으니 확인 (가벼운 ping: 그림 전체를 다시 받지 않는다)
     const sock = ws, t0 = lastMsgAt;
-    send({ type: 'resync' });
+    send({ type: 'ping' });
     setTimeout(() => { if (sock === ws && lastMsgAt === t0) { ws = null; try { sock.close(); } catch {} onDisconnected(0); retry = 0; scheduleReconnect(true); } }, 4000);
   }
 }
@@ -2237,9 +2296,13 @@ window.addEventListener('online', wake);
 function onMessage(data) {
   let m;
   try { m = JSON.parse(data); } catch { return; }
+  handleMsg(m);
+}
+function handleMsg(m) {
   switch (m.type) {
     case 'hello': me = m.me; break;
-    case 'history': segs = Array.isArray(m.data) ? m.data : []; resetUndo(); redrawInk(); break;
+    case 'pong': break;
+    case 'history': segs = Array.isArray(m.data) ? m.data : []; resetUndo(); redrawInk(); checkCap(); break;
     case 'names': names = m.names || {}; refreshLabels(); renderPeople(); if (me && names[me]) nickEl.value = names[me]; break;
     case 'name': names[m.o] = m.name; refreshLabels(); renderPeople(); if (m.o === me) nickEl.value = m.name; break;
     case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); renderPeople(); break;
@@ -2261,7 +2324,7 @@ function onMessage(data) {
     case 'cur': showCursor(m.o, m.x, m.y); break;
     case 'curhide': hideCursor(m.o); break;
     case 'notice': toast(m.text || '알림', 'warn'); break;
-    case 'roomstate': ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); syncOwnerUI(); break;
+    case 'roomstate': ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); if (m.max > 0) { roomMax = m.max; checkCap(); } syncOwnerUI(); break;
     case 'me': {
       const was = myRestr;
       myRestr = { muted: m.muted ? { ...m.muted } : null, spectator: !!m.spectator };
@@ -2296,7 +2359,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 12차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 13차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
