@@ -397,7 +397,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 13차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 14차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -443,12 +443,11 @@ const PINCH_MAX_STEP = 1.6;          // 손가락 움직임 한 번에 배율이
 const PINCH_ROT_START = 12 * Math.PI / 180;   // 두 손가락을 이만큼 비틀어야 회전이 시작된다 (확대만 하려다 화면이 돌아가지 않게)
 const PINCH_ROT_MIN_D = 40;          // 두 손가락이 이보다 가까우면 각도가 불안정해서 회전은 안 한다
 // 터치 입력은 '확정 후 전송': 그동안은 내 화면에만 보인다
-const TOUCH_CONFIRM_MS = 100;        // 한 손가락으로 이 시간이 지나면 확정
-const TOUCH_CONFIRM_PX = 10;         // 또는 화면에서 이만큼 움직이면 확정
+const TOUCH_CONFIRM_MS = 150;        // 한 손가락으로 이 시간이 지나면 확정 (확정 전에도 내 화면에는 바로 그려진다)
+const TOUCH_CONFIRM_PX = 16;         // 또는 화면에서 이만큼 움직이면 확정
 const TOUCH_CONFIRM_ERASE_MS = 200;  // 지우개는 되돌릴 수 없어서 더 신중하게
 const TOUCH_CONFIRM_ERASE_PX = 14;
-const CANCEL_WINDOW_MS = 300;        // 확정 직후 이 시간 안에 두 번째 손가락이 닿으면 방금 획을 취소
-const CANCEL_MAX_MOVE_PX = 30;
+const PINCH_CANCEL_MS = 700;         // 획을 시작하고 이 시간 안에 두 번째 손가락이 닿으면 확대하려던 것: 방금 획을 통째로 취소 (얼마나 움직였든)
 const MIN_POINT_PX = 1.5, MIN_POINT_MS = 5;   // 너무 가깝거나 빠른 점은 생략 (초당 약 200선분 이하)
 const PEN_STEP_PX = 6, PEN_DEV_PX = 0.3;      // 펜: 거의 곧은 곳은 최대 6px 마다 한 점, 건너뛴 점이 선분에서 0.3px 넘게 벗어나면 남긴다 (보이는 모양은 같고 조각 수는 크게 준다)
 const ERASE_STEP = 0.35, ERASE_MIN_MS = 30;   // 지우개: 반지름의 0.35 배 이상 움직였을 때, 반지름보다 덜 움직였으면 30ms 에 한 번만 보낸다
@@ -1722,6 +1721,14 @@ function cancelStroke(st) {                                    // 이미 전송�
   redrawInk();
 }
 let lastEnd = null;                                            // 마지막 획이 끝난 월드 위치 { x, y, pen } (Shift+클릭 직선용)
+function revertErase(st) {                                     // 방금 부분 지우개로 지운 것을 되살린다 (이전과 같은 방법, 이전 목록에는 넣지 않는다)
+  if (strokeSt === st) strokeSt = null;
+  const a = st.act;
+  if (!a.removed.length && !a.added.length) return;
+  const r = removeExactSegs(segs, a.added); if (r) segs = r;
+  addLocal(a.removed); sendSegs('removesegs', a.added); sendSegs('addsegs', a.removed);
+  redrawInk();
+}
 function finishStroke(st) {
   const rec = ptr.get(st.id);
   if (rec) strokePoint(st, rec.x, rec.y, now(), true);
@@ -1743,7 +1750,7 @@ function startStroke(rec) {
   const erase = kind !== 'pen';
   const w = toWorld(rec);
   const st = strokeSt = { id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: S.color, size: S.penSize,
-    r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, skip: [], sx: rec.x, sy: rec.y, moved: 0, confirmedAt: 0, timer: 0, act: null };
+    r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, skip: [], sx: rec.x, sy: rec.y, moved: 0, born: now(), confirmedAt: 0, timer: 0, act: null };
   st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
   if (touch) {
     gmode = 'pending'; st.pts.push(w);
@@ -1758,8 +1765,12 @@ function startStroke(rec) {
 function enterPinch() {                                        // 손가락이 2개 이상: 그리기 중단, 핀치 줌 + 두 손가락 이동
   const st = strokeSt;
   if (st) {
+    // 획을 시작한 지 얼마 안 돼 두 번째 손가락이 닿았다 = 확대·이동하려던 것 (손가락이 조금 먼저 닿아 그어진 선). 움직인 거리와 상관없이 방금 획을 없던 일로.
+    // 한참 그리던 중이면(PINCH_CANCEL_MS 넘게) 그린 건 그대로 두고 확대로 넘어간다.
+    const fresh = now() - st.born <= PINCH_CANCEL_MS;
     if (st.phase === 'pending') discardPending(st);
-    else if (st.kind === 'pen' && now() - st.confirmedAt <= CANCEL_WINDOW_MS && st.moved <= CANCEL_MAX_MOVE_PX) cancelStroke(st);
+    else if (fresh && st.kind === 'pen') cancelStroke(st);
+    else if (fresh && st.kind === 'epart' && st.act) revertErase(st);
     else finishStroke(st);
     strokeSt = null;
   }
@@ -2359,7 +2370,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 13차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 14차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
