@@ -380,9 +380,9 @@
   <div class="switch"><div>펜 모드에서 작성자 표시<small>선에 마우스를 올리면 이름 표시</small></div><input type="checkbox" id="setPenHover" aria-label="펜 모드에서 작성자 표시"></div>
   <div class="switch"><div>손가락 탭으로 이전·되돌리기<small>두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기</small></div><input type="checkbox" id="setTapUndo" aria-label="손가락 탭으로 이전 되돌리기"></div>
   <h3 style="margin-top:12px">단축키</h3>
-  <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift+Space 누르는 동안도)</span><b>R → Space</b><span>회전 취소 (원래 방향, 원래 도구로)</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
+  <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 8차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 9차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -1492,6 +1492,16 @@ let rotDrag = null, lastMouse = null;                        // 회전 끌기 { 
 let heldTool = null, altDrop = null, revertTo = null;        // 누르고 있는 도구 키 { code, t, prev, used } / Alt 스포이드 { prev } / 그리기가 끝나면 돌아갈 도구
 let rotFrom = 'pen';                                         // 회전 도구(R)를 고르기 전에 쓰던 도구 (회전을 취소하면 돌아간다)
 const rotAngle = (p) => Math.atan2(p.y - cssH / 2, p.x - cssW / 2);
+const ROT_STEP = Math.PI / 4;                                  // R 도구로 돌릴 때 Shift 를 누르면 45° 씩
+function rotDragTo(shift) {                                    // 화면 가운데를 축으로, 누른 곳에서 돈 각도만큼 돌린다
+  const d = rotDrag;
+  if (!d || !d.moved) return;
+  let r = d.r0 + rotAngle(d.p) - d.a0;
+  r = Math.atan2(Math.sin(r), Math.cos(r));
+  if (shift && !d.tmp) r = Math.round(r / ROT_STEP) * ROT_STEP;   // (Shift+Space 로 돌릴 때는 Shift 가 늘 눌려 있으니 자유 회전)
+  else if (Math.abs(r) < ROT_SNAP) r = 0;
+  setRot(r);
+}
 const pendingQ = new Map();                                  // 획 지우개 요청 번호 -> 내가 예상한 지워질 획 키
 const rel = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 const touchRecs = () => [...ptr.values()].filter((r) => r.type === 'touch');
@@ -1669,7 +1679,7 @@ board.addEventListener('pointerdown', (e) => {
   if (rec.type === 'touch' && touchRecs().length >= 2) { enterPinch(); return; }
   if (ptr.size > 1) return;                                    // 서로 다른 종류 입력이 겹치면 첫 입력만
   if (heldTool) heldTool.used = true;                          // 도구 키를 누른 채 썼으면 키를 뗄 때 원래 도구로
-  if (e.button !== 1 && e.button !== 2 && rotWanted(e.shiftKey)) { gmode = 'rot'; rotDrag = { a0: rotAngle(p), r0: rot, moved: false }; return; }
+  if (e.button !== 1 && e.button !== 2 && rotWanted(e.shiftKey)) { gmode = 'rot'; rotDrag = { a0: rotAngle(p), r0: rot, moved: false, p, tmp: tool !== 'rotate' }; return; }
   const panWanted = e.button === 1 || tool === 'hand' || spaceDown || (rec.type === 'touch' && S.penOnly);
   if (panWanted) { gmode = 'pan'; return; }
   if (rec.type === 'mouse' && e.button !== 0) return;
@@ -1694,9 +1704,9 @@ board.addEventListener('pointermove', (e) => {
   if (rec.type === 'touch') tapMove(rec);
   if (gmode === 'tap' && Math.hypot(p.x - rec.sx, p.y - rec.sy) > TAP_MAX_PX) { gmode = 'pan'; dx = p.x - rec.sx; dy = p.y - rec.sy; }   // 채우기 도구로 끌면 화면 이동
   if (gmode === 'pan') panBy(dx, dy);
-  else if (gmode === 'rot' && rotDrag) {                       // 화면 가운데를 축으로, 누른 곳에서 돈 각도만큼 돌린다
+  else if (gmode === 'rot' && rotDrag) {
     if (!rotDrag.moved && Math.hypot(p.x - rec.sx, p.y - rec.sy) > TAP_MAX_PX) rotDrag.moved = true;
-    if (rotDrag.moved) { const r = Math.atan2(Math.sin(rotDrag.r0 + rotAngle(p) - rotDrag.a0), Math.cos(rotDrag.r0 + rotAngle(p) - rotDrag.a0)); setRot(Math.abs(r) < ROT_SNAP ? 0 : r); }
+    rotDrag.p = p; rotDragTo(e.shiftKey);
   }
   else if (gmode === 'drop') showDropPrev(rec, rec.type !== 'mouse');
   else if (gmode === 'pinch') doPinch();
@@ -1767,7 +1777,7 @@ document.addEventListener('selectstart', (e) => { if (!isEditable(e.target)) e.p
 document.addEventListener('dblclick', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
 /* --- 키보드 단축키: 클립 스튜디오(클튜)와 같은 키. 왼손 키패드·노브를 클튜 설정 그대로 쓸 수 있다 ---
    도구: P·B·D 펜, E 지우개, F·G·W 채우기, I 스포이드, H 화면 이동, R 화면 회전. 도구 키를 누른 채 그리고 떼면 원래 도구로 돌아간다.
-   누르는 동안: Space 화면 이동, Shift+Space 화면 회전, Alt 스포이드. 회전 도구(R) 중에 Space: 회전 취소. Shift+클릭: 앞 획 끝에서 직선.
+   누르는 동안: Space 화면 이동, Shift+Space 화면 회전, Alt 스포이드. 회전 도구(R): Shift 를 누르고 돌리면 45° 씩, Space 를 누르면 기울기는 그대로 원래 도구로. Shift+클릭: 앞 획 끝에서 직선.
    [ ] 크기 (Shift 와 같이: 3칸씩), Ctrl + / Ctrl − 확대·축소 (마우스·펜이 있는 곳 기준), Ctrl+0 전체 그림 보기, Ctrl+Alt+0 100%, Ctrl+Z 이전, Ctrl+Shift+Z·Ctrl+Y 되돌리기. */
 const TOOL_KEYS = { p: 'pen', b: 'pen', d: 'pen', e: 'eraser', f: 'fill', g: 'fill', w: 'fill', i: 'drop', h: 'hand', r: 'rotate' };
 const KEY_ZOOM = 1.2, KEY_SIZE = 1.2;                          // 키 한 번(노브 한 칸)에 배율 / 크기가 바뀌는 비율
@@ -1785,11 +1795,10 @@ function stepSize(up, n) {
   flash((sizeTarget() === 'eraser' ? '지우개 지름 ' : '펜 굵기 ') + getSize());
   if (lastMouse) updateRing(lastMouse);
 }
-function cancelRot() {                                         // 회전 도구(R) 중에 Space: 회전 취소 → 원래 방향(0°), R 전에 쓰던 도구로
-  if (gmode === 'rot') { rotDrag = null; gmode = 'none'; }     // 돌리던 중이면 거기서 멈춘다
+function leaveRot() {                                          // 회전 도구(R) 중에 Space: 기울기는 그대로 두고 R 전에 쓰던 도구로
+  if (gmode === 'rot') { rotDrag = null; gmode = 'none'; viewChanged(true); }   // 돌리던 중이면 그 각도에서 멈춘다
   heldTool = null;                                             // (R 을 누른 채였어도 떼면서 다시 바꾸지 않게)
-  animRot(0); setTool(rotFrom);
-  flash('회전 취소');
+  setTool(rotFrom);
 }
 function backTo(t, prev) {                                     // 잠깐 바꾼 도구 t 에서 prev 로 (그리는 중이면 다 그린 뒤에)
   if (tool !== t) return;
@@ -1797,7 +1806,7 @@ function backTo(t, prev) {                                     // 잠깐 바꾼 
 }
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(null); else if (openPopId) closePop(); else closeSide(); return; }
-  if (e.key === 'Shift' && !shiftDown) { shiftDown = true; syncCursor(); }
+  if (e.key === 'Shift' && !shiftDown) { shiftDown = true; syncCursor(); if (gmode === 'rot') rotDragTo(true); }   // 돌리는 중에 누르면 바로 45° 에 맞춘다
   const ed = isEditable(e.target), modal = !$('modal').hidden, ctl = e.ctrlKey || e.metaKey, k = keyLetter(e);
   if (ctl && !modal) {                                         // 확대·축소: 브라우저 화면 확대 대신 그림판 배율 (입력창에 있어도)
     if (e.code === 'Equal' || e.code === 'NumpadAdd' || e.key === '+' || e.key === '=') { e.preventDefault(); keyZoom(KEY_ZOOM); return; }
@@ -1818,7 +1827,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'BracketLeft' || e.code === 'BracketRight') { e.preventDefault(); stepSize(e.code === 'BracketRight', e.shiftKey ? 3 : 1); return; }
   if (e.code === 'Space') {                                    // 누르는 동안 화면 이동 (Shift 와 같이 누르면 회전)
     e.preventDefault();                                        // (초점이 있는 버튼이 눌리거나 페이지가 스크롤되지 않게)
-    if (tool === 'rotate') { if (!e.repeat) cancelRot(); return; }   // R 다음에 Space (또는 R 을 누른 채 Space) = 회전 취소
+    if (tool === 'rotate') { if (!e.repeat) leaveRot(); return; }    // R 다음에 Space (또는 R 을 누른 채 Space) = 회전 끝, 원래 도구로
     if (!spaceDown) { spaceDown = true; ring.hidden = true; syncCursor(); }
     return;
   }
@@ -1826,10 +1835,10 @@ window.addEventListener('keydown', (e) => {
   if (!t || e.repeat || ptr.size) return;
   heldTool = { code: e.code, t, prev: tool, used: false };
   setTool(t);
-  if (t === 'rotate') toast('화면 회전: 끌어서 돌려요 · Space 를 누르면 취소');
+  if (t === 'rotate') toast('화면 회전: 끌어서 돌려요 (Shift: 45°씩) · Space: 원래 도구로');
 });
 window.addEventListener('keyup', (e) => {
-  if (e.key === 'Shift') { shiftDown = false; syncCursor(); }
+  if (e.key === 'Shift') { shiftDown = false; syncCursor(); if (gmode === 'rot') rotDragTo(false); }
   if (e.code === 'Space') { spaceDown = false; syncCursor(); if (!isEditable(e.target)) e.preventDefault(); }
   if (e.key === 'Alt') { e.preventDefault(); if (altDrop) { const p = altDrop.prev; altDrop = null; hideDropPrev(); backTo('drop', p); } }
   if (heldTool && e.code === heldTool.code) { const h = heldTool; heldTool = null; if (h.used) backTo(h.t, h.prev); }   // 누른 채 썼으면 원래 도구로
@@ -2199,7 +2208,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 8차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 9차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
