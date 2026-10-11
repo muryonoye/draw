@@ -7,12 +7,16 @@ const { Pool } = require('pg');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, maxPayload: 16 * 1024 }); // 정상 메시지는 수백 바이트
+// 일반 메시지는 수백 바이트(최대 16KB). 칠하기('fill') 메시지만 더 클 수 있어서 소켓 한도는 넉넉히 두고, 아래 onRaw 에서 종류별로 다시 자른다.
+const MAX_MSG_BYTES = 16 * 1024, MAX_FILL_BYTES = 128 * 1024;
+const wss = new WebSocketServer({ server, maxPayload: MAX_FILL_BYTES });
 
 // ---- 한도 (public/index.html 의 같은 이름 상수와 값이 같아야 한다) ----
 const PEN_MAX = 200;          // 펜 굵기
 const ERASER_R_MAX = 500;     // 지우개 반지름
 const MAX_STROKES_PER_ERASE = 300; // 획 지우개 한 번에 지울 수 있는 획 수
+const FILL_THICK = 2;         // 칠하기 줄 두께 = 칸 크기 x 이 값 (줄끼리 겹쳐서 이음새가 안 보이게)
+const MAX_FILL_SPANS = 3000;  // 한 번 칠하기에 들어갈 수 있는 가로줄 수
 const MAX_HISTORY = +process.env.MAX_HISTORY || 100000;   // 방 하나에 둘 수 있는 선분 수 (테스트에서만 줄인다)
 const PING_MS = +process.env.PING_MS || 30000;
 const SID_RE = /^[0-9a-z]{1,12}$/;
@@ -24,6 +28,8 @@ const LOCK_GRACE_MS = +process.env.LOCK_GRACE_MS || 120000;    // 방이 잠겨 
 const MAX_CHAT = 100, CHAT_MAX_CHARS = 200, REASON_MAX = 50, MAX_LIST = 200, BAN_MAX_MIN = 43200;
 const BYE_CODE = { kicked: 4001, banned: 4002, locked: 4003 };
 const SAVE_MS = +process.env.SAVE_MS || 5000;
+const ROOM_EMPTY_MS = +process.env.ROOM_EMPTY_MS || 10 * 60 * 1000;      // DB 에 저장해 둔 빈 방을 메모리에 남겨 두는 시간
+const NO_DB_KEEP_MS = +process.env.NO_DB_KEEP_MS || 24 * 60 * 60 * 1000;  // DB 가 없거나 고장났을 땐 메모리가 유일한 사본이라 오래 둔다
 const ROOM_RE = /^[A-Za-z0-9_-]{1,32}$/;
 const ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 const NAME_MAX = 12;
@@ -32,7 +38,8 @@ const rooms = new Map(); // roomId -> { clients, history, names, dirty, noSave, 
 const r1 = (n) => Math.round(+n * 10) / 10;
 const okNum = (v) => Number.isFinite(v) && Math.abs(v) <= 1e7;
 
-// ---- 지우개: 서버와 화면이 똑같은 함수를 써야 모두의 그림이 같아진다 (server.js와 index.html에 같은 내용) ----
+// ---- 지우개·칠하기: 서버와 화면이 똑같은 함수를 써야 모두의 그림이 같아진다 (server.js와 index.html에 같은 내용) ----
+// @@SHARED_BEGIN
 // 선(s)에서 지우개 경로(캡슐: 선분 + 반지름)와 겹치는 구간 [시작, 끝](0~1)을 구한다. 겹치지 않으면 null.
 function erInterval(s, ex0, ey0, edx, edy, eL, rho) {
   const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
@@ -98,7 +105,11 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
     if (diff) diff.removed.push(s);
     const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
     const len = Math.sqrt(dx * dx + dy * dy);
-    const piece = (a, b) => ({ x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o, sid: s.sid });
+    const piece = (a, b) => {
+      const p = { x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o, sid: s.sid };
+      if (s.f) p.f = 1;                                   // 칠하기 조각은 잘려도 칠하기 조각이다
+      return p;
+    };
     if (iv[0] * len >= 0.25) { const p = piece(0, iv[0]); out.push(p); if (diff) diff.added.push(p); }
     if ((1 - iv[1]) * len >= 0.25) { const p = piece(iv[1], 1); out.push(p); if (diff) diff.added.push(p); }
   }
@@ -144,6 +155,25 @@ function removeExactSegs(list, items) {
   for (const s of list) { const k = key(s), c = need.get(k); if (c) { need.set(k, c - 1); n++; continue; } out.push(s); }
   return n ? out : null;
 }
+// 선분 목록에 합치기: 칠하기 조각(f)은 일반 선들 아래(목록 앞쪽, 먼저 칠한 것들 바로 뒤)에 끼우고, 일반 선은 맨 위(끝)에 붙인다.
+// 이 규칙 덕분에 칠하기는 항상 선 밑에 깔리고, 나중에 칠한 색이 먼저 칠한 색 위에 온다.
+function insertSegs(list, items) {
+  let fs = null;
+  for (const s of items) { if (s.f) (fs || (fs = [])).push(s); else list.push(s); }
+  if (fs) { let n = 0; while (n < list.length && list[n].f) n++; list.splice(n, 0, ...fs); }
+}
+// 칠하기: 칸 크기(cell, 0.2의 배수)와 가로줄 목록([[줄, 시작칸, 끝칸], ...])을 선분으로 바꾼다. 칸 (i, j)의 중심은 ((i+0.5)*cell, (j+0.5)*cell).
+// 줄 두께는 칸 크기보다 조금 굵어서(FILL_THICK) 줄끼리 겹쳐 이음새가 안 보이고, 가장자리는 경계선 밑으로 살짝 들어간다.
+function fillSize(cell) { return Math.round(cell * FILL_THICK * 100) / 100; }
+function fillSegs(o, sid, color, cell, rows) {
+  const size = fillSize(cell), R = (n) => Math.round(n * 10) / 10, out = [];
+  for (const r of rows) {
+    const y = R((r[0] + 0.5) * cell);
+    out.push({ x0: R((r[1] + 0.5) * cell), y0: y, x1: R((r[2] + 0.5) * cell), y1: y, color, size, o, sid, f: 1 });
+  }
+  return out;
+}
+// @@SHARED_END
 
 function newRoomId() {
   let s = '';
@@ -151,53 +181,109 @@ function newRoomId() {
   return s;
 }
 
-// ---- 저장소: DATABASE_URL 이 있으면 DB, 없으면 메모리만 ----
-const pool = process.env.DATABASE_URL
-  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 })
+// ---- 저장소: DATABASE_URL 이 있으면 DB(영구 저장), 없으면 메모리만(서버가 재시작되거나 잠들면 그림이 사라진다) ----
+// dbState: 'none'(주소 없음) | 'connecting' | 'ok' | 'error'(연결·저장 실패 — 계속 다시 시도한다)
+let dbState = 'none';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// 연결 주소 정리: 따옴표·공백을 없애고, 주소 안의 sslmode 같은 옵션은 뺀다(아래 ssl 설정이 주소 옵션에 덮어써지지 않게). 로컬 DB 인지도 판단한다.
+function parseDbUrl(raw) {
+  const s0 = String(raw || '').trim().replace(/^["']+|["']+$/g, '').trim();
+  if (!s0) return null;
+  let s = s0, local = false;
+  try {
+    const u = new URL(s0);
+    local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(u.hostname) || u.searchParams.get('sslmode') === 'disable';
+    for (const k of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'channel_binding', 'uselibpqcompat']) u.searchParams.delete(k);
+    s = u.toString();
+  } catch {}
+  return { url: s, local };
+}
+const dbInfo = parseDbUrl(process.env.DATABASE_URL);
+const pool = dbInfo
+  ? new Pool({ connectionString: dbInfo.url, ssl: dbInfo.local ? false : { rejectUnauthorized: false }, max: 4,
+      idleTimeoutMillis: 20000, connectionTimeoutMillis: 8000, query_timeout: 20000, keepAlive: true })
   : null;
-
-const dbReady = pool
-  ? (async () => {
-      try {
-        await pool.query("CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, history TEXT NOT NULL, names TEXT NOT NULL DEFAULT '{}', meta TEXT NOT NULL DEFAULT '{}', updated_at TIMESTAMPTZ DEFAULT now())");
-      } catch (e) {
-        console.error('DB 초기화 실패:', e.message);
-      }
+if (pool) {
+  dbState = 'connecting';
+  // 놀고 있던 연결을 DB 쪽에서 끊으면 pg 가 'error' 를 내보낸다. 처리하지 않으면 서버가 통째로 죽는다.
+  pool.on('error', (e) => console.error('DB 연결 오류 (자동으로 다시 연결해요):', e.message));
+}
+function setDbState(st) {
+  if (!pool || dbState === st) return;
+  console.log(`DB 상태: ${dbState} -> ${st}`);
+  dbState = st;
+  for (const room of rooms.values()) broadcastAll(room, roomStateMsg(room));   // 화면의 '저장 꺼짐' 표시를 바로 갱신한다
+}
+let dbInit = null;
+function initDb() {                                  // 표 만들기 + 읽기 확인. 실패하면 'error' 로 두고 나중에 다시 시도한다
+  if (dbInit) return dbInit;
+  dbInit = (async () => {
+    try {
+      try { await pool.query("CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, history TEXT NOT NULL, names TEXT NOT NULL DEFAULT '{}', meta TEXT NOT NULL DEFAULT '{}', updated_at TIMESTAMPTZ DEFAULT now())"); }
+      catch (e) { console.error('표 만들기 실패:', e.message); }
       for (const col of ['names', 'meta']) {          // 이미 있던 표에는 새 컬럼만 덧붙인다 (기존 데이터는 그대로)
         try { await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS ${col} TEXT NOT NULL DEFAULT '{}'`); }
         catch (e) { console.error(`컬럼 추가 실패(${col}):`, e.message); }
       }
+      await pool.query('SELECT 1 FROM rooms LIMIT 1');   // 표를 읽을 수 있어야 '저장 가능'
+      setDbState('ok');
       console.log('DB 연결됨: 그림이 영구 저장돼요');
-    })()
-  : Promise.resolve(console.log('DATABASE_URL 없음: 서버가 재시작되면 그림이 사라져요'));
+    } catch (e) {
+      setDbState('error');
+      console.error('DB를 쓸 수 없어요 (그림이 저장되지 않아요. 계속 다시 시도해요):', e.message);
+    } finally { dbInit = null; }
+  })();
+  return dbInit;
+}
+const dbReady = pool ? initDb() : Promise.resolve(console.log('DATABASE_URL 없음: 서버가 재시작되거나 잠들면 그림이 사라져요'));
 
-async function loadRoom(id) {
-  if (!pool) return { history: [], names: {}, meta: null };
+// 방 하나 불러오기. DB 가 잠깐 안 될 수 있어서(무료 DB 는 잠들어 있다 깨어난다) 몇 번 다시 시도한다.
+// 끝내 못 읽으면 failed: 읽지 못한 채로 저장하면 기존 그림을 덮어쓰게 되므로 그 방은 저장하지 않는다(나중에 DB 가 돌아오면 recoverRoom 이 다시 읽어 합친다).
+async function loadRoom(id, attempts = 3) {
+  const empty = { history: [], names: {}, meta: null };
+  if (!pool) return empty;
+  let row = null, ok = false;
+  for (let a = 1; a <= attempts && !ok; a++) {
+    try {
+      await dbReady;
+      if (dbState === 'error') await initDb();
+      const r = await pool.query('SELECT history, names, meta FROM rooms WHERE id = $1', [id]);
+      row = r.rows[0] || null; ok = true;
+      setDbState('ok');
+    } catch (e) {
+      console.error(`불러오기 실패 (${a}/${attempts}):`, e.message);
+      if (a < attempts) await sleep(800 * a);
+    }
+  }
+  if (!ok) { setDbState('error'); return { ...empty, failed: true }; }
+  if (!row) return empty;
   try {
-    await dbReady;
-    const r = await pool.query('SELECT history, names, meta FROM rooms WHERE id = $1', [id]);
-    if (!r.rows.length) return { history: [], names: {}, meta: null };
-    const row = r.rows[0];
     return { history: JSON.parse(row.history), names: JSON.parse(row.names || '{}'), meta: JSON.parse(row.meta || '{}') };
   } catch (e) {
-    // 읽기에 실패한 채로 저장하면 기존 그림을 덮어쓰게 되므로, 이 방은 저장하지 않는다
-    console.error('불러오기 실패 (이 방은 저장하지 않아요):', e.message);
-    return { history: [], names: {}, meta: null, failed: true };
+    console.error('저장된 데이터를 읽을 수 없어요 (이 방은 저장하지 않아요):', e.message);
+    return { ...empty, failed: true, corrupt: true };
   }
 }
 
-async function saveRoom(id, room) {
-  if (!pool || !room.dirty || room.noSave) return;
-  room.dirty = false;
-  try {
-    await pool.query(
-      'INSERT INTO rooms (id, history, names, updated_at) VALUES ($1, $2, $3, now()) ON CONFLICT (id) DO UPDATE SET history = $2, names = $3, updated_at = now()',
-      [id, JSON.stringify(room.history), JSON.stringify(room.names)]
-    );
-  } catch (e) {
-    room.dirty = true;
-    console.error('저장 실패:', e.message);
-  }
+// 같은 방의 저장은 순서대로 한다 (먼저 시작한 오래된 내용이 나중의 새 내용을 덮어쓰지 않게)
+function enqueue(room, fn) { room.q = (room.q || Promise.resolve()).then(fn, fn); return room.q; }
+function saveRoom(id, room) {
+  if (!pool || !room.dirty || room.noSave) return Promise.resolve();
+  return enqueue(room, async () => {
+    if (!room.dirty || room.noSave) return;           // 앞선 저장이 이미 최신 내용을 저장했을 수 있다
+    room.dirty = false;
+    try {
+      await pool.query(
+        'INSERT INTO rooms (id, history, names, updated_at) VALUES ($1, $2, $3, now()) ON CONFLICT (id) DO UPDATE SET history = $2, names = $3, updated_at = now()',
+        [id, JSON.stringify(room.history), JSON.stringify(room.names)]
+      );
+      setDbState('ok');
+    } catch (e) {
+      room.dirty = true;
+      setDbState('error');
+      console.error('저장 실패 (다시 시도해요):', e.message);
+    }
+  });
 }
 
 // ---- 닉네임 ----
@@ -242,17 +328,69 @@ function pruneNames(room) {
   }
 }
 
-async function saveAll() {
-  for (const [id, room] of rooms) {
-    pruneNames(room);
-    purgeMeta(room);
-    await saveRoom(id, room);
-    await saveMeta(id, room);
-  }
+// 불러오기에 실패했던 방: DB 가 돌아오면 다시 읽어서, 그동안 새로 그린 것과 합친다 (저장돼 있던 그림은 그대로 두고 새 그림을 그 위에 올린다)
+async function recoverRoom(id, room) {
+  if (!room.loadFailed || room.corrupt || room.recovering || !pool) return;
+  room.recovering = true;
+  try {
+    const d = await loadRoom(id, 1);
+    if (d.failed) { if (d.corrupt) room.corrupt = true; return; }
+    const mem = room.history;
+    room.history = cleanHistory(d.history);
+    assignLegacySids(room.history);
+    insertSegs(room.history, mem);
+    room.names = { ...(isPlainObj(d.names) ? d.names : {}), ...room.names };
+    room.meta = normalizeMeta(d.meta);
+    room.noSave = false; room.loadFailed = false; room.dirty = true;
+    console.log(`방 ${id}: 저장돼 있던 그림을 다시 불러와 합쳤어요`);
+    broadcastAll(room, { type: 'history', data: room.history });
+    broadcastAll(room, { type: 'names', names: room.names });
+    broadcastAll(room, roomStateMsg(room));
+    for (const c of [...room.clients]) {                 // 이제 방장·밴·잠금 정보를 알 수 있으니 다시 확인한다
+      const v = admit(room, id, c.owner);
+      if (v) { byeAndClose(c, v); continue; }
+      send(c, meMsg(room, c.owner));
+      if (isRoomOwner(room, c.owner)) send(c, adminMsg(room));
+    }
+  } finally { room.recovering = false; }
 }
-setInterval(saveAll, SAVE_MS);
-process.on('SIGTERM', async () => { await saveAll(); process.exit(0); });
+
+// 주기 점검: 저장 → (실패했던 방 복구) → 오래 비어 있던 방을 메모리에서 내림. 겹쳐 돌지 않고 순서대로 돈다.
+let saveBusy = false, saveChain = Promise.resolve();
+async function runSaveAll() {
+  saveBusy = true;
+  try {
+    if (pool && dbState === 'error') await initDb();     // 연결이 끊겨 있었다면 먼저 복구해 본다
+    for (const [id, room] of [...rooms]) {
+      if (!room.loaded) continue;                        // 아직 불러오는 중인 방은 건드리지 않는다
+      pruneNames(room);
+      purgeMeta(room);
+      if (room.loadFailed) await recoverRoom(id, room);
+      await saveRoom(id, room);
+      await saveMeta(id, room);
+      const clean = !pool || (!room.dirty && !room.metaDirty);       // DB 가 없으면 dirty 표시는 의미가 없다
+      const keep = dbState === 'ok' ? ROOM_EMPTY_MS : NO_DB_KEEP_MS;  // 저장된 빈 방은 곧 내리고, 메모리가 유일한 사본일 땐 오래 둔다
+      if (room.clients.size === 0 && Date.now() - room.lastActive >= keep && clean && !room.loadFailed) { rooms.delete(id); console.log(`방 ${id}: 비어서 메모리에서 내림${pool ? ' (DB 에 저장돼 있어요)' : ''}`); }
+    }
+  } catch (e) { console.error('저장 점검 오류:', e.message); }
+  finally { saveBusy = false; }
+}
+const saveAll = () => (saveChain = saveChain.then(runSaveAll, runSaveAll));
+setInterval(() => { if (!saveBusy) saveAll(); }, SAVE_MS);
+let stopping = false;
+async function shutdown(why) {                           // Render 가 재시작·잠재우기 전에 보내는 신호: 저장하고 끝낸다
+  if (stopping) return;
+  stopping = true;
+  console.log(`${why}: 마지막 저장 중…`);
+  const guard = setTimeout(() => process.exit(0), 8000);
+  try { await saveAll(); } catch {}
+  clearTimeout(guard);
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e));
+process.on('uncaughtException', (e) => { console.error('uncaughtException:', e); saveAll().catch(() => {}); });   // 죽지 않고 계속하되, 일단 저장은 해 둔다
 
 // ---- 획 ID(sid) ----
 // sid 없는 옛 선: 같은 주인·같은 색·같은 굵기이고 앞 선분의 끝점에서 이어지는 선분들을 한 획으로 보고 임시 sid 를 붙인다.
@@ -284,20 +422,30 @@ function autoSid(ws, s) {
   return ws.auto.sid;
 }
 
+const isPlainObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
+// DB 에서 읽은 선분 중 쓸 수 없는 것(손상된 값)은 버린다. 정상적인 선분은 그대로 둔다.
+const isSeg = (s) => !!s && typeof s === 'object' && [s.x0, s.y0, s.x1, s.y1, s.size].every(Number.isFinite);
+const cleanHistory = (h) => (Array.isArray(h) ? h.filter(isSeg) : []);
 function getRoom(id) {
-  if (!rooms.has(id)) {
-    const room = { id, clients: new Set(), history: [], names: {}, meta: normalizeMeta(null), dirty: false, metaDirty: false, noSave: false,
+  let room = rooms.get(id);
+  if (!room) {
+    room = { id, clients: new Set(), history: [], names: {}, meta: normalizeMeta(null), dirty: false, metaDirty: false, noSave: false,
+      loaded: false, loadFailed: false, corrupt: false, recovering: false, lastActive: Date.now(), q: null,
       chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map() };
-    room.ready = loadRoom(id).then((d) => {
-      room.history = Array.isArray(d.history) ? d.history : [];
-      room.names = d.names && typeof d.names === 'object' && !Array.isArray(d.names) ? d.names : {};
-      room.noSave = !!d.failed;
-      room.meta = normalizeMeta(d.meta);
-      if (assignLegacySids(room.history)) room.dirty = true;
+    const r = room;
+    r.ready = loadRoom(id).then((d) => {
+      r.history = cleanHistory(d.history);
+      r.names = isPlainObj(d.names) ? d.names : {};
+      r.loadFailed = !!d.failed; r.corrupt = !!d.corrupt;
+      r.noSave = r.loadFailed;
+      r.meta = normalizeMeta(d.meta);
+      if (assignLegacySids(r.history)) r.dirty = true;
+      r.loaded = true;
     });
     rooms.set(id, room);
   }
-  return rooms.get(id);
+  room.lastActive = Date.now();
+  return room;
 }
 
 function broadcast(room, sender, obj) {
@@ -386,22 +534,27 @@ function purgeMeta(room, now = Date.now()) {
   return changed;
 }
 // 방 설정은 작아서 바뀌는 즉시 저장한다 (행이 아직 없는 방도 저장되도록 UPSERT, history 는 건드리지 않는다)
-async function saveMeta(id, room) {
-  if (!pool || room.noSave || !room.metaDirty) return;
-  room.metaDirty = false;
-  try {
-    await pool.query(
-      'INSERT INTO rooms (id, history, names, meta, updated_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT (id) DO UPDATE SET meta = $4, updated_at = now()',
-      [id, '[]', '{}', JSON.stringify(room.meta)]
-    );
-  } catch (e) {
-    room.metaDirty = true;
-    console.error('방 설정 저장 실패:', e.message);
-  }
+function saveMeta(id, room) {
+  if (!pool || room.noSave || !room.metaDirty) return Promise.resolve();
+  return enqueue(room, async () => {
+    if (room.noSave || !room.metaDirty) return;
+    room.metaDirty = false;
+    try {
+      await pool.query(
+        'INSERT INTO rooms (id, history, names, meta, updated_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT (id) DO UPDATE SET meta = $4, updated_at = now()',
+        [id, '[]', '{}', JSON.stringify(room.meta)]
+      );
+      setDbState('ok');
+    } catch (e) {
+      room.metaDirty = true;
+      setDbState('error');
+      console.error('방 설정 저장 실패 (다시 시도해요):', e.message);
+    }
+  });
 }
 function persistMeta(room) { room.metaDirty = true; saveMeta(room.id, room); }
 
-const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked });
+const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked, persist: dbState === 'ok' && !room.noSave });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
 function meMsg(room, o, now = Date.now()) {
   const mu = room.meta.mutes[o];
   return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: !!room.meta.spectators[o] };
@@ -558,12 +711,38 @@ function handleCmd(ws, room, roomId, msg) {
     cmdErr(ws, '알 수 없는 명령이에요');
   }
 }
-function undoAllow(ws) {                              // 이전/되돌리기 일괄 메시지: 초당 15개
+function undoAllow(ws, n) {                           // 이전/되돌리기로 한꺼번에 넣고 빼는 선분: 초당 500개, 한꺼번에는 6000개까지 (큰 칠하기를 지운 뒤 되돌려도 막히지 않게)
   const now = Date.now();
-  ws.undoTok = Math.min(30, ws.undoTok + (now - ws.undoAt) * 0.015); ws.undoAt = now;
-  if (ws.undoTok < 1) return false;
-  ws.undoTok -= 1;
+  ws.undoTok = Math.min(6000, ws.undoTok + (now - ws.undoAt) * 0.5); ws.undoAt = now;
+  const c = Math.max(1, n | 0);
+  if (ws.undoTok < c) return false;
+  ws.undoTok -= c;
   return true;
+}
+function fillAllow(ws) {                              // 칠하기: 초당 약 4번, 한꺼번에는 8번까지 (한 번이 크고 무거워서 따로 센다)
+  const now = Date.now();
+  ws.fillTok = Math.min(8, ws.fillTok + (now - ws.fillAt) * 0.004); ws.fillAt = now;
+  if (ws.fillTok < 1) return false;
+  ws.fillTok -= 1;
+  return true;
+}
+// 칠하기 메시지 검사: 올바르면 정리된 값, 아니면 null. 칸 크기는 0.2 의 배수여야 한다 (좌표가 0.1 단위로 딱 떨어지게).
+function checkFill(m) {
+  if (typeof m.sid !== 'string' || !SID_RE.test(m.sid)) return null;
+  if (typeof m.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(m.color)) return null;
+  const cell = +m.cell;
+  if (!Number.isFinite(cell) || cell < 0.2 - 1e-9 || cell > 100 || Math.abs(cell * 5 - Math.round(cell * 5)) > 1e-6) return null;
+  const c = Math.round(cell * 5) / 5;
+  if (!Array.isArray(m.rows) || !m.rows.length || m.rows.length > MAX_FILL_SPANS) return null;
+  const lim = Math.floor(1e7 / c) - 1;
+  const rows = [];
+  for (const r of m.rows) {
+    if (!Array.isArray(r) || r.length !== 3) return null;
+    const j = r[0], a = r[1], b = r[2];
+    if (!Number.isInteger(j) || !Number.isInteger(a) || !Number.isInteger(b) || a > b || Math.abs(j) > lim || Math.abs(a) > lim || Math.abs(b) > lim) return null;
+    rows.push([j, a, b]);
+  }
+  return { sid: m.sid, color: m.color.toLowerCase(), cell: c, rows };
 }
 // 접속 단위 전체 메시지 상한 (도배로 서버 CPU 를 점유하는 것 방지). 초과분은 조용히 버린다.
 function globalAllow(ws) {
@@ -577,12 +756,12 @@ function globalAllow(ws) {
 
 // ---- 웹 서버 ----
 // 어느 파일이 올라갔는지 바로 확인하는 용도 (화면의 설정 맨 아래에 '서버 버전'으로 보인다)
-app.get('/version', (req, res) => res.json({ stage: 2, date: '2026-10-03' }));
+app.get('/version', (req, res) => res.json({ stage: 3, date: '2026-10-10', db: dbState }));   // db: none(저장소 없음) | connecting | ok | error
 app.get('/', (req, res, next) => {
   if (!req.query.room) return res.redirect('/?room=' + newRoomId());
   next();
 });
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));   // 올릴 때마다 새 화면이 바로 보이게 (매번 변경 여부를 확인)
 
 wss.on('error', (e) => console.error('wss error:', e.message));
 
@@ -597,7 +776,20 @@ const pingTimer = setInterval(() => {
 if (pingTimer.unref) pingTimer.unref();
 wss.on('close', () => clearInterval(pingTimer));
 
-const DRAW_TYPES = new Set(['seg', 'clear', 'erase', 'erasestroke', 'cancelstroke', 'addsegs', 'removesegs']);
+// 들어온 원본 메시지의 크기·종류를 먼저 거른다. 칠하기('fill')만 16KB 를 넘을 수 있고, 그 외의 큰 메시지는 읽지도 않고 버린다.
+// 칠하기는 JSON 을 읽기 전에 속도 제한부터 확인한다 (무거운 메시지로 서버를 괴롭히지 못하게).
+function onRaw(ws, room, roomId, owner, raw, isBinary) {
+  if (isBinary) return;
+  const head = raw.toString('utf8', 0, 60);
+  const isFill = head.startsWith('{"type":"fill",');
+  if (raw.length > MAX_MSG_BYTES && !isFill) return;
+  if (isFill) {
+    if (!fillAllow(ws)) { const m = /"sid":"([0-9a-z]{1,12})"/.exec(head); send(ws, { type: 'fillno', sid: m ? m[1] : null, reason: 'rate' }); return; }
+    ws.fillPaid = true;                                   // 속도 제한은 여기서 이미 냈다 (onMessage 가 한 번 더 세지 않게)
+  }
+  try { onMessage(ws, room, roomId, owner, raw); } finally { ws.fillPaid = false; }
+}
+const DRAW_TYPES = new Set(['seg', 'clear', 'erase', 'erasestroke', 'cancelstroke', 'addsegs', 'removesegs', 'fill']);
 function onMessage(ws, room, roomId, owner, raw) {
   try {
     if (!globalAllow(ws)) return;
@@ -607,6 +799,7 @@ function onMessage(ws, room, roomId, owner, raw) {
     const now = Date.now();
     if (DRAW_TYPES.has(msg.type) && room.meta.spectators[owner]) {   // 관전(보기만 가능)으로 바뀐 사람은 그리기를 할 수 없다
       notice(ws, 'spectator', '방장이 그리기를 제한했어요 (보기만 가능)');
+      if (msg.type === 'fill') send(ws, { type: 'fillno', sid: typeof msg.sid === 'string' && SID_RE.test(msg.sid) ? msg.sid : null, reason: 'spectator' });   // 보낸 화면이 방금 칠한 걸 되돌릴 수 있게
       return;
     }
     if (msg.type === 'seg') {
@@ -661,23 +854,36 @@ function onMessage(ws, room, roomId, owner, raw) {
       const res = removeStrokes(room.history, keys);
       if (res) { room.history = res; room.dirty = true; broadcastAll(room, { type: 'strokesgone', keys, by: owner, cancel: true }); }
     } else if (msg.type === 'addsegs') {
-      // 되돌리기(redo)·지우개 이전(undo)으로 내 선분을 다시 넣는다 (최대 100개, 주인은 항상 나)
-      if (!undoAllow(ws) || !Array.isArray(msg.segs)) return;
+      // 되돌리기(redo)·지우개 이전(undo)으로 내 선분을 다시 넣는다 (최대 100개, 주인은 항상 나). 칠하기 조각(f)은 선 아래로 들어간다.
+      if (!Array.isArray(msg.segs) || !undoAllow(ws, Math.min(msg.segs.length, 100))) return;
       const list = [];
       for (const m of msg.segs.slice(0, 100)) {
         if (!m || typeof m !== 'object') continue;
-        const s = { x0: r1(m.x0), y0: r1(m.y0), x1: r1(m.x1), y1: r1(m.y1), color: String(m.color).slice(0, 9), size: Math.min(Math.max(+m.size || 4, 1), PEN_MAX), o: owner, sid: m.sid };
+        const f = m.f === 1;
+        const s = { x0: r1(m.x0), y0: r1(m.y0), x1: r1(m.x1), y1: r1(m.y1), color: String(m.color).slice(0, 9), size: Math.min(Math.max(+m.size || 4, f ? 0.1 : 1), PEN_MAX), o: owner, sid: m.sid };
+        if (f) s.f = 1;
         if (![s.x0, s.y0, s.x1, s.y1].every(okNum) || typeof s.sid !== 'string' || !SID_RE.test(s.sid)) continue;
         if (room.history.length + list.length >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); break; }
         list.push(s);
       }
       if (!list.length) return;
-      for (const s of list) room.history.push(s);
+      insertSegs(room.history, list);
       room.dirty = true;
       broadcast(room, ws, { type: 'segs', list });
+    } else if (msg.type === 'fill') {
+      // 칠하기: 화면에서 계산한 가로줄 목록을 받아 검사하고, 선분(f)으로 바꿔 선 아래에 넣는다. 한 번에 통째로 들어가거나 통째로 거절된다.
+      const sid = typeof msg.sid === 'string' && SID_RE.test(msg.sid) ? msg.sid : null;
+      const no = (reason) => send(ws, { type: 'fillno', sid, reason });
+      if (ws.fillPaid) ws.fillPaid = false; else if (!fillAllow(ws)) return no('rate');
+      const f = checkFill(msg);
+      if (!f) return no('bad');
+      if (room.history.length + f.rows.length > MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return no('full'); }
+      insertSegs(room.history, fillSegs(owner, f.sid, f.color, f.cell, f.rows));
+      room.dirty = true;
+      broadcast(room, ws, { type: 'fill', o: owner, sid: f.sid, color: f.color, cell: f.cell, rows: f.rows });
     } else if (msg.type === 'removesegs') {
       // 이전(undo): 내 선분 중 값이 같은 것을 정확히 지운다 (잘린 조각 되돌리기)
-      if (!undoAllow(ws) || !Array.isArray(msg.segs)) return;
+      if (!Array.isArray(msg.segs) || !undoAllow(ws, Math.min(msg.segs.length, 100))) return;
       const items = [];
       for (const m of msg.segs.slice(0, 100)) {
         if (!m || typeof m !== 'object' || typeof m.sid !== 'string' || !SID_RE.test(m.sid)) continue;
@@ -739,14 +945,11 @@ function onClose(ws, room, roomId, owner) {
       }, LEAVE_GRACE_MS));
     }
   }
-  if (room.clients.size === 0) {
+  if (room.clients.size === 0) {                        // 마지막 사람이 나가면 바로 저장한다. 메모리에서 내리는 건 주기 점검(runSaveAll)이 맡는다.
+    room.lastActive = Date.now();
     pruneNames(room);
     saveRoom(roomId, room);
     saveMeta(roomId, room);
-    setTimeout(() => {
-      const r = rooms.get(roomId);
-      if (r && r.clients.size === 0) rooms.delete(roomId);
-    }, 10 * 60 * 1000);
   }
 }
 
@@ -756,7 +959,7 @@ wss.on('connection', async (ws, req) => {
   const url = new URL(req.url, 'http://localhost');
   const rawRoom = url.searchParams.get('room') || 'lobby';
   const roomId = ROOM_RE.test(rawRoom) ? rawRoom : 'lobby';
-  const room = getRoom(roomId);
+  const room = getRoom(roomId);                        // (방의 마지막 활동 시각도 여기서 갱신된다)
 
   // 브라우저가 보낸 비밀 키를 해시해 '주인 ID'로 쓴다. 키가 없으면 이번 접속에서만 주인.
   const key = url.searchParams.get('k') || '';
@@ -766,14 +969,14 @@ wss.on('connection', async (ws, req) => {
   ws.owner = owner;
   const t0 = Date.now();
   ws.approved = false;
-  ws.tokens = 400; ws.tokAt = t0; ws.gTok = 1000; ws.gAt = t0; ws.cmdTok = 5; ws.cmdAt = t0; ws.undoTok = 30; ws.undoAt = t0;
+  ws.tokens = 400; ws.tokAt = t0; ws.gTok = 1000; ws.gAt = t0; ws.cmdTok = 5; ws.cmdAt = t0; ws.undoTok = 6000; ws.undoAt = t0; ws.fillTok = 8; ws.fillAt = t0; ws.fillPaid = false;
   ws.lastCur = 0; ws.lastNick = 0; ws.lastSync = 0;
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
-  ws.on('message', (raw) => { if (ws.approved) onMessage(ws, room, roomId, owner, raw); });   // 승인 전에 도착한 메시지는 무시한다
+  ws.on('message', (raw, isBinary) => { if (ws.approved) onRaw(ws, room, roomId, owner, raw, isBinary); });   // 승인 전에 도착한 메시지는 무시한다
   ws.on('close', () => onClose(ws, room, roomId, owner));
 
-  await room.ready;
+  try { await room.ready; } catch (e) { console.error('방 불러오기 오류:', e.message); try { ws.close(1011, 'room load error'); } catch {} return; }
   if (ws.readyState !== 1) return;
   const verdict = admit(room, roomId, owner);          // 1) 방장 지정  2) 밴  3) 잠금
   if (verdict) { byeAndClose(ws, verdict); return; }   // 거부: clients 에 넣지 않고 입장·접속자 수 알림도 하지 않는다

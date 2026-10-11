@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#17191e">
 <title>같이 그리기</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%A8%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #17191e; --panel: #22252c; --panel-2: #2b2f38; --line: #3a3f4b; --text: #eef1f6; --muted: #9aa3b2;
@@ -130,7 +131,7 @@
   #modal p { margin: 0 0 16px; color: var(--muted); white-space: pre-line; }
   #modal .acts { display: flex; gap: 8px; justify-content: flex-end; }
   #toasts { position: fixed; z-index: 70; left: 50%; transform: translateX(-50%); top: calc(54px + var(--safe-t)); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; width: min(92vw, 420px); }
-  .toast { background: rgba(34,37,44,.96); color: var(--text); border: 1px solid var(--line); padding: 8px 14px; border-radius: 12px; box-shadow: var(--shadow); font-size: 13px; animation: tin .18s ease-out; }
+  .toast { background: rgba(34,37,44,.96); color: var(--text); border: 1px solid var(--line); padding: 8px 14px; border-radius: 12px; box-shadow: var(--shadow); font-size: 13px; animation: tin .18s ease-out; word-break: keep-all; }
   .toast.warn { border-color: var(--warn); } .toast.err { border-color: var(--danger); } .toast.ok { border-color: var(--ok); }
   @keyframes tin { from { opacity: 0; transform: translateY(-6px); } }
   #endScreen { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(23,25,30,.96); padding: 24px; text-align: center; }
@@ -201,6 +202,29 @@
   #modal .field { margin-bottom: 12px; }
   #modal .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
   #modal p:empty { display: none; }
+
+  /* ===== 3단계: 채우기·스포이드·저장 표시·좁은 화면 도구 모음 ===== */
+  #tools { max-height: calc(100% - 20px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  #tools::-webkit-scrollbar { display: none; }
+  .toolwrap { display: flex; }
+  .toolwrap > .tool { flex: 1; }
+  #hud .warnbtn { color: var(--warn); font-weight: 600; font-variant-numeric: normal; }
+  #dropPrev { position: absolute; left: 0; top: 0; z-index: 7; pointer-events: none; display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px;
+    border-radius: 999px; background: rgba(23,25,30,.94); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; box-shadow: var(--shadow); white-space: nowrap; }
+  #dropPrev i { display: block; width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55); }
+  @media (max-width: 720px) {                                  /* 폰 세로: 도구 12개가 한 줄에 다 들어가게 버튼 폭을 나눠 쓴다 */
+    #tools { max-height: none; padding-left: 4px; padding-right: 4px; gap: 0; }
+    .tool, .toolwrap { flex: 1 1 0; min-width: 30px; width: auto; }
+    .toolwrap > .tool { width: auto; min-width: 0; }
+    .toolsep { margin: 8px 1px; }
+  }
+  @media (min-width: 721px) and (max-height: 560px) {          /* 폰 가로 등 낮은 화면: 도구를 2줄(열)로, 왼쪽 위 상태 알약(HUD) 아래에서 시작 */
+    #tools { flex-direction: row; flex-wrap: wrap; justify-content: center; align-content: flex-start; width: calc(var(--btn) * 2 + 18px);   /* 버튼 2개 + 사이 4 + 안쪽 여백 12 + 테두리 2 */
+      top: 46px; transform: none; max-height: calc(100% - 56px); }
+    .toolsep { display: none; }
+  }
+  @media (min-width: 721px) and (max-height: 440px) { #tools { width: calc(var(--btn) * 3 + 22px); } }
+  @media (max-width: 960px), (max-height: 560px) { #toasts { top: calc(98px + var(--safe-t)); } }   /* 좁거나 낮은 화면: 알림이 상태 알약(HUD)을 가리지 않게 그 아래에 */
 </style>
 </head>
 <body>
@@ -227,6 +251,8 @@
     <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
     <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></symbol>
     <symbol id="i-redo" viewBox="0 0 24 24"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></symbol>
+    <symbol id="i-bucket" viewBox="0 0 24 24"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></symbol>
+    <symbol id="i-dropper" viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></symbol>
   </defs>
 </svg>
 
@@ -248,10 +274,12 @@
   <div id="cursors"></div>
   <div id="tip" hidden><span class="dot"></span><b></b><i></i></div>
   <div id="ring" hidden></div>
+  <div id="dropPrev" hidden aria-hidden="true"><i></i><b></b></div>
   <div id="hud" role="status">
     <span id="hudDot" class="dot"></span><span id="hudCount">연결 중…</span>
     <span class="sepv"></span><span id="hudZoom">100%</span>
     <span class="sepv"></span><button id="hudCenter" class="linkbtn" title="중앙 좌표 (누르면 복사)" aria-label="중앙 좌표">(0, 0)</button>
+    <span id="hudPersistSep" class="sepv" hidden></span><button id="hudPersist" class="linkbtn warnbtn" hidden title="그림이 저장되지 않고 있어요 (눌러서 자세히)" aria-label="저장 꺼짐">⚠ 저장 꺼짐</button>
   </div>
   <div id="banner" hidden><span class="spin"></span><span>재연결 중…</span></div>
 
@@ -261,6 +289,8 @@
       <button id="tEraser" class="tool" aria-label="지우개 (E)" title="지우개 (E)" aria-pressed="false"><svg class="ic"><use id="eraserUse" href="#i-eraser"/></svg><span class="sub" id="eraserSub">부분</span></button>
       <button id="tEraserMode" class="caret" aria-label="지우개 모드 선택" title="지우개 모드 선택" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-chevron"/></svg></button>
     </div>
+    <button id="tFill" class="tool" aria-label="채우기 (F)" title="채우기 (F)" aria-pressed="false"><svg class="ic"><use href="#i-bucket"/></svg></button>
+    <button id="tDrop" class="tool" aria-label="스포이드 (I)" title="스포이드 (I)" aria-pressed="false"><svg class="ic"><use href="#i-dropper"/></svg></button>
     <button id="tHand" class="tool" aria-label="화면 이동 (H)" title="화면 이동 (H)" aria-pressed="false"><svg class="ic"><use href="#i-hand"/></svg></button>
     <div class="toolsep"></div>
     <button id="tUndo" class="tool" aria-label="이전 (실행 취소, Ctrl+Z)" title="이전 (실행 취소, Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo"/></svg></button>
@@ -338,9 +368,10 @@
   <div class="switch"><div>펜으로만 그리기<small>손가락은 이동·줌 전용</small></div><input type="checkbox" id="setPenOnly" aria-label="펜으로만 그리기"></div>
   <div class="switch"><div>다른 사람 커서 표시</div><input type="checkbox" id="setCursors" aria-label="다른 사람 커서 표시"></div>
   <div class="switch"><div>펜 모드에서 작성자 표시<small>선에 마우스를 올리면 이름 표시</small></div><input type="checkbox" id="setPenHover" aria-label="펜 모드에서 작성자 표시"></div>
+  <div class="switch"><div>손가락 탭으로 이전·되돌리기<small>두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기</small></div><input type="checkbox" id="setTapUndo" aria-label="손가락 탭으로 이전 되돌리기"></div>
   <h3 style="margin-top:12px">단축키</h3>
-  <div class="kbd"><b>P</b><span>펜</span><b>E</b><span>지우개</span><b>H</b><span>화면 이동</span><b>Space</b><span>누르고 드래그하면 이동</span></div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 2단계 (2026-10-03)</div>
+  <div class="kbd"><b>P</b><span>펜</span><b>E</b><span>지우개</span><b>H</b><span>화면 이동</span><b>F</b><span>채우기</span><b>I</b><span>스포이드</span><b>Space</b><span>누르고 드래그하면 이동</span></div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -374,6 +405,9 @@ const $ = (id) => document.getElementById(id);
 const PEN_MAX = 200;                 // 펜 굵기
 const ERASER_R_MAX = 500;            // 지우개 반지름 (지름은 2배)
 const MAX_STROKES_PER_ERASE = 300;   // 획 지우개 한 번에 지울 수 있는 획 수
+const FILL_THICK = 2;                // 칠하기 줄 두께 = 칸 크기 x 이 값 (줄끼리 겹쳐서 이음새가 안 보이게)
+const MAX_FILL_SPANS = 3000;         // 한 번 칠하기에 들어갈 수 있는 가로줄 수
+const FILL_MIN_PX = 1.5;             // 멀리 축소해서 칠하기 줄이 화면에서 1.5px 보다 가늘어지면, 이 두께로 그려서 색이 흐려지지 않게 한다
 const MAX_COORD = 1e7;
 // 줌
 const MIN_S = 0.02, MAX_S = 20;
@@ -388,6 +422,12 @@ const MIN_POINT_PX = 1.5, MIN_POINT_MS = 5;   // 너무 가깝거나 빠른 점�
 // 작성자 표시
 const HOVER_MARGIN_MOUSE_PX = 8, HOVER_MARGIN_TOUCH_PX = 12, HOVER_THROTTLE_MS = 40;
 const TAP_MAX_PX = 8, TAP_MAX_MS = 400, TIP_TAP_HIDE_MS = 3000;
+// 채우기 / 스포이드 / 여러 손가락 탭
+const FILL_CELL_PX = 1;              // 칠하기 계산 칸 크기 (화면 픽셀)
+const MAX_FILL_CELLS = 16e6;         // 계산용 격자 칸 수 상한 (메모리 보호)
+const DROP_MARGIN_MOUSE_PX = 1.5, DROP_MARGIN_TOUCH_PX = 4;   // 스포이드가 선을 집는 여유
+const MULTI_TAP_MS = 350;            // 손가락이 닿고 이 시간 안에 모두 떼어지면 탭
+const MULTI_TAP_MOVE_PX = 12;        // 이보다 많이 움직이면 탭이 아니라 이동·확대
 // 그리드
 const GRID_STEP = 100, GRID_MIN_PX = 3;
 // 연결 / 그리기
@@ -413,7 +453,7 @@ const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').mat
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -429,7 +469,8 @@ function loadSettings() {
 let S = loadSettings();
 const saveSettings = () => lsSet('draw:settings', JSON.stringify(S));
 
-// ---- 지우개: 서버와 화면이 똑같은 함수를 써야 모두의 그림이 같아진다 (server.js와 index.html에 같은 내용) ----
+// ---- 지우개·칠하기: 서버와 화면이 똑같은 함수를 써야 모두의 그림이 같아진다 (server.js와 index.html에 같은 내용) ----
+// @@SHARED_BEGIN
 // 선(s)에서 지우개 경로(캡슐: 선분 + 반지름)와 겹치는 구간 [시작, 끝](0~1)을 구한다. 겹치지 않으면 null.
 function erInterval(s, ex0, ey0, edx, edy, eL, rho) {
   const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
@@ -495,7 +536,11 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
     if (diff) diff.removed.push(s);
     const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
     const len = Math.sqrt(dx * dx + dy * dy);
-    const piece = (a, b) => ({ x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o, sid: s.sid });
+    const piece = (a, b) => {
+      const p = { x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o, sid: s.sid };
+      if (s.f) p.f = 1;                                   // 칠하기 조각은 잘려도 칠하기 조각이다
+      return p;
+    };
     if (iv[0] * len >= 0.25) { const p = piece(0, iv[0]); out.push(p); if (diff) diff.added.push(p); }
     if ((1 - iv[1]) * len >= 0.25) { const p = piece(iv[1], 1); out.push(p); if (diff) diff.added.push(p); }
   }
@@ -541,6 +586,25 @@ function removeExactSegs(list, items) {
   for (const s of list) { const k = key(s), c = need.get(k); if (c) { need.set(k, c - 1); n++; continue; } out.push(s); }
   return n ? out : null;
 }
+// 선분 목록에 합치기: 칠하기 조각(f)은 일반 선들 아래(목록 앞쪽, 먼저 칠한 것들 바로 뒤)에 끼우고, 일반 선은 맨 위(끝)에 붙인다.
+// 이 규칙 덕분에 칠하기는 항상 선 밑에 깔리고, 나중에 칠한 색이 먼저 칠한 색 위에 온다.
+function insertSegs(list, items) {
+  let fs = null;
+  for (const s of items) { if (s.f) (fs || (fs = [])).push(s); else list.push(s); }
+  if (fs) { let n = 0; while (n < list.length && list[n].f) n++; list.splice(n, 0, ...fs); }
+}
+// 칠하기: 칸 크기(cell, 0.2의 배수)와 가로줄 목록([[줄, 시작칸, 끝칸], ...])을 선분으로 바꾼다. 칸 (i, j)의 중심은 ((i+0.5)*cell, (j+0.5)*cell).
+// 줄 두께는 칸 크기보다 조금 굵어서(FILL_THICK) 줄끼리 겹쳐 이음새가 안 보이고, 가장자리는 경계선 밑으로 살짝 들어간다.
+function fillSize(cell) { return Math.round(cell * FILL_THICK * 100) / 100; }
+function fillSegs(o, sid, color, cell, rows) {
+  const size = fillSize(cell), R = (n) => Math.round(n * 10) / 10, out = [];
+  for (const r of rows) {
+    const y = R((r[0] + 0.5) * cell);
+    out.push({ x0: R((r[1] + 0.5) * cell), y0: y, x1: R((r[2] + 0.5) * cell), y1: y, color, size, o, sid, f: 1 });
+  }
+  return out;
+}
+// @@SHARED_END
 
 /* ===== 방 / 내 키 / 닉네임 ===== */
 const roomRaw = new URLSearchParams(location.search).get('room') || 'lobby';
@@ -618,7 +682,7 @@ function paintInkExact() {
     if (Math.max(s.x0, s.x1) + hs < xa || Math.min(s.x0, s.x1) - hs > xb || Math.max(s.y0, s.y1) + hs < ya || Math.min(s.y0, s.y1) - hs > yb) continue;
     if (!open || s.color !== rc || s.size !== rs) {
       if (open) ctx.stroke();
-      ctx.beginPath(); ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, 0.6 / scale);
+      ctx.beginPath(); ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, (s.f ? FILL_MIN_PX : 0.6) / scale);
       rc = s.color; rs = s.size; open = true; lx = NaN;
     }
     if (s.x0 !== lx || s.y0 !== ly) ctx.moveTo(s.x0, s.y0);
@@ -647,11 +711,13 @@ function paintHighlight() {
   if (!hl) return;
   hctx.setTransform(scale * dpr, 0, 0, scale * dpr, -cam.x * scale * dpr, -cam.y * scale * dpr);
   hctx.lineCap = 'round'; hctx.lineJoin = 'round'; hctx.strokeStyle = 'rgba(90,162,255,.5)';
+  let hw = -1, hopen = false;                                // 같은 굵기는 한 path 로 모아 한 번에 칠한다 (겹친 칠하기 줄이 더 진하게 보이지 않게)
   for (const s of segs) {
     if (s.o !== hl.o || s.sid !== hl.sid) continue;
-    hctx.lineWidth = s.size + 10 / scale;
-    hctx.beginPath(); hctx.moveTo(s.x0, s.y0); hctx.lineTo(s.x1, s.y1); hctx.stroke();
+    if (!hopen || s.size !== hw) { if (hopen) hctx.stroke(); hctx.beginPath(); hctx.lineWidth = s.size + 10 / scale; hw = s.size; hopen = true; }
+    hctx.moveTo(s.x0, s.y0); hctx.lineTo(s.x1, s.y1);
   }
+  if (hopen) hctx.stroke();
 }
 
 /* ===== 화면 이동·줌 ===== */
@@ -871,6 +937,33 @@ document.addEventListener('pointerdown', (e) => {
   if (openPopId && !$(openPopId).contains(e.target) && !(popAnchor && popAnchor.contains(e.target))) closePop();
 }, true);
 
+/* ===== 터치 탭 보정: 손가락을 빠르게 긋고 떼자마자 버튼을 누르면 크롬이 그 탭을 '스크롤 멈춤'으로 보고 click 을 만들지 않는다.
+   손가락·펜으로 버튼을 눌렀다 뗐는데 click 이 안 오면 조금 뒤 대신 눌러 준다 (평소처럼 click 이 오면 아무것도 안 함) ===== */
+let tapBtn = null, tapWait = null, tapDone = null;   // tapBtn: 누르고 있는 버튼, tapWait: click 을 기다리는 탭, tapDone: 대신 눌러 준 탭
+function flushTap() {
+  const w = tapWait; if (!w) return;
+  tapWait = null; clearTimeout(w.timer);
+  if (w.b.isConnected && !w.b.disabled) { tapDone = { id: w.id, t: performance.now() }; w.b.click(); }
+}
+document.addEventListener('pointerdown', (e) => {
+  flushTap();   // 다음 손가락이 닿을 때까지 click 이 안 왔으면 안 오는 것
+  const b = e.pointerType !== 'mouse' && e.target.closest ? e.target.closest('button') : null;
+  tapBtn = b ? { b, id: e.pointerId, t: performance.now() } : null;
+}, true);
+document.addEventListener('pointerup', (e) => {
+  const p = tapBtn; tapBtn = null;
+  if (!p || p.id !== e.pointerId || performance.now() - p.t > 600) return;   // 길게 누름은 탭이 아님
+  const r = p.b.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;   // 버튼 밖으로 밀고 뗐으면 취소
+  tapWait = { b: p.b, id: p.id, timer: setTimeout(flushTap, 350) };
+}, true);
+document.addEventListener('pointercancel', () => { tapBtn = null; }, true);
+document.addEventListener('click', (e) => {
+  if (!e.isTrusted) return;
+  if (tapWait) { clearTimeout(tapWait.timer); tapWait = null; }   // 진짜 click 이 왔으니 보정 필요 없음
+  else if (tapDone && e.pointerId === tapDone.id && performance.now() - tapDone.t < 1000) { e.preventDefault(); e.stopPropagation(); }   // 대신 누른 뒤 늦게 온 같은 손가락의 click 은 버린다 (두 번 눌림 방지)
+}, true);
+
 
 /* ===== 크기 / 색 / 지우개 모드 UI ===== */
 const SIZE_RANGE = { pen: [1, PEN_MAX], eraser: [2, ERASER_R_MAX * 2] };   // 펜은 굵기, 지우개는 지름(= 반지름 x 2)
@@ -913,7 +1006,7 @@ function setColor(c) {
   S.color = c.toLowerCase(); saveSettings();
   for (const b of swBox.children) b.classList.toggle('on', b.dataset.c === S.color);
   $('colorCustom').value = S.color;
-  if (tool !== 'pen') setTool('pen');
+  if (tool !== 'pen' && tool !== 'fill') setTool('pen');
   syncSizeUI();
 }
 $('colorCustom').addEventListener('input', () => setColor($('colorCustom').value));
@@ -936,12 +1029,15 @@ for (const b of [$('optPart'), $('optStroke')]) b.onclick = () => { S.eraserMode
 /* ===== 도구 / 보기 / 방 / 설정 버튼 ===== */
 function setTool(t) {
   if (strokeSt) abortStroke();
+  if (t === 'drop' && tool !== 'drop') dropFrom = tool;
   tool = t;
-  for (const [b, n] of [[$('tPen'), 'pen'], [$('tEraser'), 'eraser'], [$('tHand'), 'hand']]) { b.classList.toggle('active', n === t); b.setAttribute('aria-pressed', String(n === t)); }
+  for (const [b, n] of [[$('tPen'), 'pen'], [$('tEraser'), 'eraser'], [$('tFill'), 'fill'], [$('tDrop'), 'drop'], [$('tHand'), 'hand']]) { b.classList.toggle('active', n === t); b.setAttribute('aria-pressed', String(n === t)); }
   board.style.cursor = t === 'hand' ? 'grab' : 'crosshair';
-  ring.hidden = true; hideTip(); syncSizeUI();
+  ring.hidden = true; hideTip(); hideDropPrev(); syncSizeUI();
 }
 $('tPen').onclick = () => setTool('pen');
+$('tFill').onclick = () => selectFill();
+$('tDrop').onclick = () => selectDrop();
 $('tEraser').onclick = () => { if (tool === 'eraser') openPop('popEraser', $('tEraserMode')); else selectEraser(); };
 $('tEraserMode').onclick = () => openPop('popEraser', $('tEraserMode'));
 $('tHand').onclick = () => setTool('hand');
@@ -1010,7 +1106,7 @@ nickEl.addEventListener('change', () => {
   if (!v) { nickEl.value = (me && names[me]) || myNick; return; }
   myNick = v; lsSet('draw:nick', v); send({ type: 'nick', name: v });
 });
-const toggles = { setGrid: 'grid', setPenOnly: 'penOnly', setCursors: 'showCursors', setPenHover: 'penHover' };
+const toggles = { setGrid: 'grid', setPenOnly: 'penOnly', setCursors: 'showCursors', setPenHover: 'penHover', setTapUndo: 'tapUndo' };
 for (const [id, key] of Object.entries(toggles)) {
   $(id).onchange = () => {
     S[key] = $(id).checked; saveSettings();
@@ -1019,7 +1115,170 @@ for (const [id, key] of Object.entries(toggles)) {
   };
 }
 
-/* ===== 입력: 상태 머신 (none / pan / pinch / pending / draw) ===== */
+/* ===== 채우기(페인트통) · 스포이드 (3단계) ===== */
+const FILL_ERR = {
+  wall: '선 위예요. 선으로 둘러싸인 칸 안쪽을 눌러 주세요',
+  leak: '영역이 막혀 있지 않아요. 선이 빈틈없이 이어져 화면 안에서 닫혀 있어야 해요 (화면을 줄여 보세요)',
+  many: '영역이 너무 크거나 복잡해요. 화면을 조금 줄이거나 더 작은 영역을 눌러 주세요',
+  same: '이미 같은 색이에요',
+  out: '화면 밖이에요',
+  big: '화면이 너무 커서 채울 수 없어요. 조금 줄여 주세요',
+};
+// 그 자리에 지금 보이는 '칠하기' 색 (없으면 하얀 바탕)
+function fillColorAt(wx, wy) {
+  let n = 0;
+  while (n < segs.length && segs[n].f) n++;                   // 칠하기 조각은 목록 앞쪽에 모여 있다
+  const p = { x: wx, y: wy };
+  for (let i = n - 1; i >= 0; i--) {
+    const s = segs[i];
+    if (distToSeg(p, s) <= s.size / 2) return String(s.color).toLowerCase();
+  }
+  return '#ffffff';
+}
+// 칠하기 계산: 화면에 보이는 곳을 칸(화면 한 픽셀 정도)으로 나누고, 선이 닿은 칸은 벽으로 본다.
+// 누른 칸에서 벽에 막힐 때까지 번져 나가는 칸들을 가로줄 [[줄, 시작칸, 끝칸], ...] 로 묶어 돌려준다. 실패하면 { err }.
+// 칠하기는 선 아래에 깔리므로(그리고 줄이 칸보다 조금 굵으므로) 가장자리가 선 밑으로 살짝 들어가 틈이 보이지 않는다.
+function computeFill(wx, wy) {
+  const k = Math.max(1, Math.ceil(FILL_CELL_PX / scale / 0.2 - 1e-9)), cell = k / 5;   // 칸 크기: 화면 1픽셀 이상, 0.2 의 배수
+  const gx0 = Math.floor(cam.x / cell), gy0 = Math.floor(cam.y / cell);
+  const gw = Math.ceil((cam.x + cssW / scale) / cell) - gx0 + 1, gh = Math.ceil((cam.y + cssH / scale) / cell) - gy0 + 1;
+  if (gw * gh > MAX_FILL_CELLS) return { err: 'big' };
+  const si = Math.floor(wx / cell) - gx0, sj = Math.floor(wy / cell) - gy0;
+  if (si < 0 || sj < 0 || si >= gw || sj >= gh) return { err: 'out' };
+  const wall = new Uint8Array(gw * gh);
+  for (const s of segs) {                                      // 1) 벽: 선이 지나가는 칸 (선이 칸보다 가늘어도 한 칸 너비로 쳐서 틈으로 새지 않게)
+    if (s.f) continue;
+    const rho = Math.max(s.size / 2, cell * 0.5) + cell * 0.01;
+    const i0 = Math.max(0, Math.ceil((Math.min(s.x0, s.x1) - rho) / cell - 0.5) - gx0), i1 = Math.min(gw - 1, Math.floor((Math.max(s.x0, s.x1) + rho) / cell - 0.5) - gx0);
+    const j0 = Math.max(0, Math.ceil((Math.min(s.y0, s.y1) - rho) / cell - 0.5) - gy0), j1 = Math.min(gh - 1, Math.floor((Math.max(s.y0, s.y1) + rho) / cell - 0.5) - gy0);
+    if (i0 > i1 || j0 > j1) continue;
+    const dx = s.x1 - s.x0, dy = s.y1 - s.y0, l2 = dx * dx + dy * dy, r2 = rho * rho;
+    for (let j = j0; j <= j1; j++) {
+      const cy = (gy0 + j + 0.5) * cell, row = j * gw;
+      for (let i = i0; i <= i1; i++) {
+        const cx = (gx0 + i + 0.5) * cell;
+        let t = l2 ? ((cx - s.x0) * dx + (cy - s.y0) * dy) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const ex = cx - (s.x0 + t * dx), ey = cy - (s.y0 + t * dy);
+        if (ex * ex + ey * ey <= r2) wall[row + i] = 1;
+      }
+    }
+  }
+  if (wall[sj * gw + si]) return { err: 'wall' };
+  if (fillColorAt(wx, wy) === S.color) return { err: 'same' };
+  const vis = new Uint8Array(gw * gh), spans = [], stack = [si, sj];   // 2) 번지기 (가로줄 단위)
+  while (stack.length) {
+    const j = stack.pop(), i = stack.pop(), row = j * gw;
+    if (wall[row + i] || vis[row + i]) continue;
+    let xl = i, xr = i;
+    while (xl > 0 && !wall[row + xl - 1] && !vis[row + xl - 1]) xl--;
+    while (xr < gw - 1 && !wall[row + xr + 1] && !vis[row + xr + 1]) xr++;
+    if (xl === 0 || xr === gw - 1 || j === 0 || j === gh - 1) return { err: 'leak' };   // 화면 가장자리에 닿음 = 막혀 있지 않음
+    for (let x = xl; x <= xr; x++) vis[row + x] = 1;
+    spans.push([gy0 + j, gx0 + xl, gx0 + xr]);
+    if (spans.length > MAX_FILL_SPANS) return { err: 'many' };
+    for (const nj of [j - 1, j + 1]) {
+      const nrow = nj * gw;
+      let inRun = false;
+      for (let x = xl; x <= xr; x++) {
+        const free = !wall[nrow + x] && !vis[nrow + x];
+        if (free && !inRun) { stack.push(x, nj); inRun = true; } else if (!free) inRun = false;
+      }
+    }
+  }
+  spans.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  return { cell, rows: spans };
+}
+function doFill(p) {
+  if (!me) { toast('연결 중이에요. 잠시 후 다시 해 주세요', 'warn'); return; }
+  if (myRestr.spectator) { toast('방장이 그리기를 제한했어요 (보기만 가능)', 'warn'); return; }
+  const w = toWorld(p), r = computeFill(w.x, w.y);
+  if (r.err) { toast(FILL_ERR[r.err] || '채울 수 없어요', 'warn'); return; }
+  const sid = newSid(), color = S.color;
+  const list = fillSegs(me, sid, color, r.cell, r.rows);
+  const msg = { type: 'fill', sid, color, cell: r.cell, rows: r.rows };
+  insertSegs(segs, list);
+  pushAct({ t: 'draw', sid, segs: list, fill: msg });
+  redrawInk();
+  send(msg);
+}
+
+// 스포이드: 그 자리에 보이는 가장 위의 색 (선 → 칠하기 → 하얀 바탕 순)
+let dropFrom = 'pen';                                          // 스포이드를 쓰기 전에 쓰던 도구 (색을 가져온 뒤 돌아간다)
+function colorAtScreen(p, touch) {
+  const s = hitTest(toWorld(p), touch ? DROP_MARGIN_TOUCH_PX : DROP_MARGIN_MOUSE_PX);
+  return s && /^#[0-9a-fA-F]{6}$/.test(s.color) ? s.color.toLowerCase() : '#ffffff';
+}
+function showDropPrev(p, touch) {
+  const c = colorAtScreen(p, touch), el = $('dropPrev');
+  el.querySelector('i').style.background = c; el.querySelector('b').textContent = c;
+  el.hidden = false;
+  const tw = el.offsetWidth || 96, th = el.offsetHeight || 40;
+  const x = clamp(p.x + (touch ? -tw / 2 : 16), 4, Math.max(4, cssW - tw - 4));
+  const y = clamp(p.y + (touch ? -th - 36 : 16), 4, Math.max(4, cssH - th - 4));
+  el.style.transform = `translate(${x}px, ${y}px)`;
+}
+function hideDropPrev() { if (!$('dropPrev').hidden) $('dropPrev').hidden = true; }
+function finishDrop(p, touch) {
+  const c = colorAtScreen(p, touch);
+  hideDropPrev();
+  const back = dropFrom === 'fill' ? 'fill' : 'pen';
+  setColor(c); setTool(back);
+  toast('색을 가져왔어요 ' + c, 'ok');
+}
+function selectFill() { setTool('fill'); toast('채우기: 선으로 닫힌 칸 안을 눌러 주세요 (끌면 화면 이동)'); }
+function selectDrop() { setTool('drop'); toast('스포이드: 누른 채 움직여 색을 보고, 떼면 가져와요'); }
+
+/* --- 두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기 (이비스페인트처럼) --- */
+// 손가락이 거의 동시에 닿았다가, 많이 움직이지 않고, 짧은 시간 안에 모두 떼어지면 탭이다.
+// 탭일 수도 있는 동안(MULTI_TAP_MS, MULTI_TAP_MOVE_PX)에는 핀치 확대·이동을 시작하지 않아서 탭할 때 화면이 흔들리지 않는다.
+let tapG = null;                                               // { t0, start: Map(손가락 -> 처음 위치), max: 동시에 닿은 최대 손가락 수, moved, dead }
+function tapDown(rec) {
+  const n = touchRecs().length;
+  if (n === 1) { tapG = { t0: rec.tn, start: new Map([[rec.id, { x: rec.x, y: rec.y }]]), max: 1, moved: false, dead: false }; return; }
+  if (!tapG) return;
+  if (rec.tn - tapG.t0 > MULTI_TAP_MS) tapG.dead = true;       // 첫 손가락이 닿은 지 한참 뒤에 닿은 손가락 (그리거나 이동하던 중): 탭이 아니다
+  else { tapG.start.set(rec.id, { x: rec.x, y: rec.y }); tapG.max = Math.max(tapG.max, n); }
+}
+function tapMove(rec) {
+  const g = tapG;
+  if (!g || g.moved || g.dead) return;
+  if (now() - g.t0 > MULTI_TAP_MS) { g.dead = true; return; }
+  const s0 = g.start.get(rec.id);
+  if (s0 && Math.hypot(rec.x - s0.x, rec.y - s0.y) > MULTI_TAP_MOVE_PX) g.moved = true;
+}
+const tapPossible = () => !!tapG && tapG.max >= 2 && !tapG.moved && !tapG.dead && now() - tapG.t0 <= MULTI_TAP_MS;
+function tapUp(e) {
+  const g = tapG;
+  if (!g || touchRecs().length) return;                        // 아직 손가락이 남아 있음
+  tapG = null;
+  if (e.type !== 'pointerup' || g.moved || g.dead || now() - g.t0 > MULTI_TAP_MS || !S.tapUndo) return;
+  if (g.max === 2) tapUndo(); else if (g.max === 3) tapRedo();
+}
+function tapUndo() {
+  if (!me || myRestr.spectator) return;
+  if (!undoSt.length) { toast('이전으로 돌릴 동작이 없어요'); return; }
+  doUndo(); toast('이전');
+}
+function tapRedo() {
+  if (!me || myRestr.spectator) return;
+  if (!redoSt.length) { toast('되돌릴 동작이 없어요'); return; }
+  doRedo(); toast('되돌리기');
+}
+
+/* --- 저장 상태 표시: 서버가 그림을 DB 에 저장하고 있지 않으면 알려 준다 --- */
+let persist = null;                                            // true: 저장 중 / false: 저장 안 됨 / null: 모름 (옛 서버)
+function setPersist(v) {
+  const p = v === true ? true : v === false ? false : null, was = persist;
+  persist = p;
+  $('hudPersist').hidden = $('hudPersistSep').hidden = p !== false;
+  if (p === false && was !== false) toast('그림이 저장되지 않아요 (저장소 꺼짐)', 'warn');   // 자세한 설명은 HUD 의 '저장 꺼짐'을 누르면 나온다
+  else if (p === true && was === false) toast('그림 저장이 다시 켜졌어요', 'ok');
+}
+$('hudPersist').onclick = () => confirmModal({ title: '그림이 저장되지 않고 있어요',
+  body: '서버에 저장소(DB)가 연결돼 있지 않거나 지금 연결이 안 돼요.\n모두 나가거나 서버가 재시작·절전되면 그림이 사라질 수 있어요.\n서버 관리자는 Render 의 환경변수 DATABASE_URL 을 설정해 주세요.', ok: '확인', cancel: '닫기' });
+
+/* ===== 입력: 상태 머신 (none / pan / pinch / pending / draw / tap / drop) ===== */
 const ptr = new Map();                                       // pointerId -> { id, type, x, y, sx, sy, t0, tn }
 let gmode = 'none', strokeSt = null, pinchPrev = null, penActive = 0, lastCurSent = 0, qSeq = 0;
 const pendingQ = new Map();                                  // 획 지우개 요청 번호 -> 내가 예상한 지워질 획 키
@@ -1038,7 +1297,7 @@ function pinchState() {
   return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
 }
 function doPinch() {
-  if (touchRecs().length < 2) return;
+  if (touchRecs().length < 2 || tapPossible()) return;         // 탭일 수도 있는 동안은 화면을 움직이지 않는다 (탭이 아님이 확실해지면 그때까지의 움직임이 한꺼번에 반영된다)
   const cur = pinchState();
   const wx = cam.x + pinchPrev.cx / scale, wy = cam.y + pinchPrev.cy / scale;
   scale = clamp(scale * cur.d / pinchPrev.d, MIN_S, MAX_S);
@@ -1142,10 +1401,10 @@ function enterPinch() {                                        // 손가락이 2
     else finishStroke(st);
     strokeSt = null;
   }
-  gmode = 'pinch'; pinchPrev = pinchState(); hideTip();
+  gmode = 'pinch'; pinchPrev = pinchState(); hideTip(); hideDropPrev();
 }
 function updateRing(p) {                                       // 마우스 커서 주변에 현재 펜/지우개 크기 원
-  if (tool === 'hand' || spaceDown) { ring.hidden = true; return; }
+  if (tool === 'hand' || tool === 'fill' || tool === 'drop' || spaceDown) { ring.hidden = true; return; }
   const d = Math.max((tool === 'eraser' ? S.eraserD : S.penSize) * scale, 6);
   ring.style.width = ring.style.height = d + 'px';
   ring.style.transform = `translate(${p.x - d / 2}px, ${p.y - d / 2}px)`;
@@ -1161,13 +1420,16 @@ board.addEventListener('pointerdown', (e) => {
   if (rec.type === 'pen') penActive++;
   hideTip();
   if (rec.type !== 'mouse') ring.hidden = true;
+  if (rec.type === 'touch') tapDown(rec);                      // 두/세 손가락 탭 판별용 기록
   if (rec.type === 'touch' && touchRecs().length >= 2) { enterPinch(); return; }
   if (ptr.size > 1) return;                                    // 서로 다른 종류 입력이 겹치면 첫 입력만
   const panWanted = e.button === 1 || tool === 'hand' || spaceDown || (rec.type === 'touch' && S.penOnly);
   if (panWanted) { gmode = 'pan'; return; }
   if (rec.type === 'mouse' && e.button !== 0) return;
+  if (tool === 'drop') { gmode = 'drop'; showDropPrev(rec, rec.type !== 'mouse'); return; }   // 스포이드: 누른 채 색 미리보기, 떼면 선택 (연결 전에도 쓸 수 있다)
   if (!me) { toast('연결 중이에요. 잠시 후 다시 그려 주세요', 'warn'); return; }
   if (myRestr.spectator) { toast('방장이 그리기를 제한했어요 (보기만 가능)', 'warn'); return; }
+  if (tool === 'fill') { gmode = 'tap'; return; }              // 채우기: 가만히 떼면 채우고, 끌면 화면 이동
   startStroke(rec);
 });
 board.addEventListener('pointermove', (e) => {
@@ -1176,11 +1438,15 @@ board.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'touch') {
     updateRing(p);
     if (gmode === 'none' && (tool === 'hand' || spaceDown || (tool === 'pen' && S.penHover))) hoverTip(p); else hideTip();
+    if (gmode === 'none' && tool === 'drop' && !spaceDown) showDropPrev(p, false);       // 마우스는 올려만 둬도 색이 보인다
   }
   if (!rec) return;
-  const dx = p.x - rec.x, dy = p.y - rec.y;
+  let dx = p.x - rec.x, dy = p.y - rec.y;
   rec.x = p.x; rec.y = p.y;
+  if (rec.type === 'touch') tapMove(rec);
+  if (gmode === 'tap' && Math.hypot(p.x - rec.sx, p.y - rec.sy) > TAP_MAX_PX) { gmode = 'pan'; dx = p.x - rec.sx; dy = p.y - rec.sy; }   // 채우기 도구로 끌면 화면 이동
   if (gmode === 'pan') { cam.x -= dx / scale; cam.y -= dy / scale; viewChanged(); }
+  else if (gmode === 'drop') showDropPrev(rec, rec.type !== 'mouse');
   else if (gmode === 'pinch') doPinch();
   else if ((gmode === 'pending' || gmode === 'draw') && strokeSt && strokeSt.id === e.pointerId) {
     const st = strokeSt;
@@ -1194,12 +1460,13 @@ board.addEventListener('pointermove', (e) => {
   }
 });
 board.addEventListener('pointerleave', (e) => {
-  if (e.pointerType === 'mouse') { hideTip(); ring.hidden = true; send({ type: 'curhide' }); }
+  if (e.pointerType === 'mouse') { hideTip(); ring.hidden = true; if (gmode !== 'drop') hideDropPrev(); send({ type: 'curhide' }); }
 });
 function endPtr(e) {
   const rec = ptr.get(e.pointerId);
   if (!rec) return;
   const st = strokeSt, wasPan = gmode === 'pan', solo = ptr.size === 1;
+  const wasTap = gmode === 'tap' && solo, wasDrop = gmode === 'drop' && solo, multi = !!(tapG && tapG.max >= 2);
   if (st && st.id === e.pointerId) {
     if (st.phase === 'pending') { if (e.type === 'pointercancel') discardPending(st); else { confirmStroke(st); finishStroke(st); } }   // 짧은 탭은 점 하나로 확정
     else finishStroke(st);
@@ -1208,7 +1475,10 @@ function endPtr(e) {
   ptr.delete(e.pointerId);
   if (rec.type === 'pen') penActive = Math.max(0, penActive - 1);
   if (rec.type === 'touch') send({ type: 'curhide' });
-  if (wasPan && solo && rec.type === 'touch' && e.type === 'pointerup' && Math.hypot(rec.x - rec.sx, rec.y - rec.sy) < TAP_MAX_PX && now() - rec.tn < TAP_MAX_MS) tapTip(rec.x, rec.y);
+  if (wasPan && solo && !multi && rec.type === 'touch' && e.type === 'pointerup' && Math.hypot(rec.x - rec.sx, rec.y - rec.sy) < TAP_MAX_PX && now() - rec.tn < TAP_MAX_MS) tapTip(rec.x, rec.y);
+  if (wasTap && e.type === 'pointerup') doFill(rec);
+  if (wasDrop) { if (e.type === 'pointerup') finishDrop(rec, rec.type !== 'mouse'); else hideDropPrev(); }
+  if (rec.type === 'touch') tapUp(e);
   const tc = touchRecs().length;
   if (gmode === 'pinch') { if (tc >= 2) pinchPrev = pinchState(); else gmode = tc === 1 ? 'pan' : 'none'; }   // 2→1: 선을 긋지 않고 이동으로 이어진다
   if (ptr.size === 0) { gmode = 'none'; strokeSt = null; }
@@ -1232,7 +1502,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (isEditable(e.target) || e.ctrlKey || e.metaKey || e.altKey || !$('modal').hidden) return;     // 입력창에 있을 때는 단축키 없음
   const k = e.key.toLowerCase();
-  if (k === 'p') setTool('pen'); else if (k === 'e') selectEraser(); else if (k === 'h') setTool('hand');
+  if (k === 'p') setTool('pen'); else if (k === 'e') selectEraser(); else if (k === 'h') setTool('hand'); else if (k === 'f') selectFill(); else if (k === 'i') selectDrop();
   else if (e.code === 'Space' && !spaceDown) { spaceDown = true; board.style.cursor = 'grab'; ring.hidden = true; e.preventDefault(); }
 });
 window.addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; board.style.cursor = tool === 'hand' ? 'grab' : 'crosshair'; } });
@@ -1442,14 +1712,14 @@ $('chatSend').onclick = sendChat;
 /* --- 이전(실행 취소) / 되돌리기(다시 실행): 내가 그린 획과 내 지우개 동작 --- */
 const UNDO_MAX = 50;
 let undoSt = [], redoSt = [];
-const plain = (s) => ({ x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1, color: s.color, size: s.size, sid: s.sid });
+const plain = (s) => { const p = { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1, color: s.color, size: s.size, sid: s.sid }; if (s.f) p.f = 1; return p; };
 function syncUndoUi() {
   $('tUndo').disabled = !undoSt.length || myRestr.spectator; $('tRedo').disabled = !redoSt.length || myRestr.spectator;
 }
 function resetUndo() { undoSt = []; redoSt = []; syncUndoUi(); }
 function pushAct(a) { undoSt.push(a); if (undoSt.length > UNDO_MAX) undoSt.shift(); redoSt = []; syncUndoUi(); }
 function sendSegs(type, list) { for (let i = 0; i < list.length; i += 100) send({ type, segs: list.slice(i, i + 100).map(plain) }); }
-const addLocal = (list) => { for (const s of list) segs.push({ ...s, o: me }); };      // 복사본을 맨 위에 다시 올린다
+const addLocal = (list) => insertSegs(segs, list.map((s) => ({ ...s, o: me })));      // 복사본을 다시 올린다 (칠하기 조각은 선 아래로)
 function mergeDiff(act, diff) {                                                         // 지우개를 끄는 동안의 변화를 한 동작으로 모은다
   for (const s of diff.removed) { const i = act.added.indexOf(s); if (i >= 0) act.added.splice(i, 1); else act.removed.push(s); }
   for (const p of diff.added) act.added.push(p);
@@ -1468,7 +1738,7 @@ function doUndo() {
 function doRedo() {
   if (!me || strokeSt || myRestr.spectator) return;
   const a = redoSt.pop(); if (!a) return;
-  if (a.t === 'draw') { addLocal(a.segs); sendSegs('addsegs', a.segs); }
+  if (a.t === 'draw') { addLocal(a.segs); if (a.fill) send(a.fill); else sendSegs('addsegs', a.segs); }          // 칠하기는 한 메시지로 다시 보낸다
   else { const r = removeExactSegs(segs, a.removed); if (r) segs = r; addLocal(a.added); sendSegs('removesegs', a.removed); sendSegs('addsegs', a.added); }
   undoSt.push(a); redrawInk(); syncUndoUi();
 }
@@ -1561,7 +1831,7 @@ function onMessage(data) {
     case 'cur': showCursor(m.o, m.x, m.y); break;
     case 'curhide': hideCursor(m.o); break;
     case 'notice': toast(m.text || '알림', 'warn'); break;
-    case 'roomstate': ownerId = m.owner || null; locked = !!m.locked; syncOwnerUI(); break;
+    case 'roomstate': ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); syncOwnerUI(); break;
     case 'me': {
       const was = myRestr;
       myRestr = { muted: m.muted ? { ...m.muted } : null, spectator: !!m.spectator };
@@ -1577,7 +1847,15 @@ function onMessage(data) {
     case 'bye': byeInfo = m; break;
     case 'cmderr': toast(m.text || '명령을 실행하지 못했어요', 'err'); break;
     case 'clearall': segs = []; resetUndo(); redrawInk(); break;
-    case 'segs': for (const s of (Array.isArray(m.list) ? m.list : [])) segs.push(s); redrawInk(); break;
+    case 'segs': insertSegs(segs, Array.isArray(m.list) ? m.list : []); redrawInk(); break;
+    case 'fill': insertSegs(segs, fillSegs(m.o, m.sid, m.color, m.cell, Array.isArray(m.rows) ? m.rows : [])); redrawInk(); break;
+    case 'fillno': {                                                               // 서버가 내 칠하기를 받지 않았다: 내 화면에서도 되돌린다
+      const sid = typeof m.sid === 'string' ? m.sid : null;
+      if (sid) { segs = segs.filter((s) => !(s.o === me && s.sid === sid)); undoSt = undoSt.filter((a) => a.sid !== sid); redoSt = redoSt.filter((a) => a.sid !== sid); syncUndoUi(); redrawInk(); }
+      const why = { rate: '너무 빠르게 칠하고 있어요. 잠시 뒤에 다시 해 주세요', bad: '이 칠하기는 저장하지 못했어요', full: '', spectator: '' }[m.reason];
+      if (why !== '') toast(why || '칠하기가 저장되지 않았어요', 'warn');
+      break;
+    }
     case 'unsegs': { const res = removeExactSegs(segs, Array.isArray(m.list) ? m.list : []); if (res) { segs = res; redrawInk(); } break; }
   }
 }
@@ -1588,7 +1866,8 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: 2단계 (2026-10-03) · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전'); }).catch(() => {});
+const CLIENT_VER = '3단계 (2026-10-11)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
 setColor(S.color); syncEraserUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
