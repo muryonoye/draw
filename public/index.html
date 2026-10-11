@@ -402,10 +402,12 @@
   <div class="switch"><div>펜 모드에서 작성자 표시<small>선에 마우스를 올리면 이름 표시</small></div><input type="checkbox" id="setPenHover" aria-label="펜 모드에서 작성자 표시"></div>
   <div class="switch"><div>손가락 탭으로 이전·되돌리기<small>두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기</small></div><input type="checkbox" id="setTapUndo" aria-label="손가락 탭으로 이전 되돌리기"></div>
   <div class="switch"><div>두 손가락으로 회전<small>두 손가락을 비틀면 화면이 돌아가요 (트랙패드도)</small></div><input type="checkbox" id="setPinchRot" aria-label="두 손가락으로 회전"></div>
+  <div class="switch"><div>필압<small>펜(애플펜슬·태블릿 펜)을 세게 누르면 굵게, 살살 누르면 가늘게</small></div><input type="checkbox" id="setPressure" aria-label="필압"></div>
+  <div class="switch"><div>손떨림 보정<small>선이 손을 살짝 늦게 따라와 떨림이 줄어요</small></div><select id="setSmooth" class="inp" style="width:auto;flex:0 0 auto" aria-label="손떨림 보정"><option value="0">끔</option><option value="1">약하게</option><option value="2">보통</option><option value="3">강하게</option></select></div>
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 15차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 16차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -459,6 +461,8 @@ const TOUCH_CONFIRM_ERASE_PX = 14;
 const PINCH_CANCEL_MS = 700;         // 획을 시작하고 이 시간 안에 두 번째 손가락이 닿으면 확대하려던 것: 방금 획을 통째로 취소 (얼마나 움직였든)
 const MIN_POINT_PX = 1.5, MIN_POINT_MS = 5;   // 너무 가깝거나 빠른 점은 생략 (초당 약 200선분 이하)
 const PEN_STEP_PX = 6, PEN_DEV_PX = 0.3;      // 펜: 거의 곧은 곳은 최대 6px 마다 한 점, 건너뛴 점이 선분에서 0.3px 넘게 벗어나면 남긴다 (보이는 모양은 같고 조각 수는 크게 준다)
+const PRESS_MIN = 0.25;                       // 필압: 아주 살살 누르면 정한 굵기의 25%, 끝까지 누르면 100%
+const SMOOTH_MS = [0, 18, 40, 80];           // 손떨림 보정(끔·약하게·보통·강하게): 선이 손을 따라오는 데 걸리는 시간 (클수록 부드럽고 늦게 따라온다)
 const ERASE_STEP = 0.35, ERASE_MIN_MS = 30;   // 지우개: 반지름의 0.35 배 이상 움직였을 때, 반지름보다 덜 움직였으면 30ms 에 한 번만 보낸다
 // 작성자 표시
 const HOVER_MARGIN_MOUSE_PX = 8, HOVER_MARGIN_TOUCH_PX = 12, HOVER_THROTTLE_MS = 40;
@@ -497,7 +501,7 @@ const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').mat
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -507,6 +511,7 @@ function loadSettings() {
   out.penSize = clampInt(out.penSize, 1, PEN_MAX);
   out.eraserD = clampInt(out.eraserD, 2, ERASER_R_MAX * 2);
   if (out.eraserMode !== 'part' && out.eraserMode !== 'stroke') out.eraserMode = 'part';
+  out.smooth = clampInt(out.smooth, 0, 3);
   if (!/^#[0-9a-fA-F]{6}$/.test(out.color)) out.color = DEFAULTS.color;
   return out;
 }
@@ -1467,7 +1472,7 @@ nickEl.addEventListener('change', () => {
   if (!v) { nickEl.value = (me && names[me]) || myNick; return; }
   myNick = v; lsSet('draw:nick', v); send({ type: 'nick', name: v });
 });
-const toggles = { setGrid: 'grid', setPenOnly: 'penOnly', setCursors: 'showCursors', setPenHover: 'penHover', setTapUndo: 'tapUndo', setPinchRot: 'pinchRotate' };
+const toggles = { setGrid: 'grid', setPenOnly: 'penOnly', setCursors: 'showCursors', setPenHover: 'penHover', setTapUndo: 'tapUndo', setPinchRot: 'pinchRotate', setPressure: 'pressure' };
 for (const [id, key] of Object.entries(toggles)) {
   $(id).onchange = () => {
     S[key] = $(id).checked; saveSettings();
@@ -1738,8 +1743,11 @@ function doPinch() {
 }
 
 // --- 획 내보내기 (펜 / 부분 지우개 / 획 지우개) ---
+// 필압 굵기: 정한 굵기 x (PRESS_MIN ~ 1), 0.1 단위, 서버와 같은 범위(1 ~ PEN_MAX). 필압이 없는 점이면 정한 굵기 그대로.
+function pressSize(st, p) { return p == null ? st.size : clamp(Math.round(st.size * (PRESS_MIN + (1 - PRESS_MIN) * p) * 10) / 10, 1, PEN_MAX); }
 function penSeg(st, a, b) {
-  const s = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: st.color, size: st.size, o: me, sid: st.sid };
+  const size = st.press ? pressSize(st, a.p == null ? b.p : b.p == null ? a.p : (a.p + b.p) / 2) : st.size;
+  const s = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: st.color, size, o: me, sid: st.sid };
   segs.push(s); if (st.act) st.act.segs.push(s); incSeg(s); send({ type: 'seg', ...s });
 }
 // 부분 지우개가 지나간 곳만 다시 그린다: 지워진 부분은 지우개 경로에서 (반지름 + 선 굵기/2) 안이고, 그 선이 그려진 자리와 잘린 끝의 둥근 마감까지 (선 굵기/2) 더
@@ -1773,7 +1781,11 @@ function previewSeg(st, a, b) {                                // 확정 전 터
   ctx.lineCap = 'round'; ctx.strokeStyle = st.color; ctx.lineWidth = Math.max(st.size, 0.6 / scale);
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
 }
-function strokePoint(st, sx, sy, t, force) {                   // 너무 가깝거나 빠른 점은 생략 (마지막 점은 force 로 반드시 보낸다)
+function strokePoint(st, sx, sy, t, force, p) {                // 너무 가깝거나 빠른 점은 생략 (마지막 점은 force 로 반드시 보낸다). p: 펜 필압(0~1)
+  if (st.press && p > 0) st.pp = st.pp * 0.5 + p * 0.5;         // 필압은 튀지 않게 조금 부드럽게
+  if (st.tau) {                                                 // 손떨림 보정: 선 끝이 손(펜) 위치를 시간에 따라 부드럽게 따라간다. 끝낼 때(force)는 뗀 자리까지
+    if (!force) { const a = 1 - Math.exp(-Math.max(0, t - st.et) / st.tau); st.ex += (sx - st.ex) * a; st.ey += (sy - st.ey) * a; st.et = t; sx = st.ex; sy = st.ey; }
+  }
   const same = sx === st.lsx && sy === st.lsy;
   if (!force) {
     const d = Math.hypot(sx - st.lsx, sy - st.lsy);
@@ -1782,6 +1794,7 @@ function strokePoint(st, sx, sy, t, force) {                   // 너무 가깝�
   } else if (same && !st.skip.length) return;
   if (!same) { st.lsx = sx; st.lsy = sy; st.lt = t; }
   const w = same ? st.skip[st.skip.length - 1] : toWorld({ x: sx, y: sy });   // (끝낼 때 마지막 점이 건너뛴 채 남아 있으면 그 점까지)
+  if (st.press && !same) w.p = st.pp;
   if (st.kind === 'pen') penPoint(st, w, force); else keepPoint(st, w);
 }
 function keepPoint(st, w) {                                    // 이 점까지 선을 잇는다 (터치는 확정 전이면 내 화면에만)
@@ -1792,8 +1805,9 @@ function keepPoint(st, w) {                                    // 이 점까지 
 function penPoint(st, w, force) {
   const a = st.phase === 'pending' ? st.pts[st.pts.length - 1] : st.last, sk = st.skip, eps = PEN_DEV_PX / scale;
   const fits = (b) => { const s = { x0: a.x, y0: a.y, x1: b.x, y1: b.y }; for (const p of sk) if (distToSeg(p, s) > eps) return false; return true; };
-  if (!force && Math.hypot(w.x - a.x, w.y - a.y) < PEN_STEP_PX / scale && fits(w)) { sk.push(w); return; }
-  if (sk.length && !fits(w)) { const q = sk.pop(); sk.length = 0; keepPoint(st, q); penPoint(st, w, force); return; }
+  const jump = (b) => st.press && Math.abs(pressSize(st, b.p) - pressSize(st, a.p)) > Math.max(0.5, st.size * 0.12);   // 필압으로 굵기가 꽤 바뀌면 건너뛰지 않는다
+  if (!force && Math.hypot(w.x - a.x, w.y - a.y) < PEN_STEP_PX / scale && fits(w) && !jump(w)) { sk.push(w); return; }
+  if (sk.length && (!fits(w) || jump(w))) { const q = sk.pop(); sk.length = 0; keepPoint(st, q); penPoint(st, w, force); return; }
   sk.length = 0; keepPoint(st, w);
 }
 function confirmStroke(st) {                                   // 이 시점부터 history 추가 + 서버 전송
@@ -1846,7 +1860,10 @@ function startStroke(rec) {
   const erase = kind !== 'pen';
   const w = toWorld(rec);
   const st = strokeSt = { id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: S.color, size: S.penSize,
-    r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, skip: [], sx: rec.x, sy: rec.y, moved: 0, born: now(), confirmedAt: 0, timer: 0, act: null };
+    r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, skip: [], sx: rec.x, sy: rec.y, moved: 0, born: now(), confirmedAt: 0, timer: 0, act: null,
+    press: kind === 'pen' && rec.type === 'pen' && S.pressure, pp: clamp(rec.p || 0.5, 0, 1),   // 필압은 펜(애플펜슬·태블릿 펜)일 때만
+    tau: kind === 'pen' ? SMOOTH_MS[S.smooth] || 0 : 0, ex: rec.x, ey: rec.y, et: rec.t0 };     // 손떨림 보정은 펜 도구일 때
+  if (st.press) w.p = st.pp;
   st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
   if (touch) {
     gmode = 'pending'; st.pts.push(w);
@@ -1887,7 +1904,7 @@ board.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch' && penActive > 0) return;      // 펜이 닿아 있는 동안의 touch 는 손바닥으로 보고 무시
   if (board.setPointerCapture) { try { board.setPointerCapture(e.pointerId); } catch {} }
   const p = rel(e);
-  const rec = { id: e.pointerId, type: e.pointerType || 'mouse', x: p.x, y: p.y, sx: p.x, sy: p.y, t0: evT(e), tn: now(), lt: now(), shift: e.shiftKey };
+  const rec = { id: e.pointerId, type: e.pointerType || 'mouse', x: p.x, y: p.y, sx: p.x, sy: p.y, t0: evT(e), tn: now(), lt: now(), shift: e.shiftKey, p: e.pressure };
   if (rec.type === 'touch' && touchEvSeen) dropTouches(liveTouches);   // 뗀 신호를 놓쳐 남은 손가락 기록 정리 (터치 이벤트가 없는 브라우저에선 하지 않는다)
   ptr.set(e.pointerId, rec);
   if (rec.type === 'pen') penActive++;
@@ -1938,7 +1955,7 @@ board.addEventListener('pointermove', (e) => {
   else if ((gmode === 'pending' || gmode === 'draw') && strokeSt && strokeSt.id === e.pointerId) {
     const st = strokeSt;
     const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
-    for (const ce of (list.length ? list : [e])) { const q = rel(ce); strokePoint(st, q.x, q.y, evT(ce), false); }
+    for (const ce of (list.length ? list : [e])) { const q = rel(ce); strokePoint(st, q.x, q.y, evT(ce), false, ce.pressure); }
     st.moved = Math.max(st.moved, Math.hypot(rec.x - st.sx, rec.y - st.sy));
     if (st.phase === 'pending') {
       const erase = st.kind !== 'pen';
@@ -2466,10 +2483,12 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-12 15차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-12 16차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
+$('setSmooth').value = String(S.smooth);
+$('setSmooth').onchange = () => { S.smooth = clampInt(+$('setSmooth').value, 0, 3); saveSettings(); };
 setColor(S.color); syncEraserUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
