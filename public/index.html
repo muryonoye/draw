@@ -379,10 +379,11 @@
   <div class="switch"><div>다른 사람 커서 표시</div><input type="checkbox" id="setCursors" aria-label="다른 사람 커서 표시"></div>
   <div class="switch"><div>펜 모드에서 작성자 표시<small>선에 마우스를 올리면 이름 표시</small></div><input type="checkbox" id="setPenHover" aria-label="펜 모드에서 작성자 표시"></div>
   <div class="switch"><div>손가락 탭으로 이전·되돌리기<small>두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기</small></div><input type="checkbox" id="setTapUndo" aria-label="손가락 탭으로 이전 되돌리기"></div>
+  <div class="switch"><div>두 손가락으로 회전<small>두 손가락을 비틀면 화면이 돌아가요 (트랙패드도)</small></div><input type="checkbox" id="setPinchRot" aria-label="두 손가락으로 회전"></div>
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 9차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 10차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -425,6 +426,8 @@ const MIN_S = 0.0001, MAX_S = 20;    // 0.01% ~ 2000%
 const FILL_CELL_MAX = 1000;          // 서버와 같은 값: 칠하기 칸 상한 (화면 1px = 월드 1000, 즉 0.1% 보다 멀리 축소하면 채우기는 안 된다)
 const PINCH_MIN_D = 24;              // 두 손가락 사이가 이보다 가까우면 이 거리로 계산 (가까울 때 배율이 튀지 않게)
 const PINCH_MAX_STEP = 1.6;          // 손가락 움직임 한 번에 배율이 바뀌는 최대 비율 (튀는 터치 값 하나로 끝까지 확대되지 않게)
+const PINCH_ROT_START = 12 * Math.PI / 180;   // 두 손가락을 이만큼 비틀어야 회전이 시작된다 (확대만 하려다 화면이 돌아가지 않게)
+const PINCH_ROT_MIN_D = 40;          // 두 손가락이 이보다 가까우면 각도가 불안정해서 회전은 안 한다
 // 터치 입력은 '확정 후 전송': 그동안은 내 화면에만 보인다
 const TOUCH_CONFIRM_MS = 100;        // 한 손가락으로 이 시간이 지나면 확정
 const TOUCH_CONFIRM_PX = 10;         // 또는 화면에서 이만큼 움직이면 확정
@@ -470,7 +473,7 @@ const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').mat
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -794,11 +797,24 @@ function panBy(dx, dy) {                                     // 화면에서 (dx
   cam.x -= dx / scale; cam.y -= dy / scale; viewChanged();
 }
 const ROT_SNAP = 3 * Math.PI / 180;                          // 0° 근처(±3°)에서는 똑바로 붙는다
-function setRot(r, immediate) {
+function applyRot(r) {                                       // 회전값만 바꾼다 (화면 갱신은 부르는 쪽에서)
   r = Math.atan2(Math.sin(r), Math.cos(r));                   // -180° ~ 180°
   if (Math.abs(r) < 1e-9) r = 0;
   rot = r; rotC = r ? Math.cos(r) : 1; rotS = r ? Math.sin(r) : 0;
-  viewChanged(immediate);
+}
+function setRot(r, immediate) { applyRot(r); viewChanged(immediate); }
+// 두 손가락·트랙패드 제스처 한 번: 화면 p0 아래 있던 그림이 p1 으로 오고, f 배 확대, da 만큼 돌린다.
+// 회전은 st(제스처마다 { acc, on, raw })로 판정: 처음에 PINCH_ROT_START 만큼 비틀어야 시작하고, 시작한 뒤에는 손가락을 따라 돈다 (0° 근처는 똑바로 붙음).
+function gestureStep(p0, p1, f, da, st) {
+  const u0 = unrot(p0), wx = cam.x + u0.x / scale, wy = cam.y + u0.y / scale;
+  scale = clamp(scale * f, MIN_S, MAX_S);
+  if (da && st && S.pinchRotate) {
+    if (!st.on) { st.acc += da; if (Math.abs(st.acc) > PINCH_ROT_START) { st.on = true; st.raw = rot; } }
+    else { st.raw += da; const r = Math.atan2(Math.sin(st.raw), Math.cos(st.raw)); applyRot(Math.abs(r) < ROT_SNAP ? 0 : r); }
+  }
+  const u1 = unrot(p1);
+  cam.x = wx - u1.x / scale; cam.y = wy - u1.y / scale;
+  viewChanged();
 }
 function animRot(target) {                                   // 가까운 쪽으로 부드럽게 돌린다
   cancelAnimationFrame(animId);
@@ -1277,7 +1293,7 @@ nickEl.addEventListener('change', () => {
   if (!v) { nickEl.value = (me && names[me]) || myNick; return; }
   myNick = v; lsSet('draw:nick', v); send({ type: 'nick', name: v });
 });
-const toggles = { setGrid: 'grid', setPenOnly: 'penOnly', setCursors: 'showCursors', setPenHover: 'penHover', setTapUndo: 'tapUndo' };
+const toggles = { setGrid: 'grid', setPenOnly: 'penOnly', setCursors: 'showCursors', setPenHover: 'penHover', setTapUndo: 'tapUndo', setPinchRot: 'pinchRotate' };
 for (const [id, key] of Object.entries(toggles)) {
   $(id).onchange = () => {
     S[key] = $(id).checked; saveSettings();
@@ -1459,7 +1475,7 @@ function tapUp(e) {
   if (!g || touchRecs().length) return;                        // 아직 손가락이 남아 있음
   tapG = null;
   if (e.type !== 'pointerup' || g.moved || g.dead || now() - g.t0 > MULTI_TAP_MS || !S.tapUndo || (g.max !== 2 && g.max !== 3)) return;
-  if (pinchView) { cam.x = pinchView.x; cam.y = pinchView.y; scale = pinchView.s; viewChanged(true); }   // 탭하는 동안 살짝 움직인 화면은 처음대로
+  if (pinchView) { cam.x = pinchView.x; cam.y = pinchView.y; scale = pinchView.s; applyRot(pinchView.r); viewChanged(true); }   // 탭하는 동안 살짝 움직인 화면은 처음대로
   if (g.max === 2) tapUndo(); else tapRedo();
 }
 function tapUndo() {
@@ -1487,7 +1503,7 @@ $('hudPersist').onclick = () => confirmModal({ title: '그림이 저장되지 �
 
 /* ===== 입력: 상태 머신 (none / pan / pinch / pending / draw / tap / drop) ===== */
 const ptr = new Map();                                       // pointerId -> { id, type, x, y, sx, sy, t0, tn }
-let gmode = 'none', strokeSt = null, pinchPrev = null, pinchView = null, penActive = 0, lastCurSent = 0, qSeq = 0;
+let gmode = 'none', strokeSt = null, pinchPrev = null, pinchView = null, pinchRot = null, penActive = 0, lastCurSent = 0, qSeq = 0;
 let rotDrag = null, lastMouse = null;                        // 회전 끌기 { a0, r0, moved } / 마우스·펜이 보드 위에 마지막으로 있던 곳 (키보드 확대 기준점)
 let heldTool = null, altDrop = null, revertTo = null;        // 누르고 있는 도구 키 { code, t, prev, used } / Alt 스포이드 { prev } / 그리기가 끝나면 돌아갈 도구
 let rotFrom = 'pen';                                         // 회전 도구(R)를 고르기 전에 쓰던 도구 (회전을 취소하면 돌아간다)
@@ -1535,16 +1551,15 @@ function sendCursor(w) {
   send({ type: 'cur', x: r1(w.x), y: r1(w.y) });
 }
 function pinchState() {
-  const [a, b] = touchRecs();
-  return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.max(Math.hypot(a.x - b.x, a.y - b.y), PINCH_MIN_D) };
+  const [a, b] = touchRecs(), rd = Math.hypot(a.x - b.x, a.y - b.y);
+  return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.max(rd, PINCH_MIN_D), rd, a: Math.atan2(b.y - a.y, b.x - a.x) };
 }
 function doPinch() {
   if (touchRecs().length < 2) return;                          // 손가락을 따라 바로 움직인다 (두·세 손가락 탭으로 끝나면 tapUp 이 화면을 처음대로 되돌린다)
-  const cur = pinchState(), u0 = unrot({ x: pinchPrev.cx, y: pinchPrev.cy }), u1 = unrot({ x: cur.cx, y: cur.cy });
-  const wx = cam.x + u0.x / scale, wy = cam.y + u0.y / scale;
-  scale = clamp(scale * clamp(cur.d / pinchPrev.d, 1 / PINCH_MAX_STEP, PINCH_MAX_STEP), MIN_S, MAX_S);
-  cam.x = wx - u1.x / scale; cam.y = wy - u1.y / scale;
-  pinchPrev = cur; viewChanged();
+  const cur = pinchState(), pv = pinchPrev;
+  const da = cur.rd >= PINCH_ROT_MIN_D && pv.rd >= PINCH_ROT_MIN_D ? Math.atan2(Math.sin(cur.a - pv.a), Math.cos(cur.a - pv.a)) : 0;   // 두 손가락을 비튼 각도
+  gestureStep({ x: pv.cx, y: pv.cy }, { x: cur.cx, y: cur.cy }, clamp(cur.d / pv.d, 1 / PINCH_MAX_STEP, PINCH_MAX_STEP), da, pinchRot);
+  pinchPrev = cur;
 }
 
 // --- 획 내보내기 (펜 / 부분 지우개 / 획 지우개) ---
@@ -1646,7 +1661,7 @@ function enterPinch() {                                        // 손가락이 2
     else finishStroke(st);
     strokeSt = null;
   }
-  if (gmode !== 'pinch') pinchView = { x: cam.x, y: cam.y, s: scale };   // 핀치를 시작할 때의 화면 (두·세 손가락 탭이면 되돌린다)
+  if (gmode !== 'pinch') { pinchView = { x: cam.x, y: cam.y, s: scale, r: rot }; pinchRot = { acc: 0, on: false, raw: rot }; }   // 핀치를 시작할 때의 화면 (두·세 손가락 탭이면 되돌린다)
   gmode = 'pinch'; pinchPrev = pinchState(); hideTip(); hideDropPrev();
 }
 function updateRing(p) {                                       // 마우스 커서 주변에 현재 펜/지우개 크기 원
@@ -1762,14 +1777,17 @@ board.addEventListener('lostpointercapture', endPtr);
 /* ===== 브라우저 기본 동작 차단 (입력창은 예외) ===== */
 // 사파리(아이패드 키보드 트랙패드, 맥)의 트랙패드 핀치는 휠이 아니라 gesture 이벤트로 온다: 페이지 확대는 막고 그림판 배율을 바꾼다.
 // 손가락 핀치에서도 사파리가 같은 이벤트를 보내지만 그건 포인터 이벤트로 이미 처리하므로, 화면에 손가락이 닿아 있으면 무시한다.
-let gestS = 1;
-document.addEventListener('gesturestart', (e) => { e.preventDefault(); gestS = 1; }, { passive: false });
+// 두 손가락으로 비틀면(rotation, 도 단위 누적값) 손가락 핀치와 같은 규칙으로 화면도 돈다.
+let gestS = 1, gestR = 0, gestRot = null;
+document.addEventListener('gesturestart', (e) => { e.preventDefault(); gestS = 1; gestR = 0; gestRot = { acc: 0, on: false, raw: rot }; }, { passive: false });
 document.addEventListener('gesturechange', (e) => {
   e.preventDefault();
   if (touchRecs().length || liveTouches || !(e.scale > 0)) return;
-  const r = stage.getBoundingClientRect();
-  zoomAt(e.clientX - r.left, e.clientY - r.top, e.scale / gestS);
-  gestS = e.scale;
+  const r = stage.getBoundingClientRect(), p = { x: e.clientX - r.left, y: e.clientY - r.top };
+  const er = Number.isFinite(e.rotation) ? e.rotation : 0;
+  cancelAnimationFrame(animId);
+  gestureStep(p, p, e.scale / gestS, (er - gestR) * Math.PI / 180, gestRot);
+  gestS = e.scale; gestR = er;
 }, { passive: false });
 document.addEventListener('gestureend', (e) => e.preventDefault(), { passive: false });
 document.addEventListener('contextmenu', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
@@ -2208,7 +2226,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 9차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 10차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
