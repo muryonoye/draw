@@ -396,7 +396,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 11차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 12차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -733,8 +733,13 @@ function paintInkExact() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, inkCv.width, inkCv.height);
   ctxView();
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   const { xa, xb, ya, yb } = viewBox(30);
+  drawSegs(xa, xb, ya, yb);
+  paintPreview();
+  dirty = null;                                            // (조금만 다시 그리기가 예정돼 있었어도 이걸로 충분하다)
+}
+function drawSegs(xa, xb, ya, yb) {                        // 월드 상자에 닿는 선을 목록 순서대로 그린다 (ctx 는 보기 변환이 된 상태)
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   let open = false, rc = null, rs = -1, lx = NaN, ly = NaN;
   for (const s of segs) {                                  // 같은 색·굵기가 이어지면 한 path 로 묶어 한 번에 그린다
     const hs = s.size / 2;
@@ -748,7 +753,52 @@ function paintInkExact() {
     ctx.lineTo(s.x1, s.y1); lx = s.x1; ly = s.y1;
   }
   if (open) ctx.stroke();
-  paintPreview();
+}
+// 일부만 다시 그리기: 월드 상자 (xa, ya)~(xb, yb) 가 보이는 화면 부분만 지우고, 거기에 닿는 선만 다시 그린다.
+// 지우개처럼 좁은 곳만 바뀔 때 매번 그림 전체를 다시 그리면, 그림이 많을수록 화면이 버벅인다.
+let dirty = null, rafDirty = 0;
+function redrawArea(xa, ya, xb, yb) {
+  if (rafInk) return;                                      // 전체 다시 그리기가 이미 예정됨
+  if (!dirty) dirty = { xa, ya, xb, yb };
+  else { dirty.xa = Math.min(dirty.xa, xa); dirty.ya = Math.min(dirty.ya, ya); dirty.xb = Math.max(dirty.xb, xb); dirty.yb = Math.max(dirty.yb, yb); }
+  if (!rafDirty) rafDirty = requestAnimationFrame(paintDirty);
+}
+function redrawSegsArea(list) {                            // 이 선들이 있던 곳만 다시 그린다 (지운 선 등)
+  let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
+  for (const s of list) {
+    const h = s.size / 2;
+    xa = Math.min(xa, s.x0 - h, s.x1 - h); xb = Math.max(xb, s.x0 + h, s.x1 + h); ya = Math.min(ya, s.y0 - h, s.y1 - h); yb = Math.max(yb, s.y0 + h, s.y1 + h);
+  }
+  const e = 2 / scale;                                     // (아주 가는 선은 화면에서 최소 굵기로 그려진다)
+  if (xa <= xb) redrawArea(xa - e, ya - e, xb + e, yb + e);
+}
+function paintDirty() {
+  rafDirty = 0;
+  const d = dirty; dirty = null;
+  if (!d || rafInk) return;
+  if (!aligned() || exactT) { paintInkExact(); return; }  // 화면을 옮기는 중(그림을 통째로 옮겨 보여 주는 중)이면 전체를 정확히
+  let sx0 = Infinity, sy0 = Infinity, sx1 = -Infinity, sy1 = -Infinity;
+  for (const [x, y] of [[d.xa, d.ya], [d.xb, d.ya], [d.xa, d.yb], [d.xb, d.yb]]) {
+    const p = toScreen(x, y);
+    sx0 = Math.min(sx0, p.x); sx1 = Math.max(sx1, p.x); sy0 = Math.min(sy0, p.y); sy1 = Math.max(sy1, p.y);
+  }
+  // 기기 픽셀 정수 사각형으로 (가장자리가 반 픽셀에 걸치면 지운 자리에 흐린 줄이 남는다)
+  const px0 = Math.max(0, Math.floor(sx0 * dpr) - 2), py0 = Math.max(0, Math.floor(sy0 * dpr) - 2);
+  const px1 = Math.min(inkCv.width, Math.ceil(sx1 * dpr) + 2), py1 = Math.min(inkCv.height, Math.ceil(sy1 * dpr) + 2);
+  if (px1 <= px0 || py1 <= py0) return;                    // 화면 밖
+  if ((px1 - px0) * (py1 - py0) > inkCv.width * inkCv.height * 0.6) { paintInkExact(); return; }   // 넓으면 전체를 다시 그리는 게 낫다
+  let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;   // 그 화면 사각형을 덮는 월드 상자
+  for (const [x, y] of [[px0, py0], [px1, py0], [px0, py1], [px1, py1]]) {
+    const w = toWorld({ x: x / dpr, y: y / dpr });
+    xa = Math.min(xa, w.x); xb = Math.max(xb, w.x); ya = Math.min(ya, w.y); yb = Math.max(yb, w.y);
+  }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.beginPath(); ctx.rect(px0, py0, px1 - px0, py1 - py0); ctx.clip();
+  ctx.clearRect(px0, py0, px1 - px0, py1 - py0);
+  const e = 2 / scale;                                     // (사각형 바로 밖의 가는 선도 최소 굵기로 그려져 안으로 걸칠 수 있다)
+  ctxView(); drawSegs(xa - e, xb + e, ya - e, yb + e); paintPreview();
+  ctx.restore();
 }
 function paintPreview() {
   const st = strokeSt;
@@ -1580,19 +1630,26 @@ function penSeg(st, a, b) {
   const s = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: st.color, size: st.size, o: me, sid: st.sid };
   segs.push(s); if (st.act) st.act.segs.push(s); incSeg(s); send({ type: 'seg', ...s });
 }
+// 부분 지우개가 지나간 곳만 다시 그린다: 지워진 부분은 지우개 경로에서 (반지름 + 선 굵기/2) 안이고, 그 선이 그려진 자리와 잘린 끝의 둥근 마감까지 (선 굵기/2) 더
+function eraseArea(x0, y0, x1, y1, r, removed) {
+  let m = 0;
+  for (const s of removed) if (s.size > m) m = s.size;
+  const e = Math.min(Math.max(r, 1), ERASER_R_MAX) + m + 2 / scale;
+  redrawArea(Math.min(x0, x1) - e, Math.min(y0, y1) - e, Math.max(x0, x1) + e, Math.max(y0, y1) + e);
+}
 function erasePart(st, a, b) {
   const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
-  const diff = st.act ? { removed: [], added: [] } : undefined;
+  const diff = { removed: [], added: [] };
   const res = eraseCapsule(segs, sc, x0, y0, x1, y1, r, diff);
-  if (res) { segs = res; if (diff) mergeDiff(st.act, diff); redrawInk(); send({ type: 'erase', x0, y0, x1, y1, r, ...(sc === null ? { all: true } : {}) }); }
+  if (res) { segs = res; if (st.act) mergeDiff(st.act, diff); eraseArea(x0, y0, x1, y1, r, diff.removed); send({ type: 'erase', x0, y0, x1, y1, r, ...(sc === null ? { all: true } : {}) }); }
 }
 function eraseStroke(st, a, b) {
   const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
   const keys = hitStrokes(segs, sc, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
   if (!keys.length) return;
-  const diff = st.act ? { removed: [], added: [] } : undefined;
+  const diff = { removed: [], added: [] };
   const res = removeStrokes(segs, keys, diff);
-  if (res) { segs = res; if (diff) mergeDiff(st.act, diff); redrawInk(); }
+  if (res) { segs = res; if (st.act) mergeDiff(st.act, diff); redrawSegsArea(diff.removed); }
   const q = ++qSeq;
   pendingQ.set(q, new Set(keys.map((k) => k[0] + '|' + k[1])));
   if (pendingQ.size > 100) pendingQ.delete(pendingQ.keys().next().value);
@@ -2189,11 +2246,11 @@ function onMessage(data) {
     case 'count': if (!online.size) { count = m.n; hudSoon(); } break;
     case 'seg': segs.push(m); if (aligned() && !exactT) incSeg(m); else redrawInk(); break;
     case 'clear': segs = segs.filter((s) => s.o !== m.o); if (m.o === me) resetUndo(); redrawInk(); break;
-    case 'erase': { const res = eraseCapsule(segs, m.o, m.x0, m.y0, m.x1, m.y1, m.r); if (res) { segs = res; redrawInk(); } break; }
+    case 'erase': { const d = { removed: [], added: [] }, res = eraseCapsule(segs, m.o, m.x0, m.y0, m.x1, m.y1, m.r, d); if (res) { segs = res; eraseArea(m.x0, m.y0, m.x1, m.y1, m.r, d.removed); } break; }
     case 'strokesgone': {
-      const keys = Array.isArray(m.keys) ? m.keys : [];
-      const res = removeStrokes(segs, keys);
-      if (res) { segs = res; redrawInk(); }
+      const keys = Array.isArray(m.keys) ? m.keys : [], d = { removed: [], added: [] };
+      const res = removeStrokes(segs, keys, d);
+      if (res) { segs = res; redrawSegsArea(d.removed); }
       if (m.by === me && m.q != null && pendingQ.has(m.q)) {                       // 내 예상과 서버 결과가 다르면 서버 기준으로 맞춘다
         const predicted = pendingQ.get(m.q); pendingQ.delete(m.q);
         const got = new Set(keys.map((k) => k[0] + '|' + k[1]));
@@ -2239,7 +2296,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 11차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 12차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
