@@ -143,6 +143,13 @@
   #modal h3 { margin: 0 0 8px; font-size: 16px; }
   #modal p { margin: 0 0 16px; color: var(--muted); white-space: pre-line; }
   #modal .acts { display: flex; gap: 8px; justify-content: flex-end; }
+  #imgView { position: fixed; inset: 0; z-index: 61; display: grid; place-items: center; background: rgba(0,0,0,.7); padding: 16px; }
+  #imgView[hidden] { display: none; }
+  #imgView .card { width: min(560px, 100%); max-height: calc(100% - 8px); display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 16px; }
+  #imgView h3 { margin: 0; font-size: 16px; }
+  #imgView img { display: block; max-width: 100%; max-height: 60vh; margin: 0 auto; object-fit: contain; background: #fff; border-radius: var(--r-sm); -webkit-touch-callout: default; user-select: auto; }
+  #imgView .acts { display: flex; gap: 8px; justify-content: flex-end; }
+  #imgView a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   #toasts { position: fixed; z-index: 70; left: 50%; transform: translateX(-50%); top: calc(54px + var(--safe-t)); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; width: min(92vw, 420px); }
   .toast { background: rgba(34,37,44,.96); color: var(--text); border: 1px solid var(--line); padding: 8px 14px; border-radius: 12px; box-shadow: var(--shadow); font-size: 13px; animation: tin .18s ease-out; word-break: keep-all; }
   .toast.warn { border-color: var(--warn); } .toast.err { border-color: var(--danger); } .toast.ok { border-color: var(--ok); }
@@ -355,6 +362,7 @@
 <section id="popView" class="pop" hidden aria-label="보기">
   <div class="sheetgrab"></div><h3>보기</h3>
   <button id="fitAll" class="btn primary block" style="margin-bottom:10px"><svg class="ic"><use href="#i-view"/></svg>전체 그림 한눈에 보기</button>
+  <button id="exportPng" class="btn block" style="margin-bottom:10px">그림을 이미지(PNG)로 저장</button>
   <div class="row">
     <button id="zOut" class="btn" aria-label="축소" title="축소"><svg class="ic"><use href="#i-minus"/></svg></button>
     <button id="z100" class="btn" style="flex:1" aria-label="배율 100%">100%</button>
@@ -397,7 +405,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 14차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 15차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -421,6 +429,7 @@
 <div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
   <div class="card"><h3 id="mTitle"></h3><p id="mBody"></p><div id="mFields"></div><div id="mErr" class="err"></div><div class="acts"><button id="mCancel" class="btn">취소</button><button id="mOk" class="btn primary">확인</button></div></div>
 </div>
+<div id="imgView" hidden role="dialog" aria-modal="true" aria-labelledby="imgViewTitle"><div class="card"><h3 id="imgViewTitle">그림 이미지</h3><img id="imgViewImg" alt="저장할 그림"><div class="hint" id="imgViewInfo"></div><div class="acts"><button id="imgClose" class="btn" type="button">닫기</button><a id="imgDl" class="btn primary" download="같이그리기.png">다운로드</a></div></div></div>
 <div id="toasts" aria-live="polite"></div>
 <div id="endScreen" hidden><div class="card"><h2 id="endTitle">연결이 종료되었어요</h2><p id="endText"></p><button id="endBtn" class="btn primary">다시 입장</button></div></div>
 <script>
@@ -740,21 +749,51 @@ function paintInkExact() {
   paintPreview();
   dirty = null;                                            // (조금만 다시 그리기가 예정돼 있었어도 이걸로 충분하다)
 }
-function drawSegs(xa, xb, ya, yb) {                        // 월드 상자에 닿는 선을 목록 순서대로 그린다 (ctx 는 보기 변환이 된 상태)
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  let open = false, rc = null, rs = -1, lx = NaN, ly = NaN;
-  for (const s of segs) {                                  // 같은 색·굵기가 이어지면 한 path 로 묶어 한 번에 그린다
-    const hs = s.size / 2;
-    if (Math.max(s.x0, s.x1) + hs < xa || Math.min(s.x0, s.x1) - hs > xb || Math.max(s.y0, s.y1) + hs < ya || Math.min(s.y0, s.y1) - hs > yb) continue;
-    if (!open || s.color !== rc || s.size !== rs) {
-      if (open) ctx.stroke();
-      ctx.beginPath(); ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, (s.f ? FILL_MIN_PX : 0.6) / scale);
-      rc = s.color; rs = s.size; open = true; lx = NaN;
+// 선 목록을 덩어리(SEG_BLOCK 개씩)로 나눈 범위 (화면 밖 덩어리는 통째로 건너뛴다). 목록이 바뀌면(다른 배열이 되거나 길이가 바뀌면) 다시 만든다.
+const SEG_BLOCK = 256;
+let drawSkipPx = 0.6;                                      // (테스트에서 0 으로 바꿔 건너뛰지 않은 그림과 비교한다)
+let segIdx = null;
+function segIndex() {
+  if (segIdx && segIdx.arr === segs && segIdx.len === segs.length) return segIdx;
+  const n = Math.ceil(segs.length / SEG_BLOCK), box = new Float64Array(n * 4);
+  for (let b = 0; b < n; b++) {
+    let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
+    for (let i = b * SEG_BLOCK, e = Math.min(segs.length, i + SEG_BLOCK); i < e; i++) {
+      const s = segs[i], h = s.size / 2;
+      const a0 = (s.x0 < s.x1 ? s.x0 : s.x1) - h, a1 = (s.x0 > s.x1 ? s.x0 : s.x1) + h, c0 = (s.y0 < s.y1 ? s.y0 : s.y1) - h, c1 = (s.y0 > s.y1 ? s.y0 : s.y1) + h;
+      if (a0 < xa) xa = a0;
+      if (a1 > xb) xb = a1;
+      if (c0 < ya) ya = c0;
+      if (c1 > yb) yb = c1;
     }
-    if (s.x0 !== lx || s.y0 !== ly) ctx.moveTo(s.x0, s.y0);
-    ctx.lineTo(s.x1, s.y1); lx = s.x1; ly = s.y1;
+    box[b * 4] = xa; box[b * 4 + 1] = xb; box[b * 4 + 2] = ya; box[b * 4 + 3] = yb;
   }
-  if (open) ctx.stroke();
+  return (segIdx = { arr: segs, len: segs.length, n, box });
+}
+function drawSegs(xa, xb, ya, yb, g = ctx, k = scale) {    // 월드 상자에 닿는 선을 목록 순서대로 g 에 그린다 (g 는 보기 변환이 된 상태, k = 화면 픽셀 / 월드)
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const ix = segIndex(), box = ix.box, tol = drawSkipPx / k;
+  let open = false, rc = null, rs = -1, lx = NaN, ly = NaN, px = NaN, py = NaN, pend = false;
+  const flush = () => { if (pend) { g.lineTo(lx, ly); pend = false; } };   // 건너뛰던 마지막 점까지는 꼭 그린다
+  for (let b = 0; b < ix.n; b++) {
+    if (box[b * 4 + 1] < xa || box[b * 4] > xb || box[b * 4 + 3] < ya || box[b * 4 + 2] > yb) continue;
+    for (let i = b * SEG_BLOCK, e = Math.min(segs.length, i + SEG_BLOCK); i < e; i++) {
+      const s = segs[i], hs = s.size / 2;
+      if (Math.max(s.x0, s.x1) + hs < xa || Math.min(s.x0, s.x1) - hs > xb || Math.max(s.y0, s.y1) + hs < ya || Math.min(s.y0, s.y1) - hs > yb) continue;
+      if (!open || s.color !== rc || s.size !== rs) {      // 같은 색·굵기가 이어지면 한 path 로 묶어 한 번에 그린다
+        flush();
+        if (open) g.stroke();
+        g.beginPath(); g.strokeStyle = s.color; g.lineWidth = Math.max(s.size, (s.f ? FILL_MIN_PX : 0.6) / k);
+        rc = s.color; rs = s.size; open = true; lx = NaN;
+      }
+      if (s.x0 !== lx || s.y0 !== ly) { flush(); g.moveTo(s.x0, s.y0); g.lineTo(s.x1, s.y1); px = s.x1; py = s.y1; }   // 새 줄의 첫 선분은 늘 그린다 (점도 보이게)
+      else if (Math.abs(s.x1 - px) + Math.abs(s.y1 - py) < tol) pend = true;   // 이어지는 선분이 화면에서 아주 짧으면(축소했을 때) 건너뛰고 다음 점으로 바로 잇는다
+      else { g.lineTo(s.x1, s.y1); px = s.x1; py = s.y1; pend = false; }
+      lx = s.x1; ly = s.y1;
+    }
+  }
+  flush();
+  if (open) g.stroke();
 }
 // 일부만 다시 그리기: 월드 상자 (xa, ya)~(xb, yb) 가 보이는 화면 부분만 지우고, 거기에 닿는 선만 다시 그린다.
 // 지우개처럼 좁은 곳만 바뀔 때 매번 그림 전체를 다시 그리면, 그림이 많을수록 화면이 버벅인다.
@@ -1313,6 +1352,63 @@ $('zOut').onclick = () => zoomCenter(0.8);
 $('z100').onclick = () => { const c = centerWorld(); scale = 1; cam.x = c.x - cssW / 2; cam.y = c.y - cssH / 2; viewChanged(true); };
 $('viewReset').onclick = resetView;
 $('fitAll').onclick = () => { closePop(); fitAll(); };
+
+/* ===== 그림을 이미지(PNG)로 저장: 흰 바탕. 전체 그림(긴 쪽 최대 EXPORT_MAX_PX) 또는 지금 보이는 화면 ===== */
+const EXPORT_MAX_PX = 4000, EXPORT_PAD_PX = 24;            // (아이폰 사파리는 캔버스 한 장이 약 1600만 픽셀까지라 4000 x 4000 안으로)
+function segsBounds() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of segs) {
+    const h = s.size / 2;
+    x0 = Math.min(x0, s.x0 - h, s.x1 - h); x1 = Math.max(x1, s.x0 + h, s.x1 + h);
+    y0 = Math.min(y0, s.y0 - h, s.y1 - h); y1 = Math.max(y1, s.y0 + h, s.y1 + h);
+  }
+  return { x0, y0, x1, y1 };
+}
+function renderAllPng() {                                   // 전체 그림을 새 캔버스에: 100% 보다 크게는 안 키운다 (최대 2배 = 또렷하게)
+  const b = segsBounds(), w = Math.max(b.x1 - b.x0, 1), h = Math.max(b.y1 - b.y0, 1);
+  const k = Math.min(2, (EXPORT_MAX_PX - EXPORT_PAD_PX * 2) / Math.max(w, h));
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.ceil(w * k) + EXPORT_PAD_PX * 2); cv.height = Math.max(1, Math.ceil(h * k) + EXPORT_PAD_PX * 2);
+  const g = cv.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, cv.width, cv.height);
+  g.setTransform(k, 0, 0, k, EXPORT_PAD_PX - b.x0 * k, EXPORT_PAD_PX - b.y0 * k);
+  drawSegs(b.x0, b.x1, b.y0, b.y1, g, k);
+  return { cv, k };
+}
+function renderViewPng() {                                  // 지금 보이는 화면 그대로 (격자 없이, 흰 바탕)
+  paintInkExact();
+  const cv = document.createElement('canvas'); cv.width = inkCv.width; cv.height = inkCv.height;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(inkCv, 0, 0);
+  return { cv, k: scale * dpr };
+}
+let imgUrl = null;
+function showImage(blob, info) {
+  if (imgUrl) URL.revokeObjectURL(imgUrl);
+  imgUrl = URL.createObjectURL(blob);
+  const d = new Date(), p2 = (n) => String(n).padStart(2, '0');
+  $('imgViewImg').src = imgUrl; $('imgDl').href = imgUrl;
+  $('imgDl').download = `같이그리기_${room}_${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}.png`;
+  $('imgViewInfo').textContent = info + ' · 폰에서는 이미지를 길게 눌러 사진에 저장할 수도 있어요';
+  $('imgView').hidden = false;
+}
+function hideImage() { $('imgView').hidden = true; }
+$('imgClose').onclick = hideImage;
+$('imgView').addEventListener('pointerdown', (e) => { if (e.target === $('imgView')) hideImage(); });
+async function exportPng() {
+  closePop();
+  const v = await formModal({ title: '그림을 이미지로 저장', body: '흰 바탕의 PNG 이미지로 만들어요. (격자는 빼고)', ok: '만들기',
+    fields: [{ key: 'scope', type: 'select', label: '범위', options: [['all', '전체 그림'], ['view', '지금 보이는 화면']], value: 'all' }] });
+  if (!v) return;
+  if (v.scope === 'all' && !segs.length) { toast('아직 그림이 없어요'); return; }
+  const { cv, k } = v.scope === 'all' ? renderAllPng() : renderViewPng();
+  cv.toBlob((blob) => {
+    if (!blob) { toast('이미지를 만들지 못했어요 (그림이 너무 커요)', 'warn'); return; }
+    const pct = k * 100 / (v.scope === 'all' ? 1 : dpr);
+    showImage(blob, `${cv.width} x ${cv.height} 픽셀` + (v.scope === 'all' ? ` · 그림 배율 ${pct >= 10 ? Math.round(pct) : Math.round(pct * 100) / 100}%` : ''));
+  }, 'image/png');
+}
+$('exportPng').onclick = exportPng;
 $('hudZoom').onclick = fitAll;
 $('hudRot').onclick = () => animRot(0);
 $('goOrigin').onclick = () => { $('goErr').textContent = ''; flyTo(0, 0); };
@@ -1904,7 +2000,7 @@ document.addEventListener('gesturechange', (e) => {
   gestS = e.scale; gestR = er;
 }, { passive: false });
 document.addEventListener('gestureend', (e) => e.preventDefault(), { passive: false });
-document.addEventListener('contextmenu', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
+document.addEventListener('contextmenu', (e) => { if (!isEditable(e.target) && e.target.id !== 'imgViewImg') e.preventDefault(); });   // (저장할 이미지는 길게 눌러 '이미지 저장'이 되게)
 document.addEventListener('selectstart', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
 document.addEventListener('dblclick', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
 /* --- 키보드 단축키: 클립 스튜디오(클튜)와 같은 키. 왼손 키패드·노브를 클튜 설정 그대로 쓸 수 있다 ---
@@ -1937,7 +2033,7 @@ function backTo(t, prev) {                                     // 잠깐 바꾼 
   if (ptr.size) revertTo = prev; else setTool(prev);
 }
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(null); else if (openPopId) closePop(); else closeSide(); return; }
+  if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(null); else if (!$('imgView').hidden) hideImage(); else if (openPopId) closePop(); else closeSide(); return; }
   if (e.key === 'Shift' && !shiftDown) { shiftDown = true; syncCursor(); if (gmode === 'rot') rotDragTo(true); }   // 돌리는 중에 누르면 바로 45° 에 맞춘다
   const ed = isEditable(e.target), modal = !$('modal').hidden, ctl = e.ctrlKey || e.metaKey, k = keyLetter(e);
   if (ctl && !modal) {                                         // 확대·축소: 브라우저 화면 확대 대신 그림판 배율 (입력창에 있어도)
@@ -2370,7 +2466,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 14차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-12 15차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
