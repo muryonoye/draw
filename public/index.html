@@ -224,13 +224,14 @@
     .toolsep { display: none; }
   }
   @media (min-width: 721px) and (max-height: 440px) { #tools { width: calc(var(--btn) * 3 + 22px); } }
-  @media (max-width: 960px), (max-height: 560px) { #toasts { top: calc(98px + var(--safe-t)); } }
-  #shareHint { position: absolute; z-index: 16; left: 50%; transform: translateX(-50%); bottom: calc(16px + var(--safe-b)); width: max-content; max-width: calc(100% - 24px);
+  @media (max-width: 960px), (max-height: 560px) { #toasts { top: calc(98px + var(--safe-t)); } }   /* 좁거나 낮은 화면: 알림이 상태 알약(HUD)을 가리지 않게 그 아래에 */
+  /* 안내 상자 (새 방 링크 보내기, 펜 감지 등): 버튼 하나 + 닫기. 화면 아래 가운데 */
+  #hintBox { position: absolute; z-index: 16; left: 50%; transform: translateX(-50%); bottom: calc(16px + var(--safe-b)); width: max-content; max-width: calc(100% - 24px);
     display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; background: var(--panel); color: var(--text); border: 1px solid var(--accent);
     border-radius: var(--r-lg); box-shadow: var(--shadow); word-break: keep-all; }
-  #shareHint .btn { flex: none; min-height: 36px; }
-  #shareHint .xbtn { flex: none; width: 36px; height: 36px; border: 0; border-radius: var(--r); background: transparent; color: var(--muted); display: grid; place-items: center; }
-  @media (max-width: 720px) { #shareHint { bottom: calc(68px + var(--safe-b)); font-size: 13px; } }   /* 폰: 아래 도구 모음 위에 */   /* 좁거나 낮은 화면: 알림이 상태 알약(HUD)을 가리지 않게 그 아래에 */
+  #hintBox .btn { flex: none; min-height: 36px; }
+  #hintBox .xbtn { flex: none; width: 36px; height: 36px; border: 0; border-radius: var(--r); background: transparent; color: var(--muted); display: grid; place-items: center; }
+  @media (max-width: 720px) { #hintBox { bottom: calc(68px + var(--safe-b)); font-size: 13px; } }   /* 폰: 아래 도구 모음 위에 */
 </style>
 </head>
 <body>
@@ -288,7 +289,7 @@
     <span id="hudPersistSep" class="sepv" hidden></span><button id="hudPersist" class="linkbtn warnbtn" hidden title="그림이 저장되지 않고 있어요 (눌러서 자세히)" aria-label="저장 꺼짐">⚠ 저장 꺼짐</button>
   </div>
   <div id="banner" hidden><span class="spin"></span><span>재연결 중…</span></div>
-  <div id="shareHint" hidden role="status"><span>🔗 새로 만든 나만의 방이에요. 친구와 같이 그리려면 <b>이 방 링크</b>를 보내 주세요</span><button id="shareCopy" class="btn primary" type="button">링크 복사</button><button id="shareClose" class="xbtn" type="button" aria-label="안내 닫기" title="닫기"><svg class="ic"><use href="#i-x"/></svg></button></div>
+  <div id="hintBox" hidden role="status"><span id="hintText"></span><button id="hintBtn" class="btn primary" type="button"></button><button id="hintClose" class="xbtn" type="button" aria-label="안내 닫기" title="닫기"><svg class="ic"><use href="#i-x"/></svg></button></div>
 
   <nav id="tools" aria-label="도구">
     <button id="tPen" class="tool active" aria-label="펜 (P)" title="펜 (P)" aria-pressed="true"><svg class="ic"><use href="#i-pen"/></svg></button>
@@ -379,7 +380,7 @@
   <div class="switch"><div>손가락 탭으로 이전·되돌리기<small>두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기</small></div><input type="checkbox" id="setTapUndo" aria-label="손가락 탭으로 이전 되돌리기"></div>
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P</b><span>펜</span><b>E</b><span>지우개</span><b>H</b><span>화면 이동</span><b>F</b><span>채우기</span><b>I</b><span>스포이드</span><b>Space</b><span>누르고 드래그하면 이동</span></div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 4차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 5차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -1157,16 +1158,20 @@ async function copyLink() {
   catch { toast('주소창의 링크를 복사해 주세요', 'warn'); }
 }
 $('copyLink').onclick = copyLink;
+// 안내 상자: 글 + 버튼 하나 + 닫기. 버튼을 누르면 할 일을 하고 닫힌다.
+let hintAct = null;
+function showHint(text, label, act) { $('hintText').textContent = text; $('hintBtn').textContent = label; hintAct = act; $('hintBox').hidden = false; }
+const hideHint = () => { $('hintBox').hidden = true; hintAct = null; };
+$('hintBtn').onclick = async () => { const a = hintAct; hideHint(); if (a) await a(); };
+$('hintClose').onclick = hideHint;
 // 새 방 안내: 기본 주소로 들어와 새 방이 만들어졌을 때(서버가 new=1 을 붙여 보낸다). 친구는 이 방 링크로 들어와야 같은 그림을 본다.
 {
   const q = new URLSearchParams(location.search);
   if (q.get('new') === '1') {
     q.delete('new'); history.replaceState(null, '', location.pathname + '?' + q.toString());   // 복사하는 링크에 new=1 이 붙지 않게
-    $('shareHint').hidden = false;
+    showHint('🔗 새로 만든 나만의 방이에요. 친구와 같이 그리려면 이 방 링크를 보내 주세요', '링크 복사', copyLink);
   }
 }
-$('shareCopy').onclick = async () => { await copyLink(); $('shareHint').hidden = true; };
-$('shareClose').onclick = () => { $('shareHint').hidden = true; };
 $('newRoom').onclick = () => goRoom(newRoomId());
 $('joinBtn').onclick = () => {
   const id = parseRoom($('joinInput').value);
@@ -1355,13 +1360,13 @@ function tapMove(rec) {
   const s0 = g.start.get(rec.id);
   if (s0 && Math.hypot(rec.x - s0.x, rec.y - s0.y) > MULTI_TAP_MOVE_PX) g.moved = true;
 }
-const tapPossible = () => !!tapG && tapG.max >= 2 && !tapG.moved && !tapG.dead && now() - tapG.t0 <= MULTI_TAP_MS;
 function tapUp(e) {
   const g = tapG;
   if (!g || touchRecs().length) return;                        // 아직 손가락이 남아 있음
   tapG = null;
-  if (e.type !== 'pointerup' || g.moved || g.dead || now() - g.t0 > MULTI_TAP_MS || !S.tapUndo) return;
-  if (g.max === 2) tapUndo(); else if (g.max === 3) tapRedo();
+  if (e.type !== 'pointerup' || g.moved || g.dead || now() - g.t0 > MULTI_TAP_MS || !S.tapUndo || (g.max !== 2 && g.max !== 3)) return;
+  if (pinchView) { cam.x = pinchView.x; cam.y = pinchView.y; scale = pinchView.s; viewChanged(true); }   // 탭하는 동안 살짝 움직인 화면은 처음대로
+  if (g.max === 2) tapUndo(); else tapRedo();
 }
 function tapUndo() {
   if (!me || myRestr.spectator) return;
@@ -1388,7 +1393,7 @@ $('hudPersist').onclick = () => confirmModal({ title: '그림이 저장되지 �
 
 /* ===== 입력: 상태 머신 (none / pan / pinch / pending / draw / tap / drop) ===== */
 const ptr = new Map();                                       // pointerId -> { id, type, x, y, sx, sy, t0, tn }
-let gmode = 'none', strokeSt = null, pinchPrev = null, penActive = 0, lastCurSent = 0, qSeq = 0;
+let gmode = 'none', strokeSt = null, pinchPrev = null, pinchView = null, penActive = 0, lastCurSent = 0, qSeq = 0;
 const pendingQ = new Map();                                  // 획 지우개 요청 번호 -> 내가 예상한 지워질 획 키
 const rel = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 const touchRecs = () => [...ptr.values()].filter((r) => r.type === 'touch');
@@ -1405,7 +1410,7 @@ function dropTouches(keep) {
   const tc = touchRecs().length;
   if (gmode === 'pinch' && tc < 2) gmode = tc ? 'pan' : 'none';
   if (!tc) tapG = null;
-  if (!ptr.size) { gmode = 'none'; strokeSt = null; }
+  if (!ptr.size) { gmode = 'none'; strokeSt = null; pinchView = null; }
 }
 for (const t of ['touchstart', 'touchend', 'touchcancel']) {
   document.addEventListener(t, (e) => {
@@ -1426,7 +1431,7 @@ function pinchState() {
   return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.max(Math.hypot(a.x - b.x, a.y - b.y), PINCH_MIN_D) };
 }
 function doPinch() {
-  if (touchRecs().length < 2 || tapPossible()) return;         // 탭일 수도 있는 동안은 화면을 움직이지 않는다 (탭이 아님이 확실해지면 그때까지의 움직임이 한꺼번에 반영된다)
+  if (touchRecs().length < 2) return;                          // 손가락을 따라 바로 움직인다 (두·세 손가락 탭으로 끝나면 tapUp 이 화면을 처음대로 되돌린다)
   const cur = pinchState();
   const wx = cam.x + pinchPrev.cx / scale, wy = cam.y + pinchPrev.cy / scale;
   scale = clamp(scale * clamp(cur.d / pinchPrev.d, 1 / PINCH_MAX_STEP, PINCH_MAX_STEP), MIN_S, MAX_S);
@@ -1530,6 +1535,7 @@ function enterPinch() {                                        // 손가락이 2
     else finishStroke(st);
     strokeSt = null;
   }
+  if (gmode !== 'pinch') pinchView = { x: cam.x, y: cam.y, s: scale };   // 핀치를 시작할 때의 화면 (두·세 손가락 탭이면 되돌린다)
   gmode = 'pinch'; pinchPrev = pinchState(); hideTip(); hideDropPrev();
 }
 function updateRing(p) {                                       // 마우스 커서 주변에 현재 펜/지우개 크기 원
@@ -1548,6 +1554,12 @@ board.addEventListener('pointerdown', (e) => {
   if (rec.type === 'touch' && touchEvSeen) dropTouches(liveTouches);   // 뗀 신호를 놓쳐 남은 손가락 기록 정리 (터치 이벤트가 없는 브라우저에선 하지 않는다)
   ptr.set(e.pointerId, rec);
   if (rec.type === 'pen') penActive++;
+  if (rec.type === 'pen' && !S.penOnly && navigator.maxTouchPoints > 0 && !lsGet('draw:penHint')) {   // 펜(애플펜슬 등)을 처음 쓰면 한 번만: 손가락은 화면 조작용으로 쓰자고 권한다
+    lsSet('draw:penHint', '1');
+    showHint('✏️ 펜이 감지됐어요. "펜으로만 그리기"를 켜면 손가락 하나로 화면을 옮기고, 두 손가락으로 확대할 수 있어요', '켜기', () => {
+      S.penOnly = true; saveSettings(); $('setPenOnly').checked = true; toast('펜으로만 그리기를 켰어요 (설정에서 끌 수 있어요)', 'ok');
+    });
+  }
   hideTip();
   if (rec.type !== 'mouse') ring.hidden = true;
   if (rec.type === 'touch') tapDown(rec);                      // 두/세 손가락 탭 판별용 기록
@@ -1611,7 +1623,7 @@ function endPtr(e) {
   if (rec.type === 'touch') tapUp(e);
   const tc = touchRecs().length;
   if (gmode === 'pinch') { if (tc >= 2) pinchPrev = pinchState(); else gmode = tc === 1 ? 'pan' : 'none'; }   // 2→1: 선을 긋지 않고 이동으로 이어진다
-  if (ptr.size === 0) { gmode = 'none'; strokeSt = null; }
+  if (ptr.size === 0) { gmode = 'none'; strokeSt = null; pinchView = null; }
   else if ((gmode === 'draw' || gmode === 'pending') && !strokeSt) gmode = 'none';
 }
 board.addEventListener('pointerup', endPtr);
@@ -1619,7 +1631,18 @@ board.addEventListener('pointercancel', endPtr);
 board.addEventListener('lostpointercapture', endPtr);
 
 /* ===== 브라우저 기본 동작 차단 (입력창은 예외) ===== */
-for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false }); // iOS Safari / 맥 트랙패드 핀치 확대
+// 사파리(아이패드 키보드 트랙패드, 맥)의 트랙패드 핀치는 휠이 아니라 gesture 이벤트로 온다: 페이지 확대는 막고 그림판 배율을 바꾼다.
+// 손가락 핀치에서도 사파리가 같은 이벤트를 보내지만 그건 포인터 이벤트로 이미 처리하므로, 화면에 손가락이 닿아 있으면 무시한다.
+let gestS = 1;
+document.addEventListener('gesturestart', (e) => { e.preventDefault(); gestS = 1; }, { passive: false });
+document.addEventListener('gesturechange', (e) => {
+  e.preventDefault();
+  if (touchRecs().length || liveTouches || !(e.scale > 0)) return;
+  const r = stage.getBoundingClientRect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, e.scale / gestS);
+  gestS = e.scale;
+}, { passive: false });
+document.addEventListener('gestureend', (e) => e.preventDefault(), { passive: false });
 document.addEventListener('contextmenu', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
 document.addEventListener('selectstart', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
 document.addEventListener('dblclick', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
@@ -1996,7 +2019,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 4차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 5차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
