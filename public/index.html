@@ -285,6 +285,7 @@
   <div id="hud" role="status">
     <span id="hudDot" class="dot"></span><span id="hudCount">연결 중…</span>
     <span class="sepv"></span><button id="hudZoom" class="linkbtn" title="배율 (누르면 전체 그림 한눈에 보기)" aria-label="배율, 누르면 전체 그림 보기">100%</button>
+    <span id="hudRotSep" class="sepv" hidden></span><button id="hudRot" class="linkbtn" hidden title="화면 회전 (누르면 원래대로)" aria-label="화면 회전 각도, 누르면 원래대로">↻ 0°</button>
     <span class="sepv"></span><button id="hudCenter" class="linkbtn" title="중앙 좌표 (누르면 복사)" aria-label="중앙 좌표">(0, 0)</button>
     <span id="hudPersistSep" class="sepv" hidden></span><button id="hudPersist" class="linkbtn warnbtn" hidden title="그림이 저장되지 않고 있어요 (눌러서 자세히)" aria-label="저장 꺼짐">⚠ 저장 꺼짐</button>
   </div>
@@ -379,8 +380,9 @@
   <div class="switch"><div>펜 모드에서 작성자 표시<small>선에 마우스를 올리면 이름 표시</small></div><input type="checkbox" id="setPenHover" aria-label="펜 모드에서 작성자 표시"></div>
   <div class="switch"><div>손가락 탭으로 이전·되돌리기<small>두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기</small></div><input type="checkbox" id="setTapUndo" aria-label="손가락 탭으로 이전 되돌리기"></div>
   <h3 style="margin-top:12px">단축키</h3>
-  <div class="kbd"><b>P</b><span>펜</span><b>E</b><span>지우개</span><b>H</b><span>화면 이동</span><b>F</b><span>채우기</span><b>I</b><span>스포이드</span><b>Space</b><span>누르고 드래그하면 이동</span></div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 5차)</div>
+  <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift+Space 누르는 동안도) · 그냥 누르면 원래대로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
+  <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 6차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -656,9 +658,10 @@ function goRoom(id) { location.href = '/?room=' + encodeURIComponent(id); }
 const stage = $('stage'), board = $('board'), inkCv = $('c'), gridCv = $('grid'), hlCv = $('hl');
 const ctx = inkCv.getContext('2d'), gctx = gridCv.getContext('2d'), hctx = hlCv.getContext('2d');
 const tip = $('tip'), ring = $('ring'), curLayer = $('cursors'), nickEl = $('nick');
-let tool = 'pen', spaceDown = false;
+let tool = 'pen', spaceDown = false, shiftDown = false;
 let cam = { x: 0, y: 0 }, scale = 1, cssW = 1, cssH = 1, dpr = 1;
-let inkView = { x: 0, y: 0, s: 1 }, exactT = 0, rafInk = 0, rafGrid = 0, rafHud = 0;
+let rot = 0, rotC = 1, rotS = 0;                      // 화면 회전(라디안, 화면 가운데 축). 0 이면 돌리지 않은 화면
+let inkView = { x: 0, y: 0, s: 1, r: 0 }, exactT = 0, rafInk = 0, rafGrid = 0, rafHud = 0;
 let segs = [], names = {}, online = new Set(), count = 0;
 let me = null, connected = false, ws = null;
 let hl = null;                                        // 강조 중인 획 {o, sid}
@@ -679,6 +682,12 @@ function paintGrid() {
   for (const [st, a] of [[step, GRID_ALPHA * clamp((step * scale - fa) / (fb - fa), 0, 1)], [step * GRID_FACTOR, GRID_ALPHA]]) {
     if (a < 0.004) continue;
     gctx.strokeStyle = `rgba(0,0,0,${a.toFixed(3)})`; gctx.lineWidth = lw; gctx.beginPath();
+    if (rot) {                                                 // 돌린 화면: 보이는 범위를 감싸는 월드 상자의 줄을 화면 좌표로 바꿔 그린다
+      const vb = viewBox(0), line = (x0, y0, x1, y1) => { const p = toScreen(x0, y0), q = toScreen(x1, y1); gctx.moveTo(p.x * dpr, p.y * dpr); gctx.lineTo(q.x * dpr, q.y * dpr); };
+      for (let j = Math.floor(vb.xa / st); j <= Math.ceil(vb.xb / st); j++) line(j * st, vb.ya, j * st, vb.yb);
+      for (let j = Math.floor(vb.ya / st); j <= Math.ceil(vb.yb / st); j++) line(vb.xa, j * st, vb.xb, j * st);
+      gctx.stroke(); continue;
+    }
     const j0 = Math.floor(cam.x / st), j1 = Math.ceil((cam.x + cssW / scale) / st);
     for (let j = j0; j <= j1; j++) { const x = Math.round((j * st - cam.x) * k) + off; gctx.moveTo(x, 0); gctx.lineTo(x, H); }
     const m0 = Math.floor(cam.y / st), m1 = Math.ceil((cam.y + cssH / scale) / st);
@@ -688,20 +697,28 @@ function paintGrid() {
 }
 
 /* ===== 그림 그리기: 정확한 다시 그리기 + 제스처 중에는 직전 비트맵을 변환 ===== */
-const ctxView = () => ctx.setTransform(scale * dpr, 0, 0, scale * dpr, -cam.x * scale * dpr, -cam.y * scale * dpr);
-const aligned = () => inkView.x === cam.x && inkView.y === cam.y && inkView.s === scale;
+const curView = () => ({ x: cam.x, y: cam.y, s: scale, r: rot });
+// 보기 {x, y, s, r} 의 월드 → 화면(CSS px) 변환 [a, b, c, d, e, f]: 화면 = (a·x + c·y + e, b·x + d·y + f).
+// 화면 = 가운데 + 회전(r)·((월드 − cam)·s − 가운데). 회전은 화면 가운데를 축으로 해서, cam 과 화면 가운데의 월드 좌표는 돌려도 그대로다.
+function viewMat(v) {
+  const k = v.s;
+  if (!v.r) return [k, 0, 0, k, -v.x * k, -v.y * k];
+  const c = Math.cos(v.r), s = Math.sin(v.r), hx = cssW / 2, hy = cssH / 2, ux = -v.x * k - hx, uy = -v.y * k - hy;
+  return [k * c, k * s, -k * s, k * c, hx + c * ux - s * uy, hy + s * ux + c * uy];
+}
+const ctxView = () => { const m = viewMat(curView()); ctx.setTransform(m[0] * dpr, m[1] * dpr, m[2] * dpr, m[3] * dpr, m[4] * dpr, m[5] * dpr); };
+const aligned = () => inkView.x === cam.x && inkView.y === cam.y && inkView.s === scale && inkView.r === rot;
 function ensureAligned() { if (!aligned() || exactT) paintInkExact(); }
 
 function paintInkExact() {
   clearTimeout(exactT); exactT = 0;
   inkCv.style.transform = '';
-  inkView = { x: cam.x, y: cam.y, s: scale };
+  inkView = curView();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, inkCv.width, inkCv.height);
   ctxView();
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const w = cssW / scale, h = cssH / scale, m = 30 / scale;
-  const xa = cam.x - m, xb = cam.x + w + m, ya = cam.y - m, yb = cam.y + h + m;
+  const { xa, xb, ya, yb } = viewBox(30);
   let open = false, rc = null, rs = -1, lx = NaN, ly = NaN;
   for (const s of segs) {                                  // 같은 색·굵기가 이어지면 한 path 로 묶어 한 번에 그린다
     const hs = s.size / 2;
@@ -735,7 +752,8 @@ function paintHighlight() {
   hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   hctx.clearRect(0, 0, cssW, cssH);
   if (!hl) return;
-  hctx.setTransform(scale * dpr, 0, 0, scale * dpr, -cam.x * scale * dpr, -cam.y * scale * dpr);
+  const m = viewMat(curView());
+  hctx.setTransform(m[0] * dpr, m[1] * dpr, m[2] * dpr, m[3] * dpr, m[4] * dpr, m[5] * dpr);
   hctx.lineCap = 'round'; hctx.lineJoin = 'round'; hctx.strokeStyle = 'rgba(90,162,255,.5)';
   let hw = -1, hopen = false;                                // 같은 굵기는 한 path 로 모아 한 번에 칠한다 (겹친 칠하기 줄이 더 진하게 보이지 않게)
   for (const s of segs) {
@@ -748,9 +766,62 @@ function paintHighlight() {
 
 /* ===== 화면 이동·줌 ===== */
 const centerWorld = () => ({ x: cam.x + cssW / 2 / scale, y: cam.y + cssH / 2 / scale });
-function applyInkTransform() {
-  const f = scale / inkView.s, tx = (inkView.x - cam.x) * scale, ty = (inkView.y - cam.y) * scale;
-  inkCv.style.transform = (Math.abs(f - 1) < 1e-9 && Math.abs(tx) < 1e-6 && Math.abs(ty) < 1e-6) ? '' : `translate(${tx}px, ${ty}px) scale(${f})`;
+// 화면 좌표 → 돌리기 전 화면 좌표 (화면 가운데를 축으로 되돌림)
+function unrot(p) {
+  if (!rot) return p;
+  const hx = cssW / 2, hy = cssH / 2, dx = p.x - hx, dy = p.y - hy;
+  return { x: hx + dx * rotC + dy * rotS, y: hy - dx * rotS + dy * rotC };
+}
+function toWorld(p) { const u = unrot(p); return { x: cam.x + u.x / scale, y: cam.y + u.y / scale }; }
+function toScreen(wx, wy) {
+  let x = (wx - cam.x) * scale, y = (wy - cam.y) * scale;
+  if (rot) { const hx = cssW / 2, hy = cssH / 2, dx = x - hx, dy = y - hy; x = hx + dx * rotC - dy * rotS; y = hy + dx * rotS + dy * rotC; }
+  return { x, y };
+}
+// 화면(+ 바깥 여백 mp px)에 보이는 월드 범위 { xa, xb, ya, yb }. 돌린 화면이면 그 화면을 감싸는 상자.
+function viewBox(mp) {
+  const m = mp / scale;
+  if (!rot) return { xa: cam.x - m, xb: cam.x + cssW / scale + m, ya: cam.y - m, yb: cam.y + cssH / scale + m };
+  let xa = Infinity, xb = -Infinity, ya = Infinity, yb = -Infinity;
+  for (const [x, y] of [[-mp, -mp], [cssW + mp, -mp], [-mp, cssH + mp], [cssW + mp, cssH + mp]]) {
+    const w = toWorld({ x, y });
+    xa = Math.min(xa, w.x); xb = Math.max(xb, w.x); ya = Math.min(ya, w.y); yb = Math.max(yb, w.y);
+  }
+  return { xa, xb, ya, yb };
+}
+function panBy(dx, dy) {                                     // 화면에서 (dx, dy) 만큼 끈 만큼 그림을 옮긴다
+  if (rot) { const ux = dx * rotC + dy * rotS, uy = -dx * rotS + dy * rotC; dx = ux; dy = uy; }
+  cam.x -= dx / scale; cam.y -= dy / scale; viewChanged();
+}
+const ROT_SNAP = 3 * Math.PI / 180;                          // 0° 근처(±3°)에서는 똑바로 붙는다
+function setRot(r, immediate) {
+  r = Math.atan2(Math.sin(r), Math.cos(r));                   // -180° ~ 180°
+  if (Math.abs(r) < 1e-9) r = 0;
+  rot = r; rotC = r ? Math.cos(r) : 1; rotS = r ? Math.sin(r) : 0;
+  viewChanged(immediate);
+}
+function animRot(target) {                                   // 가까운 쪽으로 부드럽게 돌린다
+  cancelAnimationFrame(animId);
+  const r0 = rot, d = Math.atan2(Math.sin(target - r0), Math.cos(target - r0));
+  if (!d) return;
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { setRot(target, true); return; }
+  const t0 = now(), D = 250;
+  const step = () => {
+    const k = Math.min(1, (now() - t0) / D), e = 1 - Math.pow(1 - k, 3);
+    setRot(k >= 1 ? target : r0 + d * e, k >= 1);
+    if (k < 1) animId = requestAnimationFrame(step);
+  };
+  animId = requestAnimationFrame(step);
+}
+function applyInkTransform() {                               // 제스처 중: 마지막으로 정확히 그린 그림(inkView)을 지금 보기로 옮겨 보여 준다
+  if (!rot && !inkView.r) {
+    const f = scale / inkView.s, tx = (inkView.x - cam.x) * scale, ty = (inkView.y - cam.y) * scale;
+    inkCv.style.transform = (Math.abs(f - 1) < 1e-9 && Math.abs(tx) < 1e-6 && Math.abs(ty) < 1e-6) ? '' : `translate(${tx}px, ${ty}px) scale(${f})`;
+    return;
+  }
+  const [a, b, c, d, e, f] = viewMat(inkView), [A, B, C, D, E, F] = viewMat(curView()), det = a * d - b * c;   // 지금 변환 x (그릴 때 변환)의 역
+  const ia = d / det, ib = -b / det, ic = -c / det, id = a / det, ie = (c * f - d * e) / det, iF = (b * e - a * f) / det;
+  inkCv.style.transform = `matrix(${A * ia + C * ib}, ${B * ia + D * ib}, ${A * ic + C * id}, ${B * ic + D * id}, ${A * ie + C * iF + E}, ${B * ie + D * iF + F})`;
 }
 function clampCam() {                                       // 화면 가운데가 그릴 수 있는 범위(±MAX_COORD)를 벗어나지 않게 (멀리 축소하면 금방 갈 수 있어서)
   const hw = cssW / 2 / scale, hh = cssH / 2 / scale;
@@ -778,9 +849,9 @@ function resize() {
   paintGrid(); paintInkExact(); paintHighlight(); hudSoon(); layoutCursors();
 }
 function zoomAt(sx, sy, factor) {
-  const wx = cam.x + sx / scale, wy = cam.y + sy / scale;
+  const u = unrot({ x: sx, y: sy }), wx = cam.x + u.x / scale, wy = cam.y + u.y / scale;
   scale = clamp(scale * factor, MIN_S, MAX_S);
-  cam.x = wx - sx / scale; cam.y = wy - sy / scale;
+  cam.x = wx - u.x / scale; cam.y = wy - u.y / scale;
   viewChanged();
 }
 function zoomCenter(factor) { zoomAt(cssW / 2, cssH / 2, factor); }
@@ -799,7 +870,7 @@ function flyTo(wx, wy) {                                    // 그 월드 좌표
   };
   animId = requestAnimationFrame(step);
 }
-function resetView() { cancelAnimationFrame(animId); scale = 1; cam.x = -cssW / 2; cam.y = -cssH / 2; viewChanged(true); }
+function resetView() { cancelAnimationFrame(animId); scale = 1; cam.x = -cssW / 2; cam.y = -cssH / 2; setRot(0, true); }
 function flyView(ts, wx, wy) {                              // 배율 ts 로 바꾸면서 월드 (wx, wy) 가 화면 가운데 오도록 부드럽게
   cancelAnimationFrame(animId);
   const set = (s, x, y) => { scale = s; cam.x = x - cssW / 2 / s; cam.y = y - cssH / 2 / s; };
@@ -816,11 +887,13 @@ function flyView(ts, wx, wy) {                              // 배율 ts 로 바
 // 전체 그림 한눈에 보기: 모든 선이 도구 모음·상태 알약에 가리지 않고 화면에 들어오게 축소 (작은 그림은 100% 까지만)
 function fitAll() {
   if (!segs.length) { resetView(); toast('아직 그림이 없어요'); return; }
+  // 범위는 화면 방향으로 잰다: 돌린 화면이면 월드 좌표를 같은 각도로 돌린 좌표(가로·세로가 화면과 같다)에서 잰다
+  const C = rotC, Sn = rotS, vx = (x, y) => x * C - y * Sn, vy = (x, y) => x * Sn + y * C;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of segs) {
-    const h = s.size / 2;
-    x0 = Math.min(x0, s.x0 - h, s.x1 - h); x1 = Math.max(x1, s.x0 + h, s.x1 + h);
-    y0 = Math.min(y0, s.y0 - h, s.y1 - h); y1 = Math.max(y1, s.y0 + h, s.y1 + h);
+    const h = s.size / 2, ax = vx(s.x0, s.y0), ay = vy(s.x0, s.y0), bx = vx(s.x1, s.y1), by = vy(s.x1, s.y1);
+    x0 = Math.min(x0, ax - h, bx - h); x1 = Math.max(x1, ax + h, bx + h);
+    y0 = Math.min(y0, ay - h, by - h); y1 = Math.max(y1, ay + h, by + h);
   }
   const st = stage.getBoundingClientRect(), tr = $('tools').getBoundingClientRect(), hr = $('hud').getBoundingClientRect();
   let padL = 16, padR = 16, padB = 16;
@@ -828,7 +901,8 @@ function fitAll() {
   if (tr.width < tr.height) padL = tr.right - st.left + 12; else padB = st.bottom - tr.top + 12;   // 도구 모음이 왼쪽 세로(데스크톱) / 아래 가로(폰)
   const aw = Math.max(40, cssW - padL - padR), ah = Math.max(40, cssH - padT - padB);
   const ts = clamp(Math.min(aw / Math.max(x1 - x0, 1e-6), ah / Math.max(y1 - y0, 1e-6)), MIN_S, 1);
-  flyView(ts, (x0 + x1) / 2 - (padL - padR) / 2 / ts, (y0 + y1) / 2 - (padT - padB) / 2 / ts);   // 여백을 뺀 영역의 가운데에 그림 가운데가 오게
+  const cx = (x0 + x1) / 2 - (padL - padR) / 2 / ts, cy = (y0 + y1) / 2 - (padT - padB) / 2 / ts;   // 여백을 뺀 영역의 가운데에 그림 가운데가 오게
+  flyView(ts, cx * C + cy * Sn, -cx * Sn + cy * C);         // (돌린 좌표 → 월드)
 }
 board.addEventListener('wheel', (e) => {
   e.preventDefault();
@@ -844,6 +918,8 @@ function updateHud() {
   $('hudCount').textContent = connected ? (count ? count + '명' : '연결됨') : '연결 끊김';
   const pct = scale * 100;                                 // 1% 아래는 소수점까지 (0.1% 까지 축소된다)
   $('hudZoom').textContent = (pct >= 10 ? Math.round(pct) : pct >= 1 ? Math.round(pct * 10) / 10 : Math.round(pct * 100) / 100) + '%';
+  $('hudRot').hidden = $('hudRotSep').hidden = !rot;
+  if (rot) $('hudRot').textContent = '↻ ' + Math.round(rot * 180 / Math.PI) + '°';
   const c = centerWorld();
   $('hudCenter').textContent = `(${Math.round(c.x)}, ${Math.round(c.y)})`;
 }
@@ -853,9 +929,8 @@ function hudSoon() { if (!rafHud) rafHud = requestAnimationFrame(updateHud); }
 const hue = (o) => { let h = 0; for (const ch of String(o)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
 const colorOf = (o) => `hsl(${hue(o)} 65% 42%)`;
 const nameOf = (o) => names[o] || '알 수 없음';
-const toWorld = (p) => ({ x: cam.x + p.x / scale, y: cam.y + p.y / scale });
 const cursors = new Map();                                   // 주인 ID -> { el, lbl, x, y, t }
-function layoutCursor(c) { c.el.style.transform = `translate(${(c.x - cam.x) * scale}px, ${(c.y - cam.y) * scale}px)`; }
+function layoutCursor(c) { const p = toScreen(c.x, c.y); c.el.style.transform = `translate(${p.x}px, ${p.y}px)`; }
 function layoutCursors() { for (const c of cursors.values()) layoutCursor(c); }
 function showCursor(o, x, y) {
   if (o === me || !S.showCursors) return;
@@ -929,6 +1004,16 @@ function toast(msg, kind) {
   t.className = 'toast' + (kind ? ' ' + kind : ''); t.textContent = msg; t.setAttribute('role', 'status');
   box.appendChild(t);
   setTimeout(() => t.remove(), 2800);
+}
+let flashEl = null, flashT = 0;
+function flash(msg) {                                        // 한 자리에서 글만 바뀌는 짧은 알림 (노브를 빨리 돌려도 토스트가 쌓이지 않게)
+  if (!flashEl || !flashEl.isConnected) {
+    const box = $('toasts');
+    while (box.children.length >= 3) box.firstChild.remove();
+    flashEl = document.createElement('div'); flashEl.className = 'toast'; flashEl.setAttribute('role', 'status'); box.appendChild(flashEl);
+  }
+  flashEl.textContent = msg;
+  clearTimeout(flashT); flashT = setTimeout(() => flashEl.remove(), 1200);
 }
 let modalResolve = null, modalCtl = null;
 // 확인 모달 + 선택/입력칸. 확인하면 입력값 객체를, 취소하면 null 을 돌려준다.
@@ -1065,11 +1150,11 @@ for (const c of PALETTE) {
   b.onclick = () => { setColor(c); closePop(); };
   swBox.appendChild(b);
 }
-function setColor(c) {
+function setColor(c, keepTool) {
   S.color = c.toLowerCase(); saveSettings();
   for (const b of swBox.children) b.classList.toggle('on', b.dataset.c === S.color);
   $('colorCustom').value = S.color;
-  if (tool !== 'pen' && tool !== 'fill') setTool('pen');
+  if (!keepTool && tool !== 'pen' && tool !== 'fill') setTool('pen');
   syncSizeUI();
 }
 $('colorCustom').addEventListener('input', () => setColor($('colorCustom').value));
@@ -1095,9 +1180,13 @@ function setTool(t) {
   if (t === 'drop' && tool !== 'drop') dropFrom = tool;
   tool = t;
   for (const [b, n] of [[$('tPen'), 'pen'], [$('tEraser'), 'eraser'], [$('tFill'), 'fill'], [$('tDrop'), 'drop'], [$('tHand'), 'hand']]) { b.classList.toggle('active', n === t); b.setAttribute('aria-pressed', String(n === t)); }
-  board.style.cursor = t === 'hand' ? 'grab' : 'crosshair';
+  syncCursor();
   ring.hidden = true; hideTip(); hideDropPrev(); syncSizeUI();
 }
+// 화면 회전 도구(R, 키보드 전용 · Shift+Space 를 누르는 동안)의 커서: 둥근 화살표
+const ROT_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23fff' stroke-width='4'%3E%3Cpath d='M19 12a7 7 0 1 1-2-4.9'/%3E%3Cpath d='M18 3v4.5h-4.5'/%3E%3C/g%3E%3Cg stroke='%23000' stroke-width='2'%3E%3Cpath d='M19 12a7 7 0 1 1-2-4.9'/%3E%3Cpath d='M18 3v4.5h-4.5'/%3E%3C/g%3E%3C/svg%3E") 12 12, move`;
+const rotWanted = (shift) => tool === 'rotate' || (spaceDown && shift);
+function syncCursor() { board.style.cursor = rotWanted(shiftDown) ? ROT_CURSOR : (tool === 'hand' || spaceDown) ? 'grab' : 'crosshair'; }
 $('tPen').onclick = () => setTool('pen');
 $('tFill').onclick = () => selectFill();
 $('tDrop').onclick = () => selectDrop();
@@ -1129,6 +1218,7 @@ $('z100').onclick = () => { const c = centerWorld(); scale = 1; cam.x = c.x - cs
 $('viewReset').onclick = resetView;
 $('fitAll').onclick = () => { closePop(); fitAll(); };
 $('hudZoom').onclick = fitAll;
+$('hudRot').onclick = () => animRot(0);
 $('goOrigin').onclick = () => { $('goErr').textContent = ''; flyTo(0, 0); };
 function checkCoord(raw) {
   const s = String(raw).trim();
@@ -1221,8 +1311,9 @@ function fillColorAt(wx, wy) {
 function computeFill(wx, wy) {
   const k = Math.max(1, Math.ceil(FILL_CELL_PX / scale / 0.2 - 1e-9)), cell = k / 5;   // 칸 크기: 화면 1픽셀 이상, 0.2 의 배수
   if (cell > FILL_CELL_MAX) return { err: 'far' };
-  const gx0 = Math.floor(cam.x / cell), gy0 = Math.floor(cam.y / cell);
-  const gw = Math.ceil((cam.x + cssW / scale) / cell) - gx0 + 1, gh = Math.ceil((cam.y + cssH / scale) / cell) - gy0 + 1;
+  const vb = viewBox(0);                                         // (돌린 화면이면 화면을 감싸는 월드 상자)
+  const gx0 = Math.floor(vb.xa / cell), gy0 = Math.floor(vb.ya / cell);
+  const gw = Math.ceil(vb.xb / cell) - gx0 + 1, gh = Math.ceil(vb.yb / cell) - gy0 + 1;
   if (gw * gh > MAX_FILL_CELLS) return { err: 'big' };
   const si = Math.floor(wx / cell) - gx0, sj = Math.floor(wy / cell) - gy0;
   if (si < 0 || sj < 0 || si >= gw || sj >= gh) return { err: 'out' };
@@ -1335,6 +1426,7 @@ function hideDropPrev() { if (!$('dropPrev').hidden) $('dropPrev').hidden = true
 function finishDrop(p, touch) {
   const c = colorAtScreen(p, touch);
   hideDropPrev();
+  if (altDrop) { setColor(c, true); toast('색을 가져왔어요 ' + c, 'ok'); return; }   // Alt 를 누르는 동안은 스포이드 그대로 (떼면 원래 도구로)
   const back = dropFrom === 'fill' ? 'fill' : 'pen';
   setColor(c); setTool(back);
   toast('색을 가져왔어요 ' + c, 'ok');
@@ -1394,6 +1486,9 @@ $('hudPersist').onclick = () => confirmModal({ title: '그림이 저장되지 �
 /* ===== 입력: 상태 머신 (none / pan / pinch / pending / draw / tap / drop) ===== */
 const ptr = new Map();                                       // pointerId -> { id, type, x, y, sx, sy, t0, tn }
 let gmode = 'none', strokeSt = null, pinchPrev = null, pinchView = null, penActive = 0, lastCurSent = 0, qSeq = 0;
+let rotDrag = null, lastMouse = null;                        // 회전 끌기 { a0, r0, moved } / 마우스·펜이 보드 위에 마지막으로 있던 곳 (키보드 확대 기준점)
+let heldTool = null, altDrop = null, revertTo = null;        // 누르고 있는 도구 키 { code, t, prev, used } / Alt 스포이드 { prev } / 그리기가 끝나면 돌아갈 도구
+const rotAngle = (p) => Math.atan2(p.y - cssH / 2, p.x - cssW / 2);
 const pendingQ = new Map();                                  // 획 지우개 요청 번호 -> 내가 예상한 지워질 획 키
 const rel = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 const touchRecs = () => [...ptr.values()].filter((r) => r.type === 'touch');
@@ -1432,10 +1527,10 @@ function pinchState() {
 }
 function doPinch() {
   if (touchRecs().length < 2) return;                          // 손가락을 따라 바로 움직인다 (두·세 손가락 탭으로 끝나면 tapUp 이 화면을 처음대로 되돌린다)
-  const cur = pinchState();
-  const wx = cam.x + pinchPrev.cx / scale, wy = cam.y + pinchPrev.cy / scale;
+  const cur = pinchState(), u0 = unrot({ x: pinchPrev.cx, y: pinchPrev.cy }), u1 = unrot({ x: cur.cx, y: cur.cy });
+  const wx = cam.x + u0.x / scale, wy = cam.y + u0.y / scale;
   scale = clamp(scale * clamp(cur.d / pinchPrev.d, 1 / PINCH_MAX_STEP, PINCH_MAX_STEP), MIN_S, MAX_S);
-  cam.x = wx - cur.cx / scale; cam.y = wy - cur.cy / scale;
+  cam.x = wx - u1.x / scale; cam.y = wy - u1.y / scale;
   pinchPrev = cur; viewChanged();
 }
 
@@ -1496,9 +1591,11 @@ function cancelStroke(st) {                                    // 이미 전송�
   send({ type: 'cancelstroke', sid: st.sid });
   redrawInk();
 }
+let lastEnd = null;                                            // 마지막 획이 끝난 월드 위치 { x, y, pen } (Shift+클릭 직선용)
 function finishStroke(st) {
   const rec = ptr.get(st.id);
   if (rec) strokePoint(st, rec.x, rec.y, now(), true);
+  if (st.last) lastEnd = { x: st.last.x, y: st.last.y, pen: st.kind === 'pen' };
   commitAct(st);
   if (strokeSt === st) strokeSt = null;
 }
@@ -1524,7 +1621,8 @@ function startStroke(rec) {
     st.timer = setTimeout(() => confirmStroke(st), erase ? TOUCH_CONFIRM_ERASE_MS : TOUCH_CONFIRM_MS);
   } else {                                                     // 마우스·펜은 지연 없이 즉시
     gmode = 'draw'; st.confirmedAt = now();
-    emit(st, w, w);
+    const le = lastEnd && rec.shift && lastEnd.pen === (kind === 'pen') ? lastEnd : null;   // Shift+클릭: 앞 획 끝에서 여기까지 직선 (클튜처럼)
+    emit(st, le || w, w);
   }
 }
 function enterPinch() {                                        // 손가락이 2개 이상: 그리기 중단, 핀치 줌 + 두 손가락 이동
@@ -1539,7 +1637,7 @@ function enterPinch() {                                        // 손가락이 2
   gmode = 'pinch'; pinchPrev = pinchState(); hideTip(); hideDropPrev();
 }
 function updateRing(p) {                                       // 마우스 커서 주변에 현재 펜/지우개 크기 원
-  if (tool === 'hand' || tool === 'fill' || tool === 'drop' || spaceDown) { ring.hidden = true; return; }
+  if (tool === 'hand' || tool === 'fill' || tool === 'drop' || tool === 'rotate' || spaceDown) { ring.hidden = true; return; }
   const d = Math.max((tool === 'eraser' ? S.eraserD : S.penSize) * scale, 6);
   ring.style.width = ring.style.height = d + 'px';
   ring.style.transform = `translate(${p.x - d / 2}px, ${p.y - d / 2}px)`;
@@ -1550,7 +1648,7 @@ board.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch' && penActive > 0) return;      // 펜이 닿아 있는 동안의 touch 는 손바닥으로 보고 무시
   if (board.setPointerCapture) { try { board.setPointerCapture(e.pointerId); } catch {} }
   const p = rel(e);
-  const rec = { id: e.pointerId, type: e.pointerType || 'mouse', x: p.x, y: p.y, sx: p.x, sy: p.y, t0: evT(e), tn: now(), lt: now() };
+  const rec = { id: e.pointerId, type: e.pointerType || 'mouse', x: p.x, y: p.y, sx: p.x, sy: p.y, t0: evT(e), tn: now(), lt: now(), shift: e.shiftKey };
   if (rec.type === 'touch' && touchEvSeen) dropTouches(liveTouches);   // 뗀 신호를 놓쳐 남은 손가락 기록 정리 (터치 이벤트가 없는 브라우저에선 하지 않는다)
   ptr.set(e.pointerId, rec);
   if (rec.type === 'pen') penActive++;
@@ -1565,6 +1663,8 @@ board.addEventListener('pointerdown', (e) => {
   if (rec.type === 'touch') tapDown(rec);                      // 두/세 손가락 탭 판별용 기록
   if (rec.type === 'touch' && touchRecs().length >= 2) { enterPinch(); return; }
   if (ptr.size > 1) return;                                    // 서로 다른 종류 입력이 겹치면 첫 입력만
+  if (heldTool) heldTool.used = true;                          // 도구 키를 누른 채 썼으면 키를 뗄 때 원래 도구로
+  if (e.button !== 1 && e.button !== 2 && rotWanted(e.shiftKey)) { gmode = 'rot'; rotDrag = { a0: rotAngle(p), r0: rot, moved: false }; return; }
   const panWanted = e.button === 1 || tool === 'hand' || spaceDown || (rec.type === 'touch' && S.penOnly);
   if (panWanted) { gmode = 'pan'; return; }
   if (rec.type === 'mouse' && e.button !== 0) return;
@@ -1578,6 +1678,7 @@ board.addEventListener('pointermove', (e) => {
   const p = rel(e), rec = ptr.get(e.pointerId);
   sendCursor(toWorld(p));
   if (e.pointerType !== 'touch') {
+    lastMouse = p;
     updateRing(p);
     if (gmode === 'none' && (tool === 'hand' || spaceDown || (tool === 'pen' && S.penHover))) hoverTip(p); else hideTip();
     if (gmode === 'none' && tool === 'drop' && !spaceDown) showDropPrev(p, false);       // 마우스는 올려만 둬도 색이 보인다
@@ -1587,7 +1688,11 @@ board.addEventListener('pointermove', (e) => {
   rec.x = p.x; rec.y = p.y; rec.lt = now();
   if (rec.type === 'touch') tapMove(rec);
   if (gmode === 'tap' && Math.hypot(p.x - rec.sx, p.y - rec.sy) > TAP_MAX_PX) { gmode = 'pan'; dx = p.x - rec.sx; dy = p.y - rec.sy; }   // 채우기 도구로 끌면 화면 이동
-  if (gmode === 'pan') { cam.x -= dx / scale; cam.y -= dy / scale; viewChanged(); }
+  if (gmode === 'pan') panBy(dx, dy);
+  else if (gmode === 'rot' && rotDrag) {                       // 화면 가운데를 축으로, 누른 곳에서 돈 각도만큼 돌린다
+    if (!rotDrag.moved && Math.hypot(p.x - rec.sx, p.y - rec.sy) > TAP_MAX_PX) rotDrag.moved = true;
+    if (rotDrag.moved) { const r = Math.atan2(Math.sin(rotDrag.r0 + rotAngle(p) - rotDrag.a0), Math.cos(rotDrag.r0 + rotAngle(p) - rotDrag.a0)); setRot(Math.abs(r) < ROT_SNAP ? 0 : r); }
+  }
   else if (gmode === 'drop') showDropPrev(rec, rec.type !== 'mouse');
   else if (gmode === 'pinch') doPinch();
   else if ((gmode === 'pending' || gmode === 'draw') && strokeSt && strokeSt.id === e.pointerId) {
@@ -1602,11 +1707,17 @@ board.addEventListener('pointermove', (e) => {
   }
 });
 board.addEventListener('pointerleave', (e) => {
+  if (e.pointerType !== 'touch') lastMouse = null;
   if (e.pointerType === 'mouse') { hideTip(); ring.hidden = true; if (gmode !== 'drop') hideDropPrev(); send({ type: 'curhide' }); }
 });
 function endPtr(e) {
   const rec = ptr.get(e.pointerId);
   if (!rec) return;
+  if (gmode === 'rot' && ptr.size === 1) {                     // 회전 도구로 끌지 않고 그냥 누르면 원래 방향(0°)으로
+    if (e.type === 'pointerup' && rotDrag && !rotDrag.moved) animRot(0);
+    else if (rotDrag && rotDrag.moved) viewChanged(true);
+    rotDrag = null;
+  }
   const st = strokeSt, wasPan = gmode === 'pan', solo = ptr.size === 1;
   const wasTap = gmode === 'tap' && solo, wasDrop = gmode === 'drop' && solo, multi = !!(tapG && tapG.max >= 2);
   if (st && st.id === e.pointerId) {
@@ -1623,7 +1734,10 @@ function endPtr(e) {
   if (rec.type === 'touch') tapUp(e);
   const tc = touchRecs().length;
   if (gmode === 'pinch') { if (tc >= 2) pinchPrev = pinchState(); else gmode = tc === 1 ? 'pan' : 'none'; }   // 2→1: 선을 긋지 않고 이동으로 이어진다
-  if (ptr.size === 0) { gmode = 'none'; strokeSt = null; pinchView = null; }
+  if (ptr.size === 0) {
+    gmode = 'none'; strokeSt = null; pinchView = null;
+    if (revertTo) { const t = revertTo; revertTo = null; setTool(t); }   // 누르고 있던 도구 키를 그리는 중에 뗐다: 다 그린 뒤 원래 도구로
+  }
   else if ((gmode === 'draw' || gmode === 'pending') && !strokeSt) gmode = 'none';
 }
 board.addEventListener('pointerup', endPtr);
@@ -1646,19 +1760,74 @@ document.addEventListener('gestureend', (e) => e.preventDefault(), { passive: fa
 document.addEventListener('contextmenu', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
 document.addEventListener('selectstart', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
 document.addEventListener('dblclick', (e) => { if (!isEditable(e.target)) e.preventDefault(); });
+/* --- 키보드 단축키: 클립 스튜디오(클튜)와 같은 키. 왼손 키패드·노브를 클튜 설정 그대로 쓸 수 있다 ---
+   도구: P·B·D 펜, E 지우개, F·G·W 채우기, I 스포이드, H 화면 이동, R 화면 회전. 도구 키를 누른 채 그리고 떼면 원래 도구로 돌아간다.
+   누르는 동안: Space 화면 이동, Shift+Space 화면 회전, Alt 스포이드. Shift+클릭: 앞 획 끝에서 직선.
+   [ ] 크기 (Shift 와 같이: 3칸씩), Ctrl + / Ctrl − 확대·축소 (마우스·펜이 있는 곳 기준), Ctrl+0 전체 그림 보기, Ctrl+Alt+0 100%, Ctrl+Z 이전, Ctrl+Shift+Z·Ctrl+Y 되돌리기. */
+const TOOL_KEYS = { p: 'pen', b: 'pen', d: 'pen', e: 'eraser', f: 'fill', g: 'fill', w: 'fill', i: 'drop', h: 'hand', r: 'rotate' };
+const KEY_ZOOM = 1.2, KEY_SIZE = 1.2;                          // 키 한 번(노브 한 칸)에 배율 / 크기가 바뀌는 비율
+// 글자 키: 영문이면 그 글자, 한글 입력 상태 등으로 다른 글자가 오면 자판 위치(e.code)로
+const keyLetter = (e) => /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : '';
+function keyZoom(f) {
+  cancelAnimationFrame(animId);
+  const p = lastMouse || { x: cssW / 2, y: cssH / 2 };
+  zoomAt(p.x, p.y, f);
+  if (lastMouse) updateRing(lastMouse);
+}
+function stepSize(up, n) {
+  let v = getSize();
+  for (let i = 0; i < n; i++) v = up ? Math.max(v + 1, Math.round(v * KEY_SIZE)) : Math.min(v - 1, Math.round(v / KEY_SIZE));
+  setSize(v);
+  flash((sizeTarget() === 'eraser' ? '지우개 지름 ' : '펜 굵기 ') + getSize());
+  if (lastMouse) updateRing(lastMouse);
+}
+function backTo(t, prev) {                                     // 잠깐 바꾼 도구 t 에서 prev 로 (그리는 중이면 다 그린 뒤에)
+  if (tool !== t) return;
+  if (ptr.size) revertTo = prev; else setTool(prev);
+}
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(null); else if (openPopId) closePop(); else closeSide(); return; }
-  if ((e.ctrlKey || e.metaKey) && !e.altKey && $('modal').hidden && !isEditable(e.target)) {      // 이전 / 되돌리기
-    const k0 = e.key.toLowerCase();
-    if (k0 === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
-    if ((k0 === 'z' && e.shiftKey) || k0 === 'y') { e.preventDefault(); doRedo(); return; }
+  if (e.key === 'Shift' && !shiftDown) { shiftDown = true; syncCursor(); }
+  const ed = isEditable(e.target), modal = !$('modal').hidden, ctl = e.ctrlKey || e.metaKey, k = keyLetter(e);
+  if (ctl && !modal) {                                         // 확대·축소: 브라우저 화면 확대 대신 그림판 배율 (입력창에 있어도)
+    if (e.code === 'Equal' || e.code === 'NumpadAdd' || e.key === '+' || e.key === '=') { e.preventDefault(); keyZoom(KEY_ZOOM); return; }
+    if (e.code === 'Minus' || e.code === 'NumpadSubtract' || e.key === '-' || e.key === '_') { e.preventDefault(); keyZoom(1 / KEY_ZOOM); return; }
+    if (e.code === 'Digit0' || e.code === 'Numpad0') { e.preventDefault(); if (e.altKey) $('z100').click(); else fitAll(); return; }
   }
-  if (isEditable(e.target) || e.ctrlKey || e.metaKey || e.altKey || !$('modal').hidden) return;     // 입력창에 있을 때는 단축키 없음
-  const k = e.key.toLowerCase();
-  if (k === 'p') setTool('pen'); else if (k === 'e') selectEraser(); else if (k === 'h') setTool('hand'); else if (k === 'f') selectFill(); else if (k === 'i') selectDrop();
-  else if (e.code === 'Space' && !spaceDown) { spaceDown = true; board.style.cursor = 'grab'; ring.hidden = true; e.preventDefault(); }
+  if (ctl && !e.altKey && !modal && !ed) {                     // 이전 / 되돌리기
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
+    if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); doRedo(); return; }
+  }
+  if (ed || modal) return;                                     // 입력창에 있을 때는 단축키 없음
+  if (e.key === 'Alt') {                                       // Alt 를 누르는 동안 스포이드
+    e.preventDefault();                                        // (브라우저 메뉴로 초점이 가지 않게)
+    if (!altDrop && tool !== 'drop' && !ptr.size) { altDrop = { prev: tool }; setTool('drop'); if (lastMouse) showDropPrev(lastMouse, false); }
+    return;
+  }
+  if (ctl || e.altKey) return;
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight') { e.preventDefault(); stepSize(e.code === 'BracketRight', e.shiftKey ? 3 : 1); return; }
+  if (e.code === 'Space') {                                    // 누르는 동안 화면 이동 (Shift 와 같이 누르면 회전)
+    e.preventDefault();                                        // (초점이 있는 버튼이 눌리거나 페이지가 스크롤되지 않게)
+    if (!spaceDown) { spaceDown = true; ring.hidden = true; syncCursor(); }
+    return;
+  }
+  const t = TOOL_KEYS[k];
+  if (!t || e.repeat || ptr.size) return;
+  heldTool = { code: e.code, t, prev: tool, used: false };
+  setTool(t);
+  if (t === 'rotate') toast('화면 회전: 끌어서 돌려요 · 그냥 누르면 원래 방향으로');
 });
-window.addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; board.style.cursor = tool === 'hand' ? 'grab' : 'crosshair'; } });
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'Shift') { shiftDown = false; syncCursor(); }
+  if (e.code === 'Space') { spaceDown = false; syncCursor(); if (!isEditable(e.target)) e.preventDefault(); }
+  if (e.key === 'Alt') { e.preventDefault(); if (altDrop) { const p = altDrop.prev; altDrop = null; hideDropPrev(); backTo('drop', p); } }
+  if (heldTool && e.code === heldTool.code) { const h = heldTool; heldTool = null; if (h.used) backTo(h.t, h.prev); }   // 누른 채 썼으면 원래 도구로
+});
+window.addEventListener('blur', () => {                        // 다른 창으로 가면 떼는 신호(keyup)가 안 온다: 누르고 있던 키를 모두 뗀 것으로
+  shiftDown = spaceDown = false; heldTool = null;
+  if (altDrop) { const p = altDrop.prev; altDrop = null; backTo('drop', p); }
+  syncCursor();
+});
 
 /* ===== 방장 / 사람 / 채팅 / 방 관리 (2단계) ===== */
 let ownerId = null, locked = false, admin = null, adminAt = 0, byeInfo = null;
@@ -2019,7 +2188,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 5차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 6차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
