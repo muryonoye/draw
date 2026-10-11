@@ -379,7 +379,7 @@
   <div class="switch"><div>손가락 탭으로 이전·되돌리기<small>두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기</small></div><input type="checkbox" id="setTapUndo" aria-label="손가락 탭으로 이전 되돌리기"></div>
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P</b><span>펜</span><b>E</b><span>지우개</span><b>H</b><span>화면 이동</span><b>F</b><span>채우기</span><b>I</b><span>스포이드</span><b>Space</b><span>누르고 드래그하면 이동</span></div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 3차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 4차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -1210,7 +1210,7 @@ function fillColorAt(wx, wy) {
   }
   return '#ffffff';
 }
-// 칠하기 계산: 화면에 보이는 곳을 칸(화면 한 픽셀 정도)으로 나누고, 선이 닿은 칸은 벽으로 본다.
+// 칠하기 계산: 화면에 보이는 곳을 칸(화면 한 픽셀 정도)으로 나누고, 선이 닿은 칸과 누른 곳과 다른 색으로 칠해진 칸은 벽으로 본다.
 // 누른 칸에서 벽에 막힐 때까지 번져 나가는 칸들을 가로줄 [[줄, 시작칸, 끝칸], ...] 로 묶어 돌려준다. 실패하면 { err }.
 // 칠하기는 선 아래에 깔리므로(그리고 줄이 칸보다 조금 굵으므로) 가장자리가 선 밑으로 살짝 들어가 틈이 보이지 않는다.
 function computeFill(wx, wy) {
@@ -1242,7 +1242,39 @@ function computeFill(wx, wy) {
   }
   if (wall[sj * gw + si]) return { err: 'wall' };
   if (fillColorAt(wx, wy) === S.color) return { err: 'same' };
-  const vis = new Uint8Array(gw * gh), spans = [], stack = [si, sj];   // 2) 번지기 (가로줄 단위)
+  // 2) 칸마다 지금 보이는 칠하기 색 (나중에 칠한 것이 위, 0 = 칠하기 없음). 누른 칸과 색이 다른 칸도 벽으로 본다
+  //    → 그림판 페인트통처럼 같은 색으로 이어진 곳만 바뀐다. 칠한 덩어리를 누르면 테두리 선이 없어도 그 덩어리만 새 색으로 덮인다.
+  const col = new Uint16Array(gw * gh), ids = new Map();
+  for (const s of segs) {
+    if (!s.f) break;                                           // 칠하기 조각은 목록 앞쪽에 모여 있다
+    let id = ids.get(s.color);
+    if (!id) { id = Math.min(ids.size + 1, 65535); ids.set(s.color, id); }
+    const h = s.size / 2;
+    const j0 = Math.max(0, Math.ceil((Math.min(s.y0, s.y1) - h) / cell - 0.5) - gy0), j1 = Math.min(gh - 1, Math.floor((Math.max(s.y0, s.y1) + h) / cell - 0.5) - gy0);
+    const xa = Math.min(s.x0, s.x1), xb = Math.max(s.x0, s.x1);
+    if (j0 > j1 || Math.floor((xb + h) / cell - 0.5) - gx0 < 0 || Math.ceil((xa - h) / cell - 0.5) - gx0 > gw - 1) continue;
+    for (let j = j0; j <= j1; j++) {
+      const cy = (gy0 + j + 0.5) * cell, row = j * gw;
+      if (s.y0 === s.y1) {                                      // 보통: 가로줄 조각 → 줄마다 x 구간을 바로 계산
+        const ey = cy - s.y0, ex = Math.sqrt(Math.max(0, h * h - ey * ey));
+        const i0 = Math.max(0, Math.ceil((xa - ex) / cell - 0.5) - gx0), i1 = Math.min(gw - 1, Math.floor((xb + ex) / cell - 0.5) - gx0);
+        for (let i = i0; i <= i1; i++) col[row + i] = id;
+      } else {                                                  // 혹시 비스듬한 조각이면 칸마다 거리로
+        const dx = s.x1 - s.x0, dy = s.y1 - s.y0, l2 = dx * dx + dy * dy;
+        const i0 = Math.max(0, Math.ceil((xa - h) / cell - 0.5) - gx0), i1 = Math.min(gw - 1, Math.floor((xb + h) / cell - 0.5) - gx0);
+        for (let i = i0; i <= i1; i++) {
+          const cx = (gx0 + i + 0.5) * cell;
+          let t = l2 ? ((cx - s.x0) * dx + (cy - s.y0) * dy) / l2 : 0;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const ex = cx - (s.x0 + t * dx), ey = cy - (s.y0 + t * dy);
+          if (ex * ex + ey * ey <= h * h) col[row + i] = id;
+        }
+      }
+    }
+  }
+  const tc = col[sj * gw + si];
+  for (let k = 0; k < col.length; k++) if (col[k] !== tc) wall[k] = 1;
+  const vis = new Uint8Array(gw * gh), spans = [], stack = [si, sj];   // 3) 번지기 (가로줄 단위)
   while (stack.length) {
     const j = stack.pop(), i = stack.pop(), row = j * gw;
     if (wall[row + i] || vis[row + i]) continue;
@@ -1302,7 +1334,7 @@ function finishDrop(p, touch) {
   setColor(c); setTool(back);
   toast('색을 가져왔어요 ' + c, 'ok');
 }
-function selectFill() { setTool('fill'); toast('채우기: 선으로 닫힌 칸 안을 눌러 주세요 (끌면 화면 이동)'); }
+function selectFill() { setTool('fill'); toast('채우기: 닫힌 칸이나 칠한 곳을 눌러 주세요 (끌면 화면 이동)'); }
 function selectDrop() { setTool('drop'); toast('스포이드: 누른 채 움직여 색을 보고, 떼면 가져와요'); }
 
 /* --- 두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기 (이비스페인트처럼) --- */
@@ -1964,7 +1996,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 3차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 4차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
