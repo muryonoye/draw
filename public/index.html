@@ -382,7 +382,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift+Space 누르는 동안도)</span><b>R → Space</b><span>회전 취소 (원래 방향, 원래 도구로)</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 7차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 8차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -834,6 +834,7 @@ function viewChanged(immediate) {
   applyInkTransform();
   if (!rafGrid) rafGrid = requestAnimationFrame(() => { rafGrid = 0; paintGrid(); });
   hudSoon(); layoutCursors();
+  if (lastMouse && !ring.hidden) updateRing(lastMouse);        // 휠·키로 확대·축소하면 커서 원도 바로 같이
   clearTimeout(exactT);
   if (immediate) paintInkExact(); else exactT = setTimeout(paintInkExact, GESTURE_REPAINT_MS);
 }
@@ -1640,8 +1641,10 @@ function enterPinch() {                                        // 손가락이 2
 }
 function updateRing(p) {                                       // 마우스 커서 주변에 현재 펜/지우개 크기 원
   if (tool === 'hand' || tool === 'fill' || tool === 'drop' || tool === 'rotate' || spaceDown) { ring.hidden = true; return; }
-  const d = Math.max((tool === 'eraser' ? S.eraserD : S.penSize) * scale, 6);
+  const d = Math.max((tool === 'eraser' ? S.eraserD : S.penSize) * scale, 2);   // 실제로 그려질 굵기 그대로 (어느 배율에서든 확대·축소하면 같이 변한다)
+  const b = d < 8 ? 1 : 1.5;                                   // 작은 원은 테두리도 가늘게 (안쪽이 막히지 않게)
   ring.style.width = ring.style.height = d + 'px';
+  ring.style.borderWidth = b + 'px'; ring.style.boxShadow = `0 0 0 ${b}px #fff`;
   ring.style.transform = `translate(${p.x - d / 2}px, ${p.y - d / 2}px)`;
   ring.hidden = false;
 }
@@ -1774,7 +1777,6 @@ function keyZoom(f) {
   cancelAnimationFrame(animId);
   const p = lastMouse || { x: cssW / 2, y: cssH / 2 };
   zoomAt(p.x, p.y, f);
-  if (lastMouse) updateRing(lastMouse);
 }
 function stepSize(up, n) {
   let v = getSize();
@@ -2197,7 +2199,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 7차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 8차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
