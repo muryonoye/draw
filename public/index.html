@@ -389,6 +389,7 @@
   <button id="newRoom" class="btn block" style="margin-top:8px">새 방 만들기</button>
   <div class="hint">새 방의 주소는 추측할 수 없어요. 링크를 보낸 사람만 들어올 수 있어요.</div>
   <div class="hint" id="capTxt"></div>
+  <div id="recentBox" hidden><h3 style="margin-top:14px">최근 들어간 방 <button id="recentClear" class="linkbtn" type="button" style="font-size:12px;font-weight:400;margin-left:6px">목록 지우기</button></h3><div id="recentList" class="menu"></div></div>
   <div class="row" style="margin-top:12px"><input type="text" id="joinInput" class="inp" placeholder="방 코드 또는 링크" autocomplete="off" autocapitalize="off"><button id="joinBtn" class="btn primary">들어가기</button></div>
   <div class="err" id="joinErr"></div>
 </section>
@@ -408,7 +409,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 17차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 18차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -1337,7 +1338,33 @@ $('tHand').onclick = () => setTool('hand');
 $('tColor').onclick = () => openPop('popColor', $('tColor'));
 $('tSize').onclick = () => { syncSizeUI(); openPop('popSize', $('tSize')); };
 $('tView').onclick = () => openPop('popView', $('tView'));
-$('btnRoom').onclick = () => { $('roomCode').textContent = room; $('joinErr').textContent = ''; $('capTxt').textContent = capText(); openPop('popRoom', $('btnRoom')); };
+$('btnRoom').onclick = () => { $('roomCode').textContent = room; $('joinErr').textContent = ''; $('capTxt').textContent = capText(); renderRecent(); openPop('popRoom', $('btnRoom')); };
+// 최근 들어간 방 (이 기기에만 저장): 링크를 잃어버리거나 기본 주소로 들어와 새 방이 생겼을 때 원래 방을 다시 찾을 수 있게
+const RECENT_MAX = 10;
+function recentRooms() { try { const a = JSON.parse(lsGet('draw:recent') || '[]'); return Array.isArray(a) ? a.filter((r) => r && typeof r.id === 'string' && ROOM_RE.test(r.id) && Number.isFinite(r.t)) : []; } catch { return []; } }
+function rememberRoom() {                                    // 그림이 있는 방만 (그냥 들어왔다 나간 빈 새 방은 기록하지 않는다)
+  if (room === 'lobby' || !segs.length) return;
+  const a = recentRooms().filter((r) => r.id !== room);
+  a.unshift({ id: room, t: Date.now(), n: segs.length });
+  lsSet('draw:recent', JSON.stringify(a.slice(0, RECENT_MAX)));
+}
+const agoText = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? '방금' : m < 60 ? m + '분 전' : m < 1440 ? Math.round(m / 60) + '시간 전' : Math.round(m / 1440) + '일 전'; };
+function renderRecent() {
+  const list = recentRooms().filter((r) => r.id !== room), box = $('recentList');
+  $('recentBox').hidden = !list.length;
+  box.textContent = '';
+  for (const r of list) {
+    const b = document.createElement('button'); b.type = 'button';
+    const code = document.createElement('b'); code.textContent = r.id; code.style.marginRight = '8px';
+    const meta = document.createElement('span'); meta.className = 'hint'; meta.style.margin = '0'; meta.textContent = agoText(r.t) + (r.n ? ` · 그림 ${fmtN(r.n)} 조각` : '');
+    b.append(code, meta); b.onclick = () => goRoom(r.id);
+    box.appendChild(b);
+  }
+}
+$('recentClear').onclick = () => { lsSet('draw:recent', '[]'); renderRecent(); };
+setInterval(rememberRoom, 60000);
+window.addEventListener('pagehide', rememberRoom);
+document.addEventListener('visibilitychange', () => { if (document.hidden) rememberRoom(); });
 // 방 하나에 담을 수 있는 선 조각 수 (서버가 roomstate 로 알려 준다). 90% 를 넘으면 한 번 알려 준다.
 let roomMax = 100000, capWarned = false;
 const FULL_MSG = '그림이 가득 찼어요. 안 쓰는 그림을 지우거나 새 방을 만들어 주세요';
@@ -2439,7 +2466,7 @@ function handleMsg(m) {
   switch (m.type) {
     case 'hello': me = m.me; break;
     case 'pong': break;
-    case 'history': segs = Array.isArray(m.data) ? m.data : []; resetUndo(); redrawInk(); checkCap(); break;
+    case 'history': segs = Array.isArray(m.data) ? m.data : []; resetUndo(); redrawInk(); checkCap(); rememberRoom(); break;
     case 'names': names = m.names || {}; refreshLabels(); renderPeople(); if (me && names[me]) nickEl.value = names[me]; break;
     case 'name': names[m.o] = m.name; refreshLabels(); renderPeople(); if (m.o === me) nickEl.value = m.name; break;
     case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); renderPeople(); break;
@@ -2496,7 +2523,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-12 17차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-12 18차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];

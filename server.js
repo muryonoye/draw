@@ -574,6 +574,8 @@ async function shutdown(why) {                           // Render 가 재시작
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+// 테스트 전용: 윈도우는 SIGTERM 을 보내면 바로 죽어서(신호가 없다) 표준 입력의 'shutdown' 으로 같은 종료 절차를 시험한다
+if (process.env.SHUTDOWN_ON_STDIN) process.stdin.on('data', (d) => { if (String(d).includes('shutdown')) shutdown('SIGTERM'); });
 process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e));
 process.on('uncaughtException', (e) => { console.error('uncaughtException:', e); saveAll(true).catch(() => {}); });   // 죽지 않고 계속하되, 일단 저장은 해 둔다
 
