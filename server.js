@@ -12,8 +12,9 @@ const MAX_MSG_BYTES = 16 * 1024, MAX_FILL_BYTES = 128 * 1024;
 const wss = new WebSocketServer({ server, maxPayload: MAX_FILL_BYTES });
 
 // ---- 한도 (public/index.html 의 같은 이름 상수와 값이 같아야 한다) ----
-const PEN_MAX = 200;          // 펜 굵기
-const ERASER_R_MAX = 500;     // 지우개 반지름
+const PEN_MAX = 2000;         // 펜 굵기 (멀리 축소해서도 굵게 그릴 수 있게)
+const ERASER_R_MAX = 5000;    // 지우개 반지름
+const FILL_CELL_MAX = 1000;   // 칠하기 칸 크기 상한 = 화면 1px 의 월드 크기 (가장 멀리 축소 0.1% 일 때 1000). 칠하기 줄 굵기(칸 x 2)는 PEN_MAX 이하여야 한다
 const MAX_STROKES_PER_ERASE = 300; // 획 지우개 한 번에 지울 수 있는 획 수
 const FILL_THICK = 2;         // 칠하기 줄 두께 = 칸 크기 x 이 값 (줄끼리 겹쳐서 이음새가 안 보이게)
 const MAX_FILL_SPANS = 3000;  // 한 번 칠하기에 들어갈 수 있는 가로줄 수
@@ -731,7 +732,7 @@ function checkFill(m) {
   if (typeof m.sid !== 'string' || !SID_RE.test(m.sid)) return null;
   if (typeof m.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(m.color)) return null;
   const cell = +m.cell;
-  if (!Number.isFinite(cell) || cell < 0.2 - 1e-9 || cell > 100 || Math.abs(cell * 5 - Math.round(cell * 5)) > 1e-6) return null;
+  if (!Number.isFinite(cell) || cell < 0.2 - 1e-9 || cell > FILL_CELL_MAX ||Math.abs(cell * 5 - Math.round(cell * 5)) > 1e-6) return null;
   const c = Math.round(cell * 5) / 5;
   if (!Array.isArray(m.rows) || !m.rows.length || m.rows.length > MAX_FILL_SPANS) return null;
   const lim = Math.floor(1e7 / c) - 1;
@@ -756,9 +757,9 @@ function globalAllow(ws) {
 
 // ---- 웹 서버 ----
 // 어느 파일이 올라갔는지 바로 확인하는 용도 (화면의 설정 맨 아래에 '서버 버전'으로 보인다)
-app.get('/version', (req, res) => res.json({ stage: 3, date: '2026-10-10', db: dbState }));   // db: none(저장소 없음) | connecting | ok | error
+app.get('/version', (req, res) => res.json({ stage: 3, date: '2026-10-11', db: dbState }));   // db: none(저장소 없음) | connecting | ok | error
 app.get('/', (req, res, next) => {
-  if (!req.query.room) return res.redirect('/?room=' + newRoomId());
+  if (!req.query.room) return res.redirect('/?room=' + newRoomId() + '&new=1');   // 방 없이 오면 새 방 (new=1: 화면이 '이 방 링크를 보내 주세요' 안내를 띄운다)
   next();
 });
 app.use(express.static(path.join(__dirname, 'public'), { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));   // 올릴 때마다 새 화면이 바로 보이게 (매번 변경 여부를 확인)
