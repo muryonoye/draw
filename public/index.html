@@ -5,6 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#17191e">
 <title>같이 그리기</title>
+<!-- 카톡·디스코드 등에 링크를 보내면 뜨는 미리보기. 이미지 주소는 절대 주소여야 한다.
+     og:url 은 일부러 넣지 않는다: 넣으면 미리보기를 눌렀을 때 그 주소(방 없는 기본 주소 → 사람마다 새 방)로 갈 수 있다. -->
+<meta name="description" content="친구와 실시간으로 같이 그리는 무한 그림판. 가입 없이 링크만 보내면 같이 그릴 수 있어요.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="같이 그리기">
+<meta property="og:title" content="같이 그리기">
+<meta property="og:description" content="친구와 실시간으로 같이 그리는 무한 그림판 · 가입 없이 링크만 보내면 끝">
+<meta property="og:image" content="https://muryonoye-board.onrender.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="같이 그리기 - 친구와 실시간으로 같이 그리는 무한 그림판">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%A8%3C/text%3E%3C/svg%3E">
 <style>
   :root {
@@ -383,7 +396,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 10차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-11 11차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -2226,7 +2239,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-11 10차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-11 11차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
