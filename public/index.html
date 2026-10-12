@@ -1309,7 +1309,15 @@ const nameOf = (o) => names[o] || '알 수 없음';
 const cursors = new Map();                                   // 주인 ID -> { el, lbl, x, y, t }
 // glide: 서버가 모아 보내는 커서는 받은 간격(평균, 0.06~0.25초)에 맞춰 그 사이를 부드럽게 옮긴다 (화면을 움직일 때는 바로)
 // 화면 밖이면 가장자리(도구 모음은 피해서)에 이름표 + 화살표 (누르면 그곳으로)
+let edgeCache = null;                                          // (커서마다 재면 위치를 바꾼 직후라 브라우저가 매번 다시 배치해야 한다: 0.5초에 한 번만 잰다)
 function edgeBox() {
+  const t = now();
+  if (edgeCache && t - edgeCache.t < 500 && edgeCache.w === cssW && edgeCache.h === cssH) return edgeCache.b;
+  const b = measureEdge();
+  edgeCache = { t, w: cssW, h: cssH, b };
+  return b;
+}
+function measureEdge() {
   const m = 14, b = { l: m, t: m, r: cssW - m, b: cssH - m };
   const tl = $('tools'), cl = curLayer.getBoundingClientRect();
   if (tl && !tl.hidden) {
