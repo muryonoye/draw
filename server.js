@@ -36,6 +36,10 @@ const IP_BAN_MAX_MS = 7 * 24 * 60 * 60 * 1000;                  // 밴할 때 �
 const OWNER_SHARE = +process.env.OWNER_SHARE || 0.5;            // 방장·부방장이 아닌 한 사람이 쓸 수 있는 그림 용량 비율 (혼자 방을 가득 채워 아무도 못 그리게 하는 것 방지)
 const CONN_BURST = +process.env.CONN_BURST || 40, CONN_PER_SEC = +process.env.CONN_PER_SEC || 1;   // 같은 IP 의 새 접속: 한꺼번에 40번, 그 뒤 초당 1번
 const CONN_PER_IP = +process.env.CONN_PER_IP || 40;            // 같은 IP 에서 동시에 열 수 있는 접속 수
+// 남의 그림을 덮을 수 있는 양 (방장·부방장은 제한 없음): 획 수 한꺼번에 30, 1분에 15 / 조각 수 한꺼번에 400, 1분에 200.
+// 친구 방 기록으로 잰 보통 그리기: 획 하나가 남의 그림을 덮는 양은 99% 가 2획·24조각 이하.
+const COVER_BURST = +process.env.COVER_BURST || 30, COVER_PER_MIN = +process.env.COVER_PER_MIN || 15;
+const COVER_PIECES = +process.env.COVER_PIECES || 400, COVER_PIECES_PER_MIN = +process.env.COVER_PIECES_PER_MIN || 200;
 const SAVE_MS = +process.env.SAVE_MS || 5000;
 const ROOM_EMPTY_MS = +process.env.ROOM_EMPTY_MS || 10 * 60 * 1000;      // DB 에 저장해 둔 빈 방을 메모리에 남겨 두는 시간
 const NO_DB_KEEP_MS = +process.env.NO_DB_KEEP_MS || 24 * 60 * 60 * 1000;  // DB 가 없거나 고장났을 땐 메모리가 유일한 사본이라 오래 둔다
@@ -625,7 +629,7 @@ function getRoom(id) {
     room = { id, clients: new Set(), hb: [], hn: 0, ver: 0, flat: null, zc: null, zp: null, snapMs: 0, lastSave: 0,
       names: {}, meta: normalizeMeta(null), dirty: false, metaDirty: false, noSave: false,
       loaded: false, loadFailed: false, corrupt: false, recovering: false, lastActive: Date.now(), q: null,
-      chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map() };
+      chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map(), cover: new Map() };
     const r = room;
     r.ready = loadRoom(id).then((d) => {
       const h = cleanHistory(d.history);
@@ -718,11 +722,12 @@ const IPT_RE = /^[A-Za-z0-9_-]{12}$/;
 const tagList = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && IPT_RE.test(x)).slice(0, 3) : []);
 const numOr = (v, d) => (Number.isFinite(+v) ? +v : d);
 function normalizeMeta(j) {
-  const m = { owner: null, locked: false, gate: false, bans: {}, mutes: {}, spectators: {}, mods: {}, log: {} };
+  const m = { owner: null, locked: false, gate: false, noCover: false, bans: {}, mutes: {}, spectators: {}, mods: {}, log: {} };
   if (!j || typeof j !== 'object') return m;
   if (typeof j.owner === 'string' && OWNER_RE.test(j.owner)) m.owner = j.owner;
   m.locked = j.locked === true;
   m.gate = j.gate === true;
+  m.noCover = j.noCover === true;                                // 남의 그림 덮기 막기를 끈 방 (기본은 켬)
   const each = (src, max, fn) => { if (src && typeof src === 'object') for (const o of Object.keys(src).slice(0, max)) { const v = src[o]; if (v && typeof v === 'object' && OWNER_RE.test(o)) fn(o, v); } };
   for (const key of ['bans', 'mutes', 'spectators']) {
     each(j[key], MAX_LIST, (o, v) => {
@@ -779,7 +784,7 @@ const isStaff = (room, o) => isRoomOwner(room, o) || isMod(room, o);
 const isWaiting = (room, o) => room.meta.gate && !!(room.meta.log[o] && room.meta.log[o].wait) && !isStaff(room, o);
 const isSpect = (room, o) => !!room.meta.spectators[o] || isWaiting(room, o);
 const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked, persist: dbState === 'ok' && !room.noSave, max: MAX_HISTORY,
-  mods: room.noSave ? [] : Object.keys(room.meta.mods), gate: room.meta.gate, share: OWNER_SHARE });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
+  mods: room.noSave ? [] : Object.keys(room.meta.mods), gate: room.meta.gate, cover: !room.meta.noCover, share: OWNER_SHARE });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
 function meMsg(room, o, now = Date.now()) {
   const mu = room.meta.mutes[o];
   return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: isSpect(room, o), wait: isWaiting(room, o) };
@@ -789,7 +794,7 @@ function adminMsg(room) {
   const L = (src) => Object.keys(src).map((o) => ({ o, name: src[o].name, until: src[o].until, reason: src[o].reason || '' }));
   const bans = Object.keys(room.meta.bans).map((o) => { const b = room.meta.bans[o]; return { o, name: b.name, until: b.until, reason: b.reason || '', ipBlock: b.ip.length > 0 && b.ipUntil > now, tries: b.tries || 0 }; });
   const log = Object.keys(room.meta.log).map((o) => { const e = room.meta.log[o]; return { o, name: e.name, names: e.names, first: e.first, last: e.last, n: e.n, on: hasOwner(room, o), wait: isWaiting(room, o) }; });   // (IP 표시는 보내지 않는다)
-  return { type: 'admin', now, locked: room.meta.locked, gate: room.meta.gate, bans, mutes: L(room.meta.mutes), spectators: L(room.meta.spectators), mods: Object.keys(room.meta.mods).map((o) => ({ o, name: room.meta.mods[o].name })), log };
+  return { type: 'admin', now, locked: room.meta.locked, gate: room.meta.gate, cover: !room.meta.noCover, bans, mutes: L(room.meta.mutes), spectators: L(room.meta.spectators), mods: Object.keys(room.meta.mods).map((o) => ({ o, name: room.meta.mods[o].name })), log };
 }
 function sendAdmin(room) { let m = null; for (const c of room.clients) if (isStaff(room, c.owner)) send(c, m || (m = adminMsg(room))); }
 // 입장 기록: 사람(주인 ID)마다 이름·예전 이름·처음/마지막 입장·횟수·최근 IP 표시(되돌릴 수 없게 바꾼 값, 같은 인터넷 밴용). 방장·부방장만 본다.
@@ -902,7 +907,7 @@ function handleCmd(ws, room, roomId, msg) {
   const boss = isRoomOwner(room, ws.owner);
   if (!boss && !isMod(room, ws.owner)) return cmdErr(ws, '권한이 없습니다');
   const cmd = msg.cmd;
-  const MOD_CMDS = ['kick', 'ban', 'unban', 'mute', 'unmute', 'spectate', 'clearuser', 'lock', 'gate'];   // 부방장이 할 수 있는 것
+  const MOD_CMDS = ['kick', 'ban', 'unban', 'mute', 'unmute', 'spectate', 'clearuser', 'lock', 'gate', 'cover'];   // 부방장이 할 수 있는 것
   if (!boss && !MOD_CMDS.includes(cmd)) return cmdErr(ws, '방장만 할 수 있어요');
   const TARGET_CMDS = ['kick', 'ban', 'unban', 'mute', 'unmute', 'spectate', 'transfer', 'clearuser', 'mod'];
   let target = null;
@@ -979,6 +984,11 @@ function handleCmd(ws, room, roomId, msg) {
     broadcastAll(room, roomStateMsg(room));
     for (const o of new Set([...room.clients].map((c) => c.owner))) sendMe(room, o);   // 기다리던 사람들의 상태가 바뀔 수 있다
     sysChat(room, room.meta.gate ? '이제 처음 온 사람은 방장·부방장이 허락해야 그릴 수 있어요' : '이제 처음 온 사람도 바로 그릴 수 있어요');
+    sendAdmin(room);
+  } else if (cmd === 'cover') {                                    // 남의 그림 덮기 막기 켜기·끄기
+    room.meta.noCover = msg.on !== true; persistMeta(room);
+    broadcastAll(room, roomStateMsg(room));
+    sysChat(room, room.meta.noCover ? '남의 그림 덮기 막기가 꺼졌어요' : '이제 다른 사람 그림을 한꺼번에 많이 덮으면 막아요');
     sendAdmin(room);
   } else if (cmd === 'mod') {                                      // 부방장 지정·해제 (방장만)
     if (msg.on === true) {
@@ -1062,6 +1072,78 @@ function shareFull(ws, room, owner, add) {
   room.own.m.set(owner, c + add);
   return false;
 }
+// 남의 그림 덮기 막기: 방장·부방장이 아닌 사람의 선이 다른 사람의 획을 짧은 시간에 많이 덮으면 그 뒤 선은 받지 않는다 (흰색 큰 붓으로 그림을 싹 덮는 분탕).
+// '덮었다' = 내 선분이 남의 획에 닿고, 내 선이 그 획보다 1.5배 넘게 굵고, 색이 다를 때 (가는 선끼리 지나가거나 같은 색으로 이어 그리는 건 세지 않는다).
+// 한 획이 같은 남의 조각을 여러 번 지나가도 한 번만 센다. 획 수와 조각 수 두 가지 한도를 모두 지켜야 하고(위 COVER_*), 한 획의 일부가 막히면 그 획의 나머지도 막는다.
+// 덩어리 안을 8개씩 나눈 작은 범위 [xa, xb, ya, yb, 가장 가는 굵기] (이어진 선분은 한 획이라 범위가 좁다). 덩어리 배열·길이가 바뀌면 다시 만든다.
+const SUB = 8;
+const SKEY = Symbol('stroke');                                      // 선분에 붙여 두는 '주인|획' 이름 (JSON 저장·전송에는 안 들어간다)
+function subBoxes(b) {
+  const a = b.a;
+  if (b.sb && b.sb.arr === a && b.sb.len === a.length) return b.sb;
+  const n = Math.ceil(a.length / SUB), box = new Float64Array(n * 5);
+  for (let k = 0; k < n; k++) {
+    let xa = Infinity, xb = -Infinity, ya = Infinity, yb = -Infinity, ms = Infinity;
+    for (let i = k * SUB, e = Math.min(a.length, i + SUB); i < e; i++) {
+      const t = a[i], m = t.size / 2;
+      xa = Math.min(xa, t.x0 - m, t.x1 - m); xb = Math.max(xb, t.x0 + m, t.x1 + m); ya = Math.min(ya, t.y0 - m, t.y1 - m); yb = Math.max(yb, t.y0 + m, t.y1 + m);
+      if (t.size < ms) ms = t.size;
+    }
+    box.set([xa, xb, ya, yb, ms], k * 5);
+  }
+  return (b.sb = { arr: a, len: a.length, n, box });
+}
+function coverHits(room, owner, s, capS, capP, seen) {          // s 가 덮는 남의 획(이름)과 조각. seen: 이 획이 이미 덮은 조각(빼고 센다). 한도를 넘으면 그만 센다
+  const r = s.size / 2, edx = s.x1 - s.x0, edy = s.y1 - s.y0, eL = Math.sqrt(edx * edx + edy * edy), keys = new Set(), pieces = [];
+  const xa = Math.min(s.x0, s.x1) - r, xb = Math.max(s.x0, s.x1) + r, ya = Math.min(s.y0, s.y1) - r, yb = Math.max(s.y0, s.y1) + r;
+  for (const b of room.hb) {
+    if (b.x1 < xa || b.x0 > xb || b.y1 < ya || b.y0 > yb) continue;
+    const sb = subBoxes(b), box = sb.box, a = b.a;
+    for (let k = 0; k < sb.n; k++) {
+      const q = k * 5;
+      if (box[q + 1] < xa || box[q] > xb || box[q + 3] < ya || box[q + 2] > yb || s.size <= box[q + 4] * 1.5) continue;   // 범위 밖이거나 내 선보다 덜 가는 선만 있음
+      for (let i = k * SUB, e = Math.min(a.length, i + SUB); i < e; i++) {
+        const t = a[i];
+        if (t.o === owner || t.color === s.color || s.size <= t.size * 1.5 || (seen && seen.has(t))) continue;
+        const m = t.size / 2;
+        if (Math.max(t.x0, t.x1) + m < xa || Math.min(t.x0, t.x1) - m > xb || Math.max(t.y0, t.y1) + m < ya || Math.min(t.y0, t.y1) - m > yb) continue;
+        if (!erInterval(t, s.x0, s.y0, edx, edy, eL, r + m)) continue;
+        pieces.push(t); keys.add(t[SKEY] || (t[SKEY] = t.o + '|' + t.sid));
+        if (keys.size > capS || pieces.length > capP) return { keys, pieces };
+      }
+    }
+  }
+  return { keys, pieces };
+}
+function coverBlocked(ws, room, owner, s) {
+  if (room.meta.noCover || isStaff(room, owner)) return false;
+  const now = Date.now();
+  let c = ws.cov, q = s;
+  if (!c || c.sid !== s.sid) c = ws.cov = { sid: s.sid, keys: new Set(), seen: new Set(), x: s.x0, y: s.y0 };   // 새 획: 첫 선분(점)은 꼭 본다
+  else {                                                            // 같은 획: 붓 굵기의 절반 넘게 움직였을 때만, 지난번 본 곳부터 여기까지를 한꺼번에 본다 (서버 계산을 줄이려고)
+    if (c.no) return true;                                          // 이 획은 이미 막혔다: 나머지도 받지 않는다
+    if (Math.hypot(s.x1 - c.x, s.y1 - c.y) < s.size / 2) return false;
+    q = { x0: c.x, y0: c.y, x1: s.x1, y1: s.y1, size: s.size, color: s.color };
+  }
+  let b = room.cover.get(owner);
+  if (!b) room.cover.set(owner, (b = { st: COVER_BURST, pc: COVER_PIECES, at: now, said: 0 }));
+  const dt = (now - b.at) / 60000;
+  b.st = Math.min(COVER_BURST, b.st + dt * COVER_PER_MIN); b.pc = Math.min(COVER_PIECES, b.pc + dt * COVER_PIECES_PER_MIN); b.at = now;
+  const h = coverHits(room, owner, q, Math.floor(b.st) + c.keys.size + 1, Math.floor(b.pc) + 1, c.seen);
+  let ns = 0;
+  for (const k of h.keys) if (!c.keys.has(k)) ns++;                // (이 획이 이미 덮은 남의 획은 다시 세지 않는다)
+  if (ns > b.st || h.pieces.length > b.pc) {
+    c.no = true;
+    notice(ws, 'cover', '다른 사람 그림을 한꺼번에 너무 많이 덮고 있어요. 그 선은 그려지지 않았어요. 잠시 뒤에 다시 그려 주세요.');
+    if (now - b.said > 120000) { b.said = now; sysChat(room, `${room.names[owner] || '누군가'}님의 선이 다른 사람 그림을 너무 많이 덮어서 막았어요`); }   // 방장·부방장이 알 수 있게
+    return true;
+  }
+  b.st -= ns; b.pc -= h.pieces.length;
+  for (const k of h.keys) c.keys.add(k);
+  for (const t of h.pieces) c.seen.add(t);
+  c.x = s.x1; c.y = s.y1;
+  return false;
+}
 function globalAllow(ws) {
   const now = Date.now();
   ws.gTok = Math.min(1000, ws.gTok + (now - ws.gAt) * 0.8);
@@ -1130,7 +1212,7 @@ function onMessage(ws, room, roomId, owner, raw) {
       if (![s.x0, s.y0, s.x1, s.y1].every(okNum)) return;
       s.sid = typeof msg.sid === 'string' && SID_RE.test(msg.sid) ? msg.sid : autoSid(ws, s);
       if (room.hn >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return; }
-      if (shareFull(ws, room, owner, 1)) return;
+      if (shareFull(ws, room, owner, 1) || coverBlocked(ws, room, owner, s)) return;
       histPush(room, s);
       broadcast(room, ws, { type: 'seg', ...s });
     } else if (msg.type === 'clear') {
@@ -1175,6 +1257,7 @@ function onMessage(ws, room, roomId, owner, raw) {
         if (f) s.f = 1;
         if (![s.x0, s.y0, s.x1, s.y1].every(okNum) || typeof s.sid !== 'string' || !SID_RE.test(s.sid)) continue;
         if (room.hn + list.length >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); break; }
+        if (!f && coverBlocked(ws, room, owner, s)) break;      // (되돌리기로 큰 선을 바로 넣어 막기를 피하지 못하게)
         list.push(s);
       }
       if (!list.length || shareFull(ws, room, owner, list.length)) return;
