@@ -1607,6 +1607,7 @@ function onMessage(ws, room, roomId, owner, raw) {
   handleMsg(ws, room, roomId, owner, msg);
 }
 const BATCH_MAX = 200;
+const CLIENT_ERR_MAX = 5;                                   // 화면 오류 알림: 접속마다 이만큼만 로그에
 function handleMsg(ws, room, roomId, owner, msg) {
   try {
     if (!globalAllow(ws)) return;
@@ -1710,6 +1711,10 @@ function handleMsg(ws, room, roomId, owner, msg) {
     } else if (msg.type === 'sync') {                     // 덩어리 맞추기 (z=3): 들어올 때, 그리고 화면이 서버 그림에 다시 맞추고 싶을 때
       if (ws.zOk !== 3) return;
       onSyncMsg(ws, room, cleanHashes(msg.h), syncId(msg.id));
+    } else if (msg.type === 'clienterr') {                 // 화면(브라우저)에서 난 오류: 서버 로그에만 남긴다 (실제 폰에서 생기는 문제를 알아내려고, 접속마다 5번까지)
+      if ((ws.errN = (ws.errN || 0) + 1) > CLIENT_ERR_MAX) return;
+      const t = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, n);
+      console.log(`화면 오류 [방 ${roomId}] ${t(msg.ua, 160)} | ${t(msg.where, 80)} | ${t(msg.text, 400)}`);
     } else if (msg.type === 'ping') {
       send(ws, { type: 'pong' });                         // 화면이 다시 보일 때 연결이 살아 있는지 확인 (그림 전체를 다시 받지 않는다)
     } else if (msg.type === 'cur') {

@@ -63,6 +63,13 @@
   .cur { position: absolute; left: 0; top: 0; will-change: transform; }
   .cur .dot { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
   .cur .lbl { position: absolute; left: 8px; top: 6px; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
+  .cur .arr { display: none; position: absolute; left: -10px; top: -10px; width: 20px; height: 20px; }
+  .cur.edge { pointer-events: auto; cursor: pointer; }
+  .cur.edge .dot { display: none; }
+  .cur.edge .arr { display: block; }
+  .cur.edge .lbl { top: 12px; font-size: 12px; padding: 2px 8px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+  .cur.edge.el .lbl { left: auto; right: 4px; }
+  .cur.edge.et .lbl { top: 12px; } .cur.edge.eb .lbl { top: auto; bottom: 12px; }
   #tip { position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none; display: flex; align-items: center; gap: 6px; max-width: 240px;
     background: rgba(23,25,30,.94); color: #fff; font-size: 13px; padding: 5px 10px; border-radius: 10px; box-shadow: var(--shadow); white-space: nowrap; }
   #tip .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
@@ -410,6 +417,7 @@
 <section id="popColor" class="pop" hidden aria-label="색상">
   <div class="sheetgrab"></div><h3>색상</h3>
   <div class="swatches" id="swatches"></div>
+  <div id="recentSwBox" hidden><div class="hint" style="margin:10px 0 6px">최근 쓴 색</div><div class="swatches" id="recentSw"></div></div>
   <div class="row" style="margin-top:12px"><label for="colorCustom" class="hint" style="margin:0;flex:1">직접 고르기</label><input type="color" id="colorCustom" value="#000000" style="width:56px;height:36px;border:0;background:none;padding:0"></div>
   <div class="field" style="margin-top:12px"><label for="alphaRange">펜 투명도 <b id="alphaVal">100%</b> (칠하기는 늘 진하게)</label><input type="range" id="alphaRange" min="10" max="100" step="5" value="100" aria-label="펜 투명도"></div>
 </section>
@@ -607,7 +615,7 @@ const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').mat
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false, handMode: 'pan', textPx: 28 };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false, handMode: 'pan', textPx: 28, recentColors: [] };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -622,6 +630,7 @@ function loadSettings() {
   if (!['auto', 'zoom', 'pan'].includes(out.wheel)) out.wheel = 'auto';
   if (!['line', 'circle', 'radial', 'ellipse', 'mirror', 'sline', 'rect', 'oval', 'text'].includes(out.rulerKind)) out.rulerKind = 'line';
   if (![16, 28, 48, 96].includes(out.textPx)) out.textPx = 28;
+  out.recentColors = Array.isArray(out.recentColors) ? out.recentColors.filter((c) => typeof c === 'string' && /^#[0-9a-f]{6}$/.test(c)).slice(0, 8) : [];
   if (!/^#[0-9a-fA-F]{6}$/.test(out.color)) out.color = DEFAULTS.color;
   out.alpha = Number.isFinite(out.alpha) ? Math.min(1, Math.max(0.1, Math.round(out.alpha * 20) / 20)) : 1;
   return out;
@@ -1299,7 +1308,37 @@ const colorOf = (o) => `hsl(${hue(o)} 65% 42%)`;
 const nameOf = (o) => names[o] || '알 수 없음';
 const cursors = new Map();                                   // 주인 ID -> { el, lbl, x, y, t }
 // glide: 서버가 모아 보내는 커서는 받은 간격(평균, 0.06~0.25초)에 맞춰 그 사이를 부드럽게 옮긴다 (화면을 움직일 때는 바로)
-function layoutCursor(c, glide) { const p = toScreen(c.x, c.y); c.el.style.transition = glide ? `transform ${Math.round(c.gap || 100)}ms linear` : ''; c.el.style.transform = `translate(${p.x}px, ${p.y}px)`; }
+// 화면 밖이면 가장자리(도구 모음은 피해서)에 이름표 + 화살표 (누르면 그곳으로)
+function edgeBox() {
+  const m = 14, b = { l: m, t: m, r: cssW - m, b: cssH - m };
+  const tl = $('tools'), cl = curLayer.getBoundingClientRect();
+  if (tl && !tl.hidden) {
+    const r = tl.getBoundingClientRect();
+    if (r.width > r.height) b.b = Math.min(b.b, r.top - cl.top - m);          // (폰: 아래 도구 막대 위로)
+    else b.l = Math.max(b.l, r.right - cl.left + m);                       // (컴퓨터: 왼쪽 도구 모음 오른쪽으로)
+  }
+  const sd = $('side');
+  if (sd && !sd.hidden) {                                                    // 사람·채팅 창이 열려 있으면 그 창도 피한다
+    const r = sd.getBoundingClientRect();
+    if (r.width > cssW * 0.8) b.b = Math.min(b.b, r.top - cl.top - m); else b.r = Math.min(b.r, r.left - cl.left - m);
+  }
+  if (b.r < b.l + 40) b.r = b.l + 40;
+  if (b.b < b.t + 40) b.b = b.t + 40;
+  return b;
+}
+function layoutCursor(c, glide) {
+  const p = toScreen(c.x, c.y), B = edgeBox();
+  const out = p.x < B.l || p.x > B.r || p.y < B.t || p.y > B.b;
+  let x = p.x, y = p.y;
+  c.el.classList.toggle('edge', out);
+  if (out) {
+    x = clamp(p.x, B.l, B.r); y = clamp(p.y, B.t, B.b);
+    c.arr.style.transform = 'rotate(' + Math.atan2(p.y - y, p.x - x) + 'rad)';
+    c.el.classList.toggle('el', x > (B.l + B.r) / 2); c.el.classList.toggle('eb', y > (B.t + B.b) / 2);
+  }
+  c.el.style.transition = glide ? `transform ${Math.round(c.gap || 100)}ms linear` : '';
+  c.el.style.transform = `translate(${x}px, ${y}px)`;
+}
 function layoutCursors() { for (const c of cursors.values()) layoutCursor(c); }
 function showCursor(o, x, y, glide) {
   if (o === me || !S.showCursors) return;
@@ -1308,8 +1347,12 @@ function showCursor(o, x, y, glide) {
     const el = document.createElement('div'); el.className = 'cur';
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = colorOf(o);
     const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.style.background = colorOf(o);
-    el.append(dot, lbl); curLayer.appendChild(el);
-    c = { el, lbl, x, y, t: 0 }; cursors.set(o, c);
+    const arr = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); arr.setAttribute('class', 'arr'); arr.setAttribute('viewBox', '0 0 20 20');
+    arr.innerHTML = '<path d="M3 4 18 10 3 16 6 10Z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>'; arr.style.fill = colorOf(o);
+    el.append(dot, arr, lbl); curLayer.appendChild(el);
+    c = { el, lbl, arr, x, y, t: 0 }; cursors.set(o, c);
+    el.title = '누르면 이 사람이 있는 곳으로';
+    el.addEventListener('click', () => { if (el.classList.contains('edge')) flyTo(c.x, c.y); });
   }
   const fresh = !c.t, t = now();
   if (!fresh) c.gap = clamp(((c.gap || 100) * 0.6 + (t - c.t) * 0.4), 60, 250);
@@ -1433,6 +1476,8 @@ const NEWS = ['올가미: 손 버튼 ⌄ → 올가미 (M 키). 내 그림을 �
   '그리는 과정 다시 보기: 보기 메뉴',
   '자: 타원자·대칭자, 도형(선·네모·동그라미)·글자 넣기가 생겼어요. U 키로 켜고 끄기',
   '사람 목록 ⋯ → 그 사람 그림을 내 화면에서만 숨기기',
+  '방장·부방장은 방 관리에서 방 이름을 정할 수 있어요',
+  '화면 밖에서 그리는 친구는 화면 가장자리에 이름표로 보여요 (누르면 그곳으로)',
   '연결이 잠깐 끊긴 사이에 그린 선도 다시 접속하면 저절로 보내져요',
   '다시 들어올 때 바뀐 부분만 받아서 훨씬 빨라졌어요'];
 let newsDone = false;
@@ -1553,9 +1598,26 @@ for (const c of PALETTE) {
   b.onclick = () => { setColor(c); closePop(); };
   swBox.appendChild(b);
 }
+// 최근 쓴 색: 기본 색판에 없는 색으로 실제로 그렸을 때만 (색 고르기 창을 끄는 동안 지나간 색은 넣지 않는다)
+function noteColor() {
+  const c = S.color;
+  if (PALETTE.includes(c) || S.recentColors[0] === c) return;
+  S.recentColors = [c, ...S.recentColors.filter((x) => x !== c)].slice(0, 8); saveSettings(); renderRecentColors();
+}
+function renderRecentColors() {
+  const box = $('recentSw'); box.textContent = '';
+  $('recentSwBox').hidden = !S.recentColors.length;
+  for (const c of S.recentColors) {
+    const b = document.createElement('button');
+    b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', '최근 쓴 색 ' + c); b.title = c; b.classList.toggle('on', c === S.color);
+    b.onclick = () => { setColor(c); closePop(); };
+    box.appendChild(b);
+  }
+}
 function setColor(c, keepTool) {
   S.color = c.toLowerCase(); saveSettings();
   for (const b of swBox.children) b.classList.toggle('on', b.dataset.c === S.color);
+  for (const b of $('recentSw').children) b.classList.toggle('on', b.dataset.c === S.color);
   $('colorCustom').value = S.color;
   if (!keepTool && tool !== 'pen' && tool !== 'fill') setTool('pen');
   syncSizeUI();
@@ -1878,7 +1940,7 @@ function paintSel() {
     for (const s of sel.list) {
       const a = selT(t, s.x0, s.y0), b = selT(t, s.x1, s.y1);
       sctx.strokeStyle = s.color; sctx.lineWidth = Math.max(s.size * t.k, 0.6 / scale);
-      sctx.beginPath(); sctx.moveTo(a.x, a.y); sctx.lineTo(b.x, b.y); sctx.stroke();
+      sctx.beginPath(); sctx.moveTo(a.x, a.y); sctx.lineTo(a.x === b.x && a.y === b.y ? b.x + 0.01 / scale : b.x, b.y); sctx.stroke();   // (점도 보이게)
     }
   }
   sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -2172,6 +2234,7 @@ function doFill(p) {
   if (segs.length + r.rows.length > roomMax) { toast(FULL_MSG, 'warn'); return; }
   const sid = newSid(), color = S.color;
   const list = fillSegs(me, sid, color, r.cell, r.rows);
+  noteColor();
   const msg = { type: 'fill', sid, color, cell: r.cell, rows: r.rows };
   addSegs(list);
   const fa = { t: 'draw', sid, segs: list, fill: msg };
@@ -2556,6 +2619,21 @@ for (const t of ['touchstart', 'touchend', 'touchcancel']) {
   }, { capture: true, passive: true });
 }
 const evT = (e) => (e && e.timeStamp) || now();
+// 화면 오류 알리기: 실제 폰·태블릿에서만 생기는 문제를 알 수 있게, 오류 내용·위치·브라우저 종류만 서버 로그로 (한 번 열 때 다른 오류 5개까지, 연결 전이면 연결된 뒤)
+const errSeen = new Set(), errQ = [];
+function reportErr(where, e) {
+  try {
+    const text = String((e && (e.stack || e.message)) || e || '').slice(0, 400);
+    const key = String((e && e.message) || text).slice(0, 200);   // (같은 오류가 여러 곳에서 나도 한 번만)
+    if (!text || /ResizeObserver loop/.test(text) || errSeen.has(key) || errSeen.size >= 5) return;
+    errSeen.add(key);
+    errQ.push({ type: 'clienterr', where: String(where).slice(0, 80), text, ua: navigator.userAgent.slice(0, 160) });
+    flushErrs();
+  } catch {}
+}
+function flushErrs() { while (errQ.length && ws && ws.readyState === 1 && me) { try { ws.send(JSON.stringify(errQ.shift())); } catch { break; } } }
+window.addEventListener('error', (e) => reportErr(String(e.filename || '').split('/').pop() + ':' + e.lineno + ':' + e.colno, e.error || e.message));
+window.addEventListener('unhandledrejection', (e) => reportErr('promise', e.reason));
 // 보내기: 선·커서·지우개처럼 자주 보내는 메시지는 모았다가 0.08초마다 한 번에 ({type:'b', l:[…]}).
 // Cloudflare 무료 플랜은 서버가 받은 메시지 수로 하루 한도를 센다 (그리는 사람 한 명이 초당 25~45개 → 12개 이하).
 // 다른 메시지(채팅·칠하기·명령 등)는 모아 둔 것을 먼저 보내고 바로 보낸다 (순서 그대로). 커서는 마지막 위치만.
@@ -2790,7 +2868,7 @@ function startStroke(rec) {
   if (kind === 'pen' && ruler.on && isShape()) { st.shape = { k: S.rulerKind, a: { x: w.x, y: w.y }, b: { x: w.x, y: w.y } }; st.press = false; st.tau = 0; }   // 도형: 손을 떼면 그 모양으로
   if (kind === 'pen' && ruler.on && S.rulerKind === 'mirror') { st.mirror = { ox: ruler.x, oy: ruler.y, ux: Math.cos(ruler.a), uy: Math.sin(ruler.a) }; st.msid = newSid(); }   // 대칭자: 거울 선은 다른 획
   st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, sid2: st.msid || null, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
-  if (kind === 'pen') noteAct(st.act);
+  if (kind === 'pen') { noteAct(st.act); noteColor(); }
   if (touch) {
     gmode = 'pending'; st.pts.push(w);
     if (kind === 'pen' && !st.shape) previewSeg(st, w, w);
@@ -3640,7 +3718,7 @@ function onMessage(data) {
 }
 function handleMsg(m) {
   switch (m.type) {
-    case 'hello': me = m.me; break;
+    case 'hello': me = m.me; flushErrs(); break;
     case 'pong': break;
     case 'history': sendClaim(); clearSel(); newsSoon(); segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom();
       if (lostActs) { const l = lostActs; lostActs = null; if (l.length) resendLost(l); }
@@ -3735,7 +3813,7 @@ $('setSmooth').value = String(S.smooth);
 $('setSmooth').onchange = () => { S.smooth = clampInt(+$('setSmooth').value, 0, 3); saveSettings(); };
 $('setWheel').value = S.wheel;
 $('setWheel').onchange = () => { S.wheel = $('setWheel').value; saveSettings(); };
-setColor(S.color); syncAlphaUI(); syncEraserUI(); syncRulerUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
+renderRecentColors(); setColor(S.color); syncAlphaUI(); syncEraserUI(); syncRulerUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
