@@ -112,6 +112,7 @@
   .btn:disabled { opacity: .5; }
   .btn.block { width: 100%; }
   .inp { width: 100%; min-height: 40px; padding: 0 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); }
+  textarea.inp { padding: 8px 12px; resize: vertical; font: inherit; color: inherit; line-height: 1.4; }
   input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
   .seg2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .seg2 .opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); text-align: center; }
@@ -324,6 +325,10 @@
     <symbol id="i-ruler-mirror" viewBox="0 0 24 24"><path d="M12 2.5v3M12 9v3M12 15.5v3M12 21v.5"/><path d="M9 6.5 4 12l5 5.5M15 6.5l5 5.5-5 5.5"/></symbol>
     <symbol id="i-ruler-radial" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 8V2M12 16v6M8 12H2M16 12h6M9.2 9.2 5 5M14.8 14.8 19 19M14.8 9.2 19 5M9.2 14.8 5 19"/></symbol>
     <symbol id="i-dropper" viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></symbol>
+    <symbol id="i-shape-line" viewBox="0 0 24 24"><path d="M5 19 19 5"/><circle cx="5" cy="19" r="1.8" fill="currentColor"/><circle cx="19" cy="5" r="1.8" fill="currentColor"/></symbol>
+    <symbol id="i-shape-rect" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.5"/></symbol>
+    <symbol id="i-shape-oval" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6.5"/></symbol>
+    <symbol id="i-shape-text" viewBox="0 0 24 24"><path d="M5 6V4.5h14V6M12 4.5v15M9 19.5h6"/></symbol>
   </defs>
 </svg>
 
@@ -445,8 +450,15 @@
     <button class="opt" data-rk="ellipse" type="button"><svg class="ic"><use href="#i-ruler-ellipse"/></svg><b>타원자</b><small>같은 중심의 타원</small></button>
     <button class="opt" data-rk="mirror" type="button"><svg class="ic"><use href="#i-ruler-mirror"/></svg><b>대칭자</b><small>거울처럼 하나 더</small></button>
   </div>
+  <h3 style="margin-top:12px">도형 <span class="hint" style="margin:0">한 번 끌면 그려져요</span></h3>
+  <div class="seg3">
+    <button class="opt" data-rk="sline" type="button"><svg class="ic"><use href="#i-shape-line"/></svg><b>선</b><small>곧은 선 하나</small></button>
+    <button class="opt" data-rk="rect" type="button"><svg class="ic"><use href="#i-shape-rect"/></svg><b>네모</b><small>끈 만큼 네모</small></button>
+    <button class="opt" data-rk="oval" type="button"><svg class="ic"><use href="#i-shape-oval"/></svg><b>동그라미</b><small>끈 만큼 동그라미</small></button>
+    <button class="opt" data-rk="text" type="button"><svg class="ic"><use href="#i-shape-text"/></svg><b>글자</b><small>누른 곳에 글자</small></button>
+  </div>
   <div class="hint" id="rulerHint"></div>
-  <div class="hint">자의 가운데 점을 끌면 옮겨지고, 둥근 끝점을 끌면 돌아가요 (Shift: 15°씩). 타원자의 흰 점은 납작한 정도. 키보드 U: 자 켜기·끄기.</div>
+  <div class="hint">자의 가운데 점을 끌면 옮겨지고, 둥근 끝점을 끌면 돌아가요 (Shift: 15°씩). 타원자의 흰 점은 납작한 정도. 도형·글자는 자 대신 한 번에 그려요. 키보드 U: 자·도형 켜기·끄기.</div>
   <div class="row" style="margin-top:10px"><button id="rulerHere" class="btn" type="button" style="flex:1">화면 가운데로</button><button id="rulerOnOff" class="btn primary" type="button" style="flex:1">자 켜기</button></div>
 </section>
 
@@ -499,9 +511,9 @@
   <div class="switch"><div>손떨림 보정<small>선이 손을 살짝 늦게 따라와 떨림이 줄어요</small></div><select id="setSmooth" class="inp" style="width:auto;flex:0 0 auto" aria-label="손떨림 보정"><option value="0">끔</option><option value="1">약하게</option><option value="2">보통</option><option value="3">강하게</option></select></div>
   <div class="switch"><div>휠·트랙패드<small>자동: 마우스 휠 = 확대·축소, 트랙패드 두 손가락 = 이동</small></div><select id="setWheel" class="inp" style="width:auto;flex:0 0 auto" aria-label="휠·트랙패드"><option value="auto">자동</option><option value="zoom">항상 확대·축소</option><option value="pan">항상 이동</option></select></div>
   <h3 style="margin-top:12px">단축키</h3>
-  <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
+  <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span><b>U</b><span>자·도형 켜기·끄기 (도형을 끌 때 Shift: 15°씩·정사각형·정원)</span><b>M</b><span>올가미 (내 그림 골라 옮기기·크기)</span><b>Ctrl+D</b><span>고른 것 복제</span><b>Delete</b><span>고른 것 지우기</span><b>Esc</b><span>고르기 끝</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 21차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-13 41차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -595,7 +607,7 @@ const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').mat
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false, handMode: 'pan' };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false, handMode: 'pan', textPx: 28 };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -608,7 +620,8 @@ function loadSettings() {
   if (out.handMode !== 'pan' && out.handMode !== 'lasso') out.handMode = 'pan';
   out.smooth = clampInt(out.smooth, 0, 3);
   if (!['auto', 'zoom', 'pan'].includes(out.wheel)) out.wheel = 'auto';
-  if (!['line', 'circle', 'radial', 'ellipse', 'mirror'].includes(out.rulerKind)) out.rulerKind = 'line';
+  if (!['line', 'circle', 'radial', 'ellipse', 'mirror', 'sline', 'rect', 'oval', 'text'].includes(out.rulerKind)) out.rulerKind = 'line';
+  if (![16, 28, 48, 96].includes(out.textPx)) out.textPx = 28;
   if (!/^#[0-9a-fA-F]{6}$/.test(out.color)) out.color = DEFAULTS.color;
   out.alpha = Number.isFinite(out.alpha) ? Math.min(1, Math.max(0.1, Math.round(out.alpha * 20) / 20)) : 1;
   return out;
@@ -964,6 +977,8 @@ function segIndex() {
   }
   return (segIdx = { arr: segs, len: segs.length, n, box });
 }
+// 점(길이 0 인 선분)의 끝 x: 크롬은 길이 0 인 선분만 있는 path 를 그리지 않아서 화면 0.01px 만큼 늘린다
+const dotX = (s, k) => (s.x0 === s.x1 && s.y0 === s.y1 ? s.x1 + 0.01 / k : s.x1);
 function drawSegs(xa, xb, ya, yb, g = ctx, k = scale) {    // 월드 상자에 닿는 선을 목록 순서대로 g 에 그린다 (g 는 보기 변환이 된 상태, k = 화면 픽셀 / 월드)
   g.lineCap = 'round'; g.lineJoin = 'round';
   const src = rp ? rp.list : segs, lim = rp ? rp.n : src.length;   // (그리는 과정 다시 보기 중이면 그 목록의 앞 n 개만)
@@ -984,7 +999,7 @@ function drawSegs(xa, xb, ya, yb, g = ctx, k = scale) {    // 월드 상자에 �
         g.beginPath(); g.strokeStyle = s.color; g.lineWidth = Math.max(s.size, (s.f ? FILL_MIN_PX : 0.6) / k);
         rc = s.color; rs = s.size; rsid = s.sid; open = true; lx = NaN;
       }
-      if (s.x0 !== lx || s.y0 !== ly) { flush(); g.moveTo(s.x0, s.y0); g.lineTo(s.x1, s.y1); px = s.x1; py = s.y1; }   // 새 줄의 첫 선분은 늘 그린다 (점도 보이게)
+      if (s.x0 !== lx || s.y0 !== ly) { flush(); g.moveTo(s.x0, s.y0); g.lineTo(dotX(s, k), s.y1); px = s.x1; py = s.y1; }   // 새 줄의 첫 선분은 늘 그린다 (점도 보이게)
       else if (Math.abs(s.x1 - px) + Math.abs(s.y1 - py) < tol) pend = true;   // 이어지는 선분이 화면에서 아주 짧으면(축소했을 때) 건너뛰고 다음 점으로 바로 잇는다
       else { g.lineTo(s.x1, s.y1); px = s.x1; py = s.y1; pend = false; }
       lx = s.x1; ly = s.y1;
@@ -1043,7 +1058,7 @@ function paintPreview() {
   const st = strokeSt;
   if (!st || st.phase !== 'pending' || st.kind !== 'pen' || !st.pts.length) return;
   ctx.strokeStyle = st.color; ctx.lineWidth = Math.max(st.size, 0.6 / scale);
-  ctx.beginPath(); ctx.moveTo(st.pts[0].x, st.pts[0].y);
+  ctx.beginPath(); ctx.moveTo(st.pts[0].x, st.pts[0].y); ctx.lineTo(st.pts[0].x + 0.01 / scale, st.pts[0].y);   // (점 하나여도 보이게)
   for (const p of st.pts) ctx.lineTo(p.x, p.y);
   ctx.stroke();
 }
@@ -1054,7 +1069,7 @@ function incSeg(s) {                                       // 새 선분 하나�
   if (isClear(s.color)) { redrawSegsArea([s]); return; }     // 반투명: 덧그리면 이음새가 진해진다 → 그 자리만 다시 그린다 (한 획 한 path)
   ensureAligned(); ctxView();
   ctx.lineCap = 'round'; ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, 0.6 / scale);
-  ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(s.x1, s.y1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(dotX(s, scale), s.y1); ctx.stroke();
 }
 function paintHighlight() {
   hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1067,7 +1082,7 @@ function paintHighlight() {
   for (const s of segs) {
     if (s.o !== hl.o || (!hl.all && s.sid !== hl.sid)) continue;
     if (!hopen || s.size !== hw) { if (hopen) hctx.stroke(); hctx.beginPath(); hctx.lineWidth = s.size + 10 / scale; hw = s.size; hopen = true; }
-    hctx.moveTo(s.x0, s.y0); hctx.lineTo(s.x1, s.y1);
+    hctx.moveTo(s.x0, s.y0); hctx.lineTo(dotX(s, scale), s.y1);
   }
   if (hopen) hctx.stroke();
 }
@@ -1396,6 +1411,7 @@ function formModal({ title, body, ok = '확인', cancel = '취소', danger = fal
       const lab = document.createElement('label'); lab.htmlFor = 'mf_' + f.key; lab.textContent = f.label;
       let inp;
       if (f.type === 'select') { inp = document.createElement('select'); for (const [v, tx] of f.options) { const op = document.createElement('option'); op.value = v; op.textContent = tx; inp.appendChild(op); } }
+      else if (f.type === 'textarea') { inp = document.createElement('textarea'); inp.rows = f.rows || 3; if (f.placeholder) inp.placeholder = f.placeholder; }
       else { inp = document.createElement('input'); inp.type = 'text'; inp.autocomplete = 'off'; if (f.placeholder) inp.placeholder = f.placeholder; }
       inp.id = 'mf_' + f.key; inp.className = 'inp'; if (f.value !== undefined) inp.value = f.value;
       wrap.append(lab, inp); box.appendChild(wrap); ctl[f.key] = { f, inp, wrap };
@@ -1406,7 +1422,7 @@ function formModal({ title, body, ok = '확인', cancel = '취소', danger = fal
     modalCtl = { values, validate };
     $('mOk').textContent = ok; $('mOk').className = 'btn ' + (danger ? 'danger' : 'primary'); $('mCancel').textContent = cancel;
     $('modal').hidden = false; modalResolve = resolve;
-    const first = box.querySelector('input,select');
+    const first = box.querySelector('input,select,textarea');
     (first || (danger ? $('mCancel') : $('mOk'))).focus();
   });
 }
@@ -1415,7 +1431,9 @@ const NEWS_VER = 1;
 const NEWS = ['올가미: 손 버튼 ⌄ → 올가미 (M 키). 내 그림을 둘러싸서 옮기기·크기·복제·뒤집기·지우기',
   '펜 투명도: 색상 창 아래 슬라이더',
   '그리는 과정 다시 보기: 보기 메뉴',
-  '자: 타원자·대칭자가 생겼어요. U 키로 켜고 끄기',
+  '자: 타원자·대칭자, 도형(선·네모·동그라미)·글자 넣기가 생겼어요. U 키로 켜고 끄기',
+  '사람 목록 ⋯ → 그 사람 그림을 내 화면에서만 숨기기',
+  '연결이 잠깐 끊긴 사이에 그린 선도 다시 접속하면 저절로 보내져요',
   '다시 들어올 때 바뀐 부분만 받아서 훨씬 빨라졌어요'];
 let newsDone = false;
 function newsSoon() {
@@ -1437,7 +1455,7 @@ $('mOk').onclick = () => {
 };
 $('mCancel').onclick = () => closeModal(null);
 $('modal').addEventListener('pointerdown', (e) => { if (e.target === $('modal')) closeModal(null); });
-$('modal').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.target.tagName === 'INPUT') { e.preventDefault(); $('mOk').click(); } });
+$('modal').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && (e.target.tagName === 'INPUT' || (e.target.tagName === 'TEXTAREA' && (e.ctrlKey || e.metaKey)))) { e.preventDefault(); $('mOk').click(); } });   // (여러 줄 칸은 Ctrl+Enter)
 
 /* ===== 팝오버(데스크톱) / 바텀시트(모바일): 한 번에 하나만, 바깥 클릭·ESC 로 닫힘 ===== */
 let openPopId = null, popAnchor = null;
@@ -1607,7 +1625,7 @@ function recentRooms() { try { const a = JSON.parse(lsGet('draw:recent') || '[]'
 function rememberRoom() {                                    // 그림이 있는 방만 (그냥 들어왔다 나간 빈 새 방은 기록하지 않는다)
   if (room === 'lobby' || !segs.length) return;
   const a = recentRooms().filter((r) => r.id !== room);
-  a.unshift({ id: room, t: Date.now(), n: segs.length });
+  a.unshift({ id: room, t: Date.now(), n: segs.length, ...(roomTitle ? { name: roomTitle } : {}) });
   lsSet('draw:recent', JSON.stringify(a.slice(0, RECENT_MAX)));
 }
 const agoText = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? '방금' : m < 60 ? m + '분 전' : m < 1440 ? Math.round(m / 60) + '시간 전' : Math.round(m / 1440) + '일 전'; };
@@ -1617,8 +1635,8 @@ function renderRecent() {
   box.textContent = '';
   for (const r of list) {
     const b = document.createElement('button'); b.type = 'button';
-    const code = document.createElement('b'); code.textContent = r.id; code.style.marginRight = '8px';
-    const meta = document.createElement('span'); meta.className = 'hint'; meta.style.margin = '0'; meta.textContent = agoText(r.t) + (r.n ? ` · 그림 ${fmtN(r.n)} 조각` : '');
+    const code = document.createElement('b'); code.textContent = typeof r.name === 'string' && r.name ? Array.from(r.name).slice(0, 30).join('') : r.id; code.style.marginRight = '8px';
+    const meta = document.createElement('span'); meta.className = 'hint'; meta.style.margin = '0'; meta.textContent = (r.name ? r.id + ' · ' : '') + agoText(r.t) + (r.n ? ` · 그림 ${fmtN(r.n)} 조각` : '');
     b.append(code, meta); b.onclick = () => goRoom(r.id);
     box.appendChild(b);
   }
@@ -1941,7 +1959,7 @@ function drawRange(list, a, b) {                               // list[a..b) 를
       rc = s.color; rs = s.size; rsid = s.sid; open = true; lx = NaN;
     }
     if (s.x0 !== lx || s.y0 !== ly) g.moveTo(s.x0, s.y0);
-    g.lineTo(s.x1, s.y1); lx = s.x1; ly = s.y1;
+    g.lineTo(dotX(s, scale), s.y1); lx = s.x1; ly = s.y1;
   }
   if (open) g.stroke();
 }
@@ -2250,7 +2268,13 @@ const RULER_INFO = {
   radial: ['방사자', '#i-ruler-radial', '방사', '어디서 그어도 자의 가운데 점을 향하는 곧은 선이 돼요 (집중선).'],
   ellipse: ['타원자', '#i-ruler-ellipse', '타원', '자의 가운데 점을 중심으로 하는 같은 모양의 타원을 따라 그려져요. 흰 점을 끌면 납작한 정도가 바뀌어요.'],
   mirror: ['대칭자', '#i-ruler-mirror', '대칭', '자를 거울 삼아 반대쪽에 같은 선이 하나 더 그려져요. 이전을 누르면 두 선이 같이 지워져요.'],
+  sline: ['선 도형', '#i-shape-line', '선', '끌면 시작점에서 뗀 곳까지 곧은 선이 그려져요 (Shift: 15°씩).'],
+  rect: ['네모', '#i-shape-rect', '네모', '끌면 끈 만큼 네모가 그려져요 (Shift: 정사각형).'],
+  oval: ['동그라미', '#i-shape-oval', '동글', '끌면 끈 만큼 동그라미가 그려져요 (Shift: 정원).'],
+  text: ['글자', '#i-shape-text', '글자', '글자를 넣을 곳을 누르세요 (펜 색·투명도로).'],
 };
+const SHAPE_KINDS = new Set(['sline', 'rect', 'oval', 'text']);          // 도형: 자처럼 켜고 끄지만, 화면에 자는 없고 한 번 끌면 그 모양이 그려진다
+const isShape = () => SHAPE_KINDS.has(S.rulerKind);
 const RULER_E_MIN = 0.05;                                      // 타원자: 짧은 지름 / 긴 지름 (가장 납작할 때)
 const rlCv = $('rl'), rctx = rlCv.getContext('2d');
 const ruler = (() => {
@@ -2265,6 +2289,7 @@ const saveRuler = () => lsSet(RULER_KEY, JSON.stringify({ on: ruler.on, x: ruler
 const rulerSoon = () => { if (!rafRuler) rafRuler = requestAnimationFrame(paintRuler); };
 function rulerScreen() {                                       // 자의 화면 위치: 가운데 c, 방향 (ux, uy), 손잡이들 (move: 옮기기, rot: 돌리기, rad: 원 크기)
   const c = toScreen(ruler.x, ruler.y), sa = ruler.a + rot, ux = Math.cos(sa), uy = Math.sin(sa);
+  if (isShape()) return { c, ux, uy, hs: [] };                  // (도형: 손잡이 없음)
   const hs = [{ k: 'move', x: c.x, y: c.y }];
   if (S.rulerKind === 'line' || S.rulerKind === 'mirror') hs.push({ k: 'rot', x: c.x + ux * RULER_HANDLE_PX, y: c.y + uy * RULER_HANDLE_PX, s: 0 }, { k: 'rot', x: c.x - ux * RULER_HANDLE_PX, y: c.y - uy * RULER_HANDLE_PX, s: Math.PI });
   else if (S.rulerKind === 'circle') { const R = Math.max(ruler.r * scale, 40); hs.push({ k: 'rad', x: c.x + ux * R, y: c.y + uy * R, s: 0 }); }
@@ -2279,6 +2304,7 @@ function paintRuler() {
   rctx.setTransform(1, 0, 0, 1, 0, 0); rctx.clearRect(0, 0, rlCv.width, rlCv.height);
   if (!ruler.on) return;
   rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (isShape()) { paintShape(); return; }
   const { c, ux, uy, hs } = rulerScreen(), far = Math.hypot(cssW, cssH) + Math.hypot(c.x - cssW / 2, c.y - cssH / 2);
   const twice = (path) => { rctx.lineCap = 'round'; rctx.strokeStyle = 'rgba(255,255,255,.9)'; rctx.lineWidth = 4; path(); rctx.stroke(); rctx.strokeStyle = RULER_COLOR; rctx.lineWidth = 1.5; path(); rctx.stroke(); };   // 흰 테두리 + 파란 선: 어떤 그림 위에서도 보이게
   if (S.rulerKind === 'line') twice(() => { rctx.beginPath(); rctx.moveTo(c.x - ux * far, c.y - uy * far); rctx.lineTo(c.x + ux * far, c.y + uy * far); });
@@ -2341,7 +2367,7 @@ function syncRulerUI() {
   $('rulerHint').textContent = hint; $('rulerState').textContent = ruler.on ? '켜짐' : '꺼짐';
   $('rulerOnOff').textContent = ruler.on ? '자 끄기' : '자 켜기';
 }
-$('tRuler').onclick = () => { setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐: 펜 선이 자를 따라가요' : '자 꺼짐'); };
+$('tRuler').onclick = () => { setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐: ' + (isShape() ? RULER_INFO[S.rulerKind][3] : '펜 선이 자를 따라가요') : (isShape() ? '도형 꺼짐' : '자 꺼짐')); };
 $('tRulerMode').onclick = () => { syncRulerUI(); openPop('popRuler', $('tRulerMode')); };
 for (const b of document.querySelectorAll('#popRuler .opt')) b.onclick = () => {
   S.rulerKind = b.dataset.rk; saveSettings();
@@ -2350,9 +2376,115 @@ for (const b of document.querySelectorAll('#popRuler .opt')) b.onclick = () => {
 };
 $('rulerHere').onclick = () => { placeRuler(); ruler.on = true; saveRuler(); syncRulerUI(); paintRuler(); closePop(); };
 $('rulerOnOff').onclick = () => { setRuler(!ruler.on); closePop(); };
+// 도형의 점들 (월드). 화면 방향 기준 (돌린 화면에서도 화면에 반듯하게). 너무 작으면 null
+function shapePoints(sh) {
+  if (sh.k === 'text') return null;
+  const A = toScreen(sh.a.x, sh.a.y), B = toScreen(sh.b.x, sh.b.y);
+  let dx = B.x - A.x, dy = B.y - A.y;
+  if (Math.hypot(dx, dy) < 2) return null;
+  if (sh.k === 'sline') {
+    if (shiftDown) { const L = Math.hypot(dx, dy), t = Math.round(Math.atan2(dy, dx) / RULER_ROT_STEP) * RULER_ROT_STEP; dx = Math.cos(t) * L; dy = Math.sin(t) * L; }
+    return [{ x: sh.a.x, y: sh.a.y }, toWorld({ x: A.x + dx, y: A.y + dy })];
+  }
+  if (shiftDown) { const m = Math.max(Math.abs(dx), Math.abs(dy)); dx = (dx < 0 ? -1 : 1) * m; dy = (dy < 0 ? -1 : 1) * m; }
+  const x0 = A.x, y0 = A.y, x1 = A.x + dx, y1 = A.y + dy;
+  let pts;
+  if (sh.k === 'rect') pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
+  else {
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rx = Math.abs(dx) / 2, ry = Math.abs(dy) / 2;
+    const per = Math.PI * (3 * (rx + ry) - Math.sqrt((3 * rx + ry) * (rx + 3 * ry)));   // 타원 둘레 (어림)
+    const n = clamp(Math.round(per / 8), 24, 180);
+    pts = [];
+    for (let i = 0; i <= n; i++) { const t = i / n * Math.PI * 2; pts.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]); }
+  }
+  return pts.map(([x, y]) => toWorld({ x, y }));
+}
+function paintShape() {                                        // 끄는 동안 도형 미리보기 (자 캔버스에, 실제 색·굵기)
+  const st = strokeSt;
+  if (!st || !st.shape) return;
+  const pts = shapePoints(st.shape);
+  if (!pts) return;
+  rctx.lineCap = rctx.lineJoin = 'round'; rctx.strokeStyle = st.color; rctx.lineWidth = Math.max(st.size * scale, 1);
+  rctx.beginPath();
+  pts.forEach((w, i) => { const p = toScreen(w.x, w.y); if (i) rctx.lineTo(p.x, p.y); else rctx.moveTo(p.x, p.y); });
+  rctx.stroke();
+}
+// 글자 넣기: at = 누른 곳(월드) = 글자 상자 왼쪽 위. 크기는 '지금 화면에서' 보이는 px (화면 방향 기준으로 놓인다)
+const TEXT_FONT = '600 {px}px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", sans-serif';
+const TEXT_MAX_CHARS = 200, TEXT_MAX_LINES = 10, TEXT_MAX_SEGS = 6000;
+async function askText(at) {
+  if (!me || !histOk) return;
+  if (myRestr.spectator || myRestr.wait) { toast('지금은 보기만 할 수 있어요', 'warn'); return; }
+  const v = await formModal({ title: '글자 넣기', body: '누른 곳에 펜 색으로 넣어요. 넣은 뒤에는 보통 선처럼 이전·지우개·올가미로 다룰 수 있어요.', ok: '넣기',
+    fields: [{ key: 't', type: 'textarea', label: '글자 (Enter 로 줄 바꿈, Ctrl+Enter 로 넣기)', maxChars: TEXT_MAX_CHARS, placeholder: '여기에 쓰기' },
+      { key: 's', type: 'select', label: '크기 (지금 화면에서 보이는 크기)', options: [['16', '작게'], ['28', '보통'], ['48', '크게'], ['96', '아주 크게']], value: String(S.textPx) }] });
+  if (!v) return;
+  const text = v.t.replace(/\r/g, '').split('\n').slice(0, TEXT_MAX_LINES).join('\n');
+  if (!text.trim()) return;
+  S.textPx = +v.s || 28; saveSettings();
+  placeText(at, text, S.textPx);
+}
+function textSegs(at, text, px, sid, color) {                  // 글자를 칸(래스터)으로 그려 네모로 묶고 → 펜 선분 목록 (너무 크면 null)
+  const cellPx = Math.max(1, px / 64, 0.75 * scale);            // 칸 하나 = 화면 몇 px (한 줄 최대 약 80칸, 월드로 0.75 이상: 선 굵기 최소 1 에 맞게)
+  const fc = px / cellPx, lh = Math.ceil(fc * 1.3), lines = text.split('\n');
+  const cv = document.createElement('canvas'), g = cv.getContext('2d');
+  const font = TEXT_FONT.replace('{px}', String(Math.max(4, Math.round(fc * 10) / 10)));
+  g.font = font;
+  const W = Math.ceil(Math.max(...lines.map((l) => g.measureText(l).width))) + 4, H = lh * lines.length + 4;
+  if (W * H > 4e6) return null;
+  cv.width = W; cv.height = H;
+  g.font = font; g.textBaseline = 'top'; g.fillStyle = '#000';
+  lines.forEach((l, i) => g.fillText(l, 2, 2 + i * lh + Math.round((lh - fc) / 2)));
+  const d = g.getImageData(0, 0, W, H).data, rects = [];
+  for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 420) d[i + 3] = 0;   // (글자는 검게 그렸다: 밝은 부분은 빼서 그림 글자(이모지)는 윤곽·눈코입만)
+  let open = new Map();                                        // 'a,b' → 네모 { a, b, t, bt } (위 줄에서 같은 가로 범위로 이어지는 것)
+  for (let y = 0; y <= H; y++) {
+    const next = new Map();
+    if (y < H) {
+      for (let x = 0; x < W; x++) {
+        if (d[(y * W + x) * 4 + 3] < 110) continue;
+        let b = x; while (b + 1 < W && d[(y * W + b + 1) * 4 + 3] >= 110) b++;
+        const k = x + ',' + b, r = open.get(k);
+        if (r) { r.bt = y; next.set(k, r); open.delete(k); } else next.set(k, { a: x, b, t: y, bt: y });
+        x = b;
+      }
+    }
+    for (const r of open.values()) rects.push(r);
+    open = next;
+  }
+  if (!rects.length || rects.length > TEXT_MAX_SEGS) return rects.length ? null : [];
+  const A = toScreen(at.x, at.y), cw = cellPx / scale, out = [];
+  const P = (cx, cy) => toWorld({ x: A.x + (cx - 2) * cellPx, y: A.y + (cy - 2) * cellPx });   // 칸 좌표 → 월드 (화면 방향 기준)
+  for (const r of rects) {
+    const w = r.b - r.a + 1, h = r.bt - r.t + 1, t = Math.min(w, h);
+    const p = w >= h ? P(r.a + t / 2, r.t + h / 2) : P(r.a + w / 2, r.t + t / 2);
+    const q = w >= h ? P(r.b + 1 - t / 2, r.t + h / 2) : P(r.a + w / 2, r.bt + 1 - t / 2);
+    out.push({ x0: r1(p.x), y0: r1(p.y), x1: r1(q.x), y1: r1(q.y), color, size: clamp(Math.round((t + 0.4) * cw * 10) / 10, 1, PEN_MAX), o: me, sid });
+  }
+  return out;
+}
+function placeText(at, text, px) {
+  const sid = newSid(), list = textSegs(at, text, px, sid, penColor());
+  if (!list) { toast('글자가 너무 많거나 커요. 조금 줄여 주세요', 'warn'); return; }
+  if (!list.length) return;
+  if (segs.length + list.length > roomMax) { toast(FULL_MSG, 'warn'); return; }
+  addSegs(list); sendSegs('addsegs', list);
+  const a = { t: 'draw', sid, segs: list };
+  pushAct(a); noteAct(a);
+  redrawInk(); checkCap();
+}
+function emitShape(st) {                                       // 손을 뗄 때: 도형을 이 획의 펜 선분으로
+  const sh = st.shape; st.shape = null; rulerSoon();
+  if (sh.k === 'text') { askText(sh.a); return; }
+  const pts = shapePoints(sh);
+  if (!pts) return;
+  if (segs.length + pts.length > roomMax) { toast(FULL_MSG, 'warn'); return; }
+  for (let i = 1; i < pts.length; i++) penSeg(st, pts[i - 1], pts[i]);
+  st.last = pts[pts.length - 1];
+}
 // 이 점(월드)에서 시작하는 획이 따라갈 선·원. 직선: 지나는 점 (ox, oy) + 방향 (ux, uy) / 원: 중심 (cx, cy) + 반지름 R
 function rulerGuide(w) {
-  if (!ruler.on || S.rulerKind === 'mirror') return null;      // (대칭자는 선을 옮기지 않고 거울 선을 하나 더 그린다)
+  if (!ruler.on || S.rulerKind === 'mirror' || isShape()) return null;   // (대칭자는 선을 옮기지 않고 거울 선을 하나 더 그린다. 도형은 따로)
   const tol = RULER_SNAP_PX / scale;
   if (S.rulerKind === 'line') {
     const ux = Math.cos(ruler.a), uy = Math.sin(ruler.a), d = (w.x - ruler.x) * -uy + (w.y - ruler.y) * ux;   // d: 자에서 떨어진 거리
@@ -2554,11 +2686,13 @@ function emit(st, a, b) { if (st.kind === 'pen') penSeg(st, a, b); else if (st.k
 function previewSeg(st, a, b) {                                // 확정 전 터치 획: 내 화면에만 임시로 그린다
   ensureAligned(); ctxView();
   ctx.lineCap = 'round'; ctx.strokeStyle = st.color; ctx.lineWidth = Math.max(st.size, 0.6 / scale);
-  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
-  if (st.mirror) { const A = mirrorPt(st.mirror, a), B = mirrorPt(st.mirror, b); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); }
+  const dx = a.x === b.x && a.y === b.y ? 0.01 / scale : 0;    // (점도 보이게)
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x + dx, b.y);
+  if (st.mirror) { const A = mirrorPt(st.mirror, a), B = mirrorPt(st.mirror, b); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x + dx, B.y); }
   ctx.stroke();
 }
 function strokePoint(st, sx, sy, t, force, p) {                // 너무 가깝거나 빠른 점은 생략 (마지막 점은 force 로 반드시 보낸다). p: 펜 필압(0~1)
+  if (st.shape) { st.shape.b = toWorld({ x: sx, y: sy }); rulerSoon(); return; }   // (도형: 끝점만)
   if (st.press && p > 0) st.pp = st.pp * 0.5 + p * 0.5;         // 필압은 튀지 않게 조금 부드럽게
   if (st.tau) {                                                 // 손떨림 보정: 선 끝이 손(펜) 위치를 시간에 따라 부드럽게 따라간다. 끝낼 때(force)는 뗀 자리까지
     if (!force) { const a = 1 - Math.exp(-Math.max(0, t - st.et) / st.tau); st.ex += (sx - st.ex) * a; st.ey += (sy - st.ey) * a; st.et = t; sx = st.ex; sy = st.ey; }
@@ -2597,6 +2731,7 @@ function confirmStroke(st) {                                   // 이 시점부�
   clearTimeout(st.timer);
   st.phase = 'live'; st.confirmedAt = now();
   if (gmode === 'pending') gmode = 'draw';
+  if (st.shape) { st.pts = []; return; }                        // (도형은 손을 뗄 때 한 번에)
   const pts = st.pts; st.pts = [];
   emit(st, pts[0], pts[0]); st.last = pts[0];
   for (let i = 1; i < pts.length; i++) { emit(st, st.last, pts[i]); st.last = pts[i]; }
@@ -2625,6 +2760,7 @@ function revertErase(st) {                                     // 방금 부분 
 function finishStroke(st) {
   const rec = ptr.get(st.id);
   if (rec) strokePoint(st, rec.x, rec.y, now(), true);
+  if (st.shape) emitShape(st);
   if (st.last) lastEnd = { x: st.last.x, y: st.last.y, pen: st.kind === 'pen' };
   commitAct(st);
   if (strokeSt === st) strokeSt = null;
@@ -2636,6 +2772,7 @@ function abortStroke() {
   clearTimeout(st.timer);
   if (st.phase === 'pending' && st.kind === 'pen') redrawInk();
   strokeSt = null;
+  if (st.shape) rulerSoon();                                    // (도형 미리보기 지우기)
   if (gmode === 'draw' || gmode === 'pending') gmode = 'none';
 }
 function startStroke(rec) {
@@ -2650,17 +2787,18 @@ function startStroke(rec) {
     press: kind === 'pen' && rec.type === 'pen' && S.pressure, pp: clamp(rec.p || 0.5, 0, 1),   // 필압은 펜(애플펜슬·태블릿 펜)일 때만
     tau: kind === 'pen' ? SMOOTH_MS[S.smooth] || 0 : 0, ex: rec.x, ey: rec.y, et: rec.t0 };     // 손떨림 보정은 펜 도구일 때
   if (st.press) w.p = st.pp;
+  if (kind === 'pen' && ruler.on && isShape()) { st.shape = { k: S.rulerKind, a: { x: w.x, y: w.y }, b: { x: w.x, y: w.y } }; st.press = false; st.tau = 0; }   // 도형: 손을 떼면 그 모양으로
   if (kind === 'pen' && ruler.on && S.rulerKind === 'mirror') { st.mirror = { ox: ruler.x, oy: ruler.y, ux: Math.cos(ruler.a), uy: Math.sin(ruler.a) }; st.msid = newSid(); }   // 대칭자: 거울 선은 다른 획
   st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, sid2: st.msid || null, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
   if (kind === 'pen') noteAct(st.act);
   if (touch) {
     gmode = 'pending'; st.pts.push(w);
-    if (kind === 'pen') previewSeg(st, w, w);
+    if (kind === 'pen' && !st.shape) previewSeg(st, w, w);
     st.timer = setTimeout(() => confirmStroke(st), erase ? TOUCH_CONFIRM_ERASE_MS : TOUCH_CONFIRM_MS);
   } else {                                                     // 마우스·펜은 지연 없이 즉시
     gmode = 'draw'; st.confirmedAt = now();
     const le = lastEnd && rec.shift && lastEnd.pen === (kind === 'pen') ? lastEnd : null;   // Shift+클릭: 앞 획 끝에서 여기까지 직선 (클튜처럼)
-    emit(st, le || w, w);
+    if (!st.shape) emit(st, le || w, w);
   }
 }
 function enterPinch() {                                        // 손가락이 2개 이상: 그리기 중단, 핀치 줌 + 두 손가락 이동
@@ -2668,7 +2806,8 @@ function enterPinch() {                                        // 손가락이 2
   if (lasso) { lasso = null; selSoon(); }                      // (둘러싸던 올가미·옮기던 것은 취소)
   if (selDrag) { selDrag = null; selHide = null; redrawInk(); selSoon(); }
   const st = strokeSt;
-  if (st) {
+  if (st && st.shape) { clearTimeout(st.timer); strokeSt = null; rulerSoon(); }   // (끌던 도형은 그리지 않고 확대로)
+  else if (st) {
     // 획을 시작한 지 얼마 안 돼 두 번째 손가락이 닿았다 = 확대·이동하려던 것 (손가락이 조금 먼저 닿아 그어진 선). 움직인 거리와 상관없이 방금 획을 없던 일로.
     // 한참 그리던 중이면(PINCH_CANCEL_MS 넘게) 그린 건 그대로 두고 확대로 넘어간다.
     const fresh = now() - st.born <= PINCH_CANCEL_MS;
@@ -2863,7 +3002,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && (sel || lasso) && $('modal').hidden && !openPopId) { clearSel(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel && !isEditable(e.target) && $('modal').hidden) { e.preventDefault(); deleteSel(); return; }
   if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(null); else if (!$('imgView').hidden) hideImage(); else if (openPopId) closePop(); else closeSide(); return; }
-  if (e.key === 'Shift' && !shiftDown) { shiftDown = true; syncCursor(); if (gmode === 'rot') rotDragTo(true); }   // 돌리는 중에 누르면 바로 45° 에 맞춘다
+  if (e.key === 'Shift' && !shiftDown) { shiftDown = true; syncCursor(); if (gmode === 'rot') rotDragTo(true); if (strokeSt && strokeSt.shape) rulerSoon(); }   // 돌리는 중에 누르면 바로 45° 에 맞춘다
   const ed = isEditable(e.target), modal = !$('modal').hidden, ctl = e.ctrlKey || e.metaKey, k = keyLetter(e);
   if (ctl && !modal) {                                         // 확대·축소: 브라우저 화면 확대 대신 그림판 배율 (입력창에 있어도)
     if (e.code === 'Equal' || e.code === 'NumpadAdd' || e.key === '+' || e.key === '=') { e.preventDefault(); keyZoom(KEY_ZOOM); return; }
@@ -2889,7 +3028,7 @@ window.addEventListener('keydown', (e) => {
     if (!spaceDown) { spaceDown = true; ring.hidden = true; syncCursor(); }
     return;
   }
-  if (k === 'u' && !e.repeat) { setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐 (U: 끄기)' : '자 꺼짐'); return; }   // U: 자 켜기·끄기
+  if (k === 'u' && !e.repeat) { setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐 (U: 끄기)' : (isShape() ? '도형 꺼짐' : '자 꺼짐')); return; }   // U: 자 켜기·끄기
   const t = TOOL_KEYS[k];
   if (!t || e.repeat || ptr.size) return;
   heldTool = { code: e.code, t, prev: tool, used: false };
@@ -2897,7 +3036,7 @@ window.addEventListener('keydown', (e) => {
   if (t === 'rotate') toast('화면 회전: 끌어서 돌려요 (Shift: 45°씩) · Space: 원래 도구로');
 });
 window.addEventListener('keyup', (e) => {
-  if (e.key === 'Shift') { shiftDown = false; syncCursor(); if (gmode === 'rot') rotDragTo(false); }
+  if (e.key === 'Shift') { shiftDown = false; syncCursor(); if (gmode === 'rot') rotDragTo(false); if (strokeSt && strokeSt.shape) rulerSoon(); }
   if (e.code === 'Space') { spaceDown = false; syncCursor(); if (!isEditable(e.target)) e.preventDefault(); }
   if (e.key === 'Alt') { e.preventDefault(); if (altDrop) { const p = altDrop.prev; altDrop = null; hideDropPrev(); backTo('drop', p); } }
   if (heldTool && e.code === heldTool.code) { const h = heldTool; heldTool = null; if (h.used) backTo(h.t, h.prev); }   // 누른 채 썼으면 원래 도구로
@@ -3101,6 +3240,14 @@ function renderAdmin() {
     const cb = mk('input'); cb.type = 'checkbox'; cb.id = id; cb.checked = !!on; cb.setAttribute('aria-label', title);
     cb.onchange = () => fn(cb.checked); lab.append(d, cb); box.appendChild(lab);
   };
+  const st0 = sec('방 이름');
+  const tr = mk('div', 'row'), ti = mk('input', 'inp'), tb = mk('button', 'btn', '바꾸기');
+  ti.id = 'adminTitle'; ti.maxLength = 60; ti.placeholder = '이름 없음 (방 코드 ' + room + ')'; ti.value = roomTitle; ti.setAttribute('aria-label', '방 이름');
+  tb.type = 'button'; tb.id = 'adminTitleBtn'; tb.style.flex = '0 0 auto';
+  tb.onclick = () => sendCmd({ cmd: 'title', title: ti.value });
+  ti.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) tb.click(); });
+  tr.style.gap = '6px'; tr.append(ti, tb); st0.appendChild(tr);
+  st0.appendChild(mk('small', 'hint', '위 막대의 방 버튼·최근 들어간 방 목록에 방 코드 대신 보여요 (30글자까지, 비우고 바꾸면 지워져요)'));
   const s1 = sec('접속');
   sw(s1, 'adminLock', '방 잠금', '켜면 새 접속을 막아요 (이미 있는 사람과 방장은 그대로)', locked, (v) => sendCmd({ cmd: 'lock', on: v }));
   sw(s1, 'adminGate', '새로 온 사람은 보기만', '처음 온 사람은 방장·부방장이 허락해야 그릴 수 있어요 (전에 왔던 사람은 그대로). 분탕이 걱정될 때 켜 두세요', gateOn, (v) => sendCmd({ cmd: 'gate', on: v }));
@@ -3527,7 +3674,8 @@ function handleMsg(m) {
         resyncNow();
       }
       break;
-    case 'roomstate': ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); if (m.max > 0) { roomMax = m.max; checkCap(); }
+    case 'roomstate': if (typeof m.title === 'string' && m.title !== roomTitle) { roomTitle = m.title; syncRoomLabel(); rememberRoom(); }
+      ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); if (m.max > 0) { roomMax = m.max; checkCap(); }
       mods = new Set(Array.isArray(m.mods) ? m.mods : []); gateOn = !!m.gate; coverOn = m.cover !== false; roomShare = m.share > 0 && m.share < 1 ? m.share : 0;
       syncOwnerUI(); break;
     case 'me': {
@@ -3573,7 +3721,15 @@ if (window.visualViewport) {                                                    
 nickEl.value = myNick;
 const CLIENT_VER = '3단계 (2026-10-12 22차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
-$('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
+let roomTitle = '';                                             // 방 이름 (방장·부방장이 정함, 없으면 방 코드)
+const BASE_TITLE = document.title;
+function syncRoomLabel() {
+  const t = roomTitle ? Array.from(roomTitle) : null;
+  $('roomLabel').textContent = t ? (t.length > 12 ? t.slice(0, 12).join('') + '…' : roomTitle) : room.length > 10 ? room.slice(0, 10) + '…' : room;
+  $('btnRoom').title = '방 메뉴' + (roomTitle ? ` (${roomTitle} · 방 코드 ${room})` : '');
+  document.title = roomTitle ? roomTitle + ' · ' + BASE_TITLE : BASE_TITLE;
+}
+syncRoomLabel();
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
 $('setSmooth').value = String(S.smooth);
 $('setSmooth').onchange = () => { S.smooth = clampInt(+$('setSmooth').value, 0, 3); saveSettings(); };

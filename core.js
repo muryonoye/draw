@@ -727,15 +727,15 @@ function saveRoom(id, room, force) {
 }
 
 // ---- 닉네임 ----
-function cleanNick(s) {
-  const t = String(s || '')
-    .normalize('NFC')
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return Array.from(t).slice(0, NAME_MAX).join('');
-}
+function cleanNick(s) { return Array.from(cleanNick.raw(s)).slice(0, NAME_MAX).join(''); }
+cleanNick.raw = (s) => String(s || '')                          // 보이지 않는 글자·줄 바꿈을 빼고 공백을 하나로
+  .normalize('NFC')
+  .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
+  .replace(/\s+/g, ' ')
+  .trim();
 
+const TITLE_MAX = 30;                                            // 방 이름 최대 글자 수
+function cleanTitle(s) { return Array.from(cleanNick.raw(s)).slice(0, TITLE_MAX).join(''); }
 function uniqueNick(room, owner, want) {
   const taken = new Set();
   for (const o of Object.keys(room.names)) if (o !== owner) taken.add(String(room.names[o]).toLowerCase());
@@ -1051,8 +1051,9 @@ const IPT_RE = /^[A-Za-z0-9_-]{12}$/;
 const tagList = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && IPT_RE.test(x)).slice(0, 3) : []);
 const numOr = (v, d) => (Number.isFinite(+v) ? +v : d);
 function normalizeMeta(j) {
-  const m = { owner: null, locked: false, gate: false, noCover: false, bans: {}, mutes: {}, spectators: {}, mods: {}, log: {} };
+  const m = { owner: null, title: '', locked: false, gate: false, noCover: false, bans: {}, mutes: {}, spectators: {}, mods: {}, log: {} };
   if (!j || typeof j !== 'object') return m;
+  m.title = cleanTitle(j.title);
   if (typeof j.owner === 'string' && OWNER_RE.test(j.owner)) m.owner = j.owner;
   m.locked = j.locked === true;
   m.gate = j.gate === true;
@@ -1131,7 +1132,7 @@ const isStaff = (room, o) => isRoomOwner(room, o) || isMod(room, o);
 const isWaiting = (room, o) => room.meta.gate && !!(room.meta.log[o] && room.meta.log[o].wait) && !isStaff(room, o);
 const isSpect = (room, o) => !!room.meta.spectators[o] || isWaiting(room, o);
 const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked, persist: dbState === 'ok' && !room.noSave, max: MAX_HISTORY,
-  mods: room.noSave ? [] : Object.keys(room.meta.mods), gate: room.meta.gate, cover: !room.meta.noCover, share: OWNER_SHARE });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
+  mods: room.noSave ? [] : Object.keys(room.meta.mods), gate: room.meta.gate, cover: !room.meta.noCover, share: OWNER_SHARE, title: room.meta.title || '' });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
 function meMsg(room, o, now = Date.now()) {
   const mu = room.meta.mutes[o];
   return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: isSpect(room, o), wait: isWaiting(room, o) };
@@ -1260,7 +1261,7 @@ function handleCmd(ws, room, roomId, msg) {
   const boss = isRoomOwner(room, ws.owner);
   if (!boss && !isMod(room, ws.owner)) return cmdErr(ws, '권한이 없습니다');
   const cmd = msg.cmd;
-  const MOD_CMDS = ['kick', 'ban', 'unban', 'mute', 'unmute', 'spectate', 'clearuser', 'lock', 'gate', 'cover'];   // 부방장이 할 수 있는 것
+  const MOD_CMDS = ['kick', 'ban', 'unban', 'mute', 'unmute', 'spectate', 'clearuser', 'lock', 'gate', 'cover', 'title'];   // 부방장이 할 수 있는 것
   if (!boss && !MOD_CMDS.includes(cmd)) return cmdErr(ws, '방장만 할 수 있어요');
   const TARGET_CMDS = ['kick', 'ban', 'unban', 'mute', 'unmute', 'spectate', 'transfer', 'clearuser', 'mod'];
   let target = null;
@@ -1339,6 +1340,12 @@ function handleCmd(ws, room, roomId, msg) {
     for (const o of new Set([...room.clients].map((c) => c.owner))) sendMe(room, o);   // 기다리던 사람들의 상태가 바뀔 수 있다
     sysChat(room, room.meta.gate ? '이제 처음 온 사람은 방장·부방장이 허락해야 그릴 수 있어요' : '이제 처음 온 사람도 바로 그릴 수 있어요');
     sendAdmin(room);
+  } else if (cmd === 'title') {                                    // 방 이름 (빈 글자 = 지우기)
+    const t = cleanTitle(msg.title);
+    if (t === room.meta.title) return;
+    room.meta.title = t; persistMeta(room);
+    broadcastAll(room, roomStateMsg(room));
+    sysChat(room, t ? `방 이름이 "${t}"(으)로 바뀌었어요` : '방 이름을 지웠어요');
   } else if (cmd === 'cover') {                                    // 남의 그림 덮기 막기 켜기·끄기
     room.meta.noCover = msg.on !== true; persistMeta(room);
     broadcastAll(room, roomStateMsg(room));
@@ -1572,7 +1579,7 @@ function globalAllow(ws) {
 }
 
 // 어느 파일이 올라갔는지 바로 확인하는 용도 (화면의 설정 맨 아래에 '서버 버전'으로 보인다). db: none(저장소 없음) | connecting | ok | error
-const versionInfo = () => ({ stage: 3, date: '2026-10-13', rev: 24, db: dbState, dbKB: Math.round(dbOut / 1024), sync: syncStats });
+const versionInfo = () => ({ stage: 3, date: '2026-10-13', rev: 41, db: dbState, dbKB: Math.round(dbOut / 1024), sync: syncStats });
 
 // 들어온 원본 메시지의 크기·종류를 먼저 거른다. 칠하기('fill')만 16KB 를 넘을 수 있고, 그 외의 큰 메시지는 읽지도 않고 버린다.
 // 칠하기는 JSON 을 읽기 전에 속도 제한부터 확인한다 (무거운 메시지로 서버를 괴롭히지 못하게).
