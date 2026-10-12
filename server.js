@@ -11,7 +11,10 @@ const app = express();
 const server = http.createServer(app);
 // 일반 메시지는 수백 바이트(최대 16KB). 칠하기('fill') 메시지만 더 클 수 있어서 소켓 한도는 넉넉히 두고, 아래 onRaw 에서 종류별로 다시 자른다.
 const MAX_MSG_BYTES = 16 * 1024, MAX_FILL_BYTES = 128 * 1024;
-const wss = new WebSocketServer({ server, maxPayload: MAX_FILL_BYTES });
+// permessage-deflate: 글자 메시지(선·커서·채팅)를 압축해서 보낸다 (Render 무료 전송량 5GB 절약). 창을 작게(4KB) 잡아 접속당 메모리는 수십 KB.
+// 이미 압축된 그림(바이너리)은 send(…, { compress: false }) 로 다시 압축하지 않는다.
+const wss = new WebSocketServer({ server, maxPayload: MAX_FILL_BYTES,
+  perMessageDeflate: { serverMaxWindowBits: 12, clientMaxWindowBits: 12, zlibDeflateOptions: { level: 6, memLevel: 5 }, threshold: 24, concurrencyLimit: 4 } });
 
 // ---- 한도 (public/index.html 의 같은 이름 상수와 값이 같아야 한다) ----
 const PEN_MAX = 2000;         // 펜 굵기 (멀리 축소해서도 굵게 그릴 수 있게)
@@ -41,6 +44,9 @@ const CONN_PER_IP = +process.env.CONN_PER_IP || 40;            // 같은 IP 에�
 const COVER_BURST = +process.env.COVER_BURST || 30, COVER_PER_MIN = +process.env.COVER_PER_MIN || 15;
 const COVER_PIECES = +process.env.COVER_PIECES || 400, COVER_PIECES_PER_MIN = +process.env.COVER_PIECES_PER_MIN || 200;
 const SAVE_MS = +process.env.SAVE_MS || 5000;
+const META_GAP_MS = +process.env.META_GAP_MS || 60000;   // 입장 기록만 바뀐 방 설정은 1분에 한 번만 저장 (밴·잠금 같은 설정은 바로 저장)
+const CUR_FLUSH_MS = 100;                                // 커서 위치는 방마다 모아서 0.1초에 한 번 보낸다
+let dbOut = 0;                                           // 서버가 켜진 뒤 DB 로 보낸 그림·설정 글자 수 (/version 의 dbKB, 전송량 확인용)
 const ROOM_EMPTY_MS = +process.env.ROOM_EMPTY_MS || 10 * 60 * 1000;      // DB 에 저장해 둔 빈 방을 메모리에 남겨 두는 시간
 const NO_DB_KEEP_MS = +process.env.NO_DB_KEEP_MS || 24 * 60 * 60 * 1000;  // DB 가 없거나 고장났을 땐 메모리가 유일한 사본이라 오래 둔다
 const ROOM_RE = /^[A-Za-z0-9_-]{1,32}$/;
@@ -250,7 +256,9 @@ function growBlock(b, s) {
   if (ya < b.y0) b.y0 = ya;
   if (yb > b.y1) b.y1 = yb;
 }
-function blockOf(a) { const b = { a, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; for (const s of a) growBlock(b, s); return b; }
+// rev: 그 자리에서 바뀔 때마다(뒤에 붙이기·칠하기 끼우기) 오른다. pid/saved: DB 에 저장된 덩어리 번호와 그때의 rev (없으면 아직 저장 안 됨).
+// 다른 바꾸기는 모두 새 덩어리를 만든다(blockOf) → 저장 안 된 덩어리로 보고 새 번호로 저장, 옛 번호는 지운다.
+function blockOf(a) { const b = { a, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, rev: 0 }; for (const s of a) growBlock(b, s); return b; }
 function histBump(room) { room.ver++; room.flat = null; }
 function histChanged(room) { histBump(room); room.dirty = true; }
 function histSet(room, arr) {                           // 목록 통째로 바꾸기 (불러오기·전체 지우기 등). 저장 표시는 부르는 쪽에서
@@ -279,7 +287,7 @@ function appendSegs(room, list) {                       // 맨 끝에 붙이기
   for (const s of list) {
     let b = room.hb[room.hb.length - 1];
     if (!b || b.a.length >= BLOCK) { b = blockOf([]); room.hb.push(b); }
-    b.a.push(s); growBlock(b, s);
+    b.a.push(s); b.rev++; growBlock(b, s);
   }
   room.hn += list.length;
 }
@@ -294,7 +302,7 @@ function histInsert(room, items) {
     if (bi < 0) appendSegs(room, fs);
     else {
       const b = room.hb[bi];
-      b.a.splice(at, 0, ...fs);
+      b.a.splice(at, 0, ...fs); b.rev++;
       for (const s of fs) growBlock(b, s);
       room.hn += fs.length;
       splitBlock(room, bi);
@@ -380,7 +388,20 @@ function histRemoveExact(room, items) {
   histChanged(room);
   return true;
 }
-function histReplace(room, arr) { histSet(room, arr); room.dirty = true; }   // 드문 작업(사람별 지우기·이전의 정확한 빼기)은 한 줄 목록으로 계산해서 통째로 바꾼다
+function histReplace(room, arr) { histSet(room, arr); room.dirty = true; }   // 드문 작업(전체 지우기·불러오기 복구)은 한 줄 목록으로 계산해서 통째로 바꾼다
+// 조건에 맞는 선분만 남기기 (사람별 지우기). 안 바뀐 덩어리는 그대로 둬서 저장할 때 다시 보내지 않는다. 바뀌었으면 true.
+function histFilter(room, keep) {
+  let changed = false;
+  for (let i = room.hb.length - 1; i >= 0; i--) {
+    const b = room.hb[i];
+    if (b.a.every(keep)) continue;
+    const a = b.a.filter(keep);
+    room.hn -= b.a.length - a.length; changed = true;
+    if (a.length) room.hb[i] = blockOf(a); else room.hb.splice(i, 1);
+  }
+  if (changed) histChanged(room);
+  return changed;
+}
 
 // ---- 방 그림 압축 사본 (zlib): DB 저장과 새로 들어온 사람에게 보내기에 같이 쓴다. 그림이 바뀌지 않았으면 다시 만들지 않는다 ----
 // 그림 10만 조각이면 JSON 이 약 11MB 인데 압축하면 약 1.5MB. (무료 서버는 한 달 전송량이 5GB 라 들어올 때마다 11MB 를 보내면 금방 바닥난다)
@@ -482,7 +503,6 @@ function makeSnapJson(room) {                                      // 옛 화면
   const ver = room.ver, parts = room.hb.map((b) => b.a.slice());
   return jsonSnap(parts, ver, async () => {}).then((z) => { if (room.ver === ver) room.zj = z; return z; });
 }
-const saveGap = (room) => Math.max(SAVE_MS, (room.snapMs || 0) * 20);   // 큰 방은 만드는 데 걸린 시간의 20배마다만 저장 (서버 시간의 5% 이하)
 
 function newRoomId() {
   let s = '';
@@ -530,11 +550,15 @@ function initDb() {                                  // 표 만들기 + 읽기 �
     try {
       try { await pool.query("CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, history TEXT NOT NULL, names TEXT NOT NULL DEFAULT '{}', meta TEXT NOT NULL DEFAULT '{}', updated_at TIMESTAMPTZ DEFAULT now())"); }
       catch (e) { console.error('표 만들기 실패:', e.message); }
+      // 그림 덩어리 표: 방마다 덩어리 번호(pid) → 'z2:'+base64. rooms.history 에는 'p1:전체 조각 수:덩어리 번호 순서' (바뀐 덩어리만 다시 쓴다)
+      try { await pool.query('CREATE TABLE IF NOT EXISTS room_parts (room_id TEXT NOT NULL, pid INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (room_id, pid))'); }
+      catch (e) { console.error('표 만들기 실패(room_parts):', e.message); }
       for (const col of ['names', 'meta']) {          // 이미 있던 표에는 새 컬럼만 덧붙인다 (기존 데이터는 그대로)
         try { await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS ${col} TEXT NOT NULL DEFAULT '{}'`); }
         catch (e) { console.error(`컬럼 추가 실패(${col}):`, e.message); }
       }
       await pool.query('SELECT 1 FROM rooms LIMIT 1');   // 표를 읽을 수 있어야 '저장 가능'
+      await pool.query('SELECT 1 FROM room_parts LIMIT 1');
       setDbState('ok');
       console.log('DB 연결됨: 그림이 영구 저장돼요');
     } catch (e) {
@@ -551,13 +575,15 @@ const dbReady = pool ? initDb() : Promise.resolve(console.log('DATABASE_URL 없�
 async function loadRoom(id, attempts = 3) {
   const empty = { history: [], names: {}, meta: null };
   if (!pool) return empty;
-  let row = null, ok = false;
+  let row = null, partRows = null, ok = false;
   for (let a = 1; a <= attempts && !ok; a++) {
     try {
       await dbReady;
       if (dbState === 'error') await initDb();
       const r = await pool.query('SELECT history, names, meta FROM rooms WHERE id = $1', [id]);
-      row = r.rows[0] || null; ok = true;
+      row = r.rows[0] || null;
+      if (row && typeof row.history === 'string' && row.history.startsWith('p1:')) partRows = (await pool.query('SELECT pid, data FROM room_parts WHERE room_id = $1', [id])).rows;
+      ok = true;
       setDbState('ok');
     } catch (e) {
       console.error(`불러오기 실패 (${a}/${attempts}):`, e.message);
@@ -570,10 +596,26 @@ async function loadRoom(id, attempts = 3) {
     // 그림은 'z2:' + base64(zlib 압축 D2) 로 저장한다. 예전 방의 'z1:'(zlib 압축 JSON) 과 JSON 그대로도 읽는다.
     let history, zbuf = null, zfmt = null;
     const h = typeof row.history === 'string' ? row.history : '';
+    if (h.startsWith('p1:')) {                                    // 덩어리로 나눠 저장한 방 (22차부터)
+      const m = /^p1:(\d+):([\d,-]*)$/.exec(h);
+      if (!m) throw new Error('덩어리 목록 형식이 아니에요');
+      const order = unpackPids(m[2]), byPid = new Map();
+      for (const x of partRows || []) byPid.set(Number(x.pid), x.data);
+      const parts = [];
+      history = [];
+      for (const pid of order) {
+        if (!byPid.has(pid)) throw new Error(`덩어리 ${pid} 가 없어요`);
+        const segs = await decodePart(byPid.get(pid));
+        parts.push({ pid, n: segs.length });
+        for (const s of segs) history.push(s);
+      }
+      if (history.length !== +m[1]) throw new Error('조각 수가 저장된 수와 달라요');
+      return { history, names: JSON.parse(row.names || '{}'), meta: JSON.parse(row.meta || '{}'), parts, pids: [...byPid.keys()], head: h, namesRaw: row.names };
+    }
     if (h.startsWith('z2:')) { zbuf = Buffer.from(h.slice(3), 'base64'); zfmt = 'z2'; history = decodeSegs(new Uint8Array(await inflateP(zbuf))); if (!history) throw new Error('D2 형식이 아니에요'); }
     else if (h.startsWith('z1:')) { zbuf = Buffer.from(h.slice(3), 'base64'); zfmt = 'z1'; history = JSON.parse((await inflateP(zbuf)).toString('utf8')); }
     else history = JSON.parse(row.history);
-    return { history, names: JSON.parse(row.names || '{}'), meta: JSON.parse(row.meta || '{}'), zbuf, zfmt };
+    return { history, names: JSON.parse(row.names || '{}'), meta: JSON.parse(row.meta || '{}'), zbuf, zfmt, pids: (partRows || []).map((x) => Number(x.pid)), head: null, namesRaw: row.names };
   } catch (e) {
     console.error('저장된 데이터를 읽을 수 없어요 (이 방은 저장하지 않아요):', e.message);
     return { ...empty, failed: true, corrupt: true };
@@ -582,19 +624,109 @@ async function loadRoom(id, attempts = 3) {
 
 // 같은 방의 저장은 순서대로 한다 (먼저 시작한 오래된 내용이 나중의 새 내용을 덮어쓰지 않게)
 function enqueue(room, fn) { room.q = (room.q || Promise.resolve()).then(fn, fn); return room.q; }
-// force: 바로 저장 (마지막 사람이 나갈 때·종료 신호·전체 지우기 등). 아니면 큰 방은 saveGap 간격으로만.
+// 덩어리 하나 담기: 'z2:' + base64(zlib(D2)). 풀어서 원래와 하나하나 같을 때만 D2, 아니면 'z1:' (JSON 압축)
+async function encodePart(a) {
+  const enc = segEncoder(a.length);
+  if (enc.add(a)) {
+    const bin = enc.finish();
+    let same = false;
+    try { const back = decodeSegs(bin); same = !!back && back.length === a.length && a.every((s, i) => sameSeg(s, back[i])); } catch {}
+    if (same) return 'z2:' + (await deflateP(bin, { level: 6 })).toString('base64');
+    console.error('D2 로 담은 덩어리가 원래와 달라요: 이 덩어리는 예전 형식(JSON)으로 저장해요');
+  }
+  return 'z1:' + (await deflateP(JSON.stringify(a), { level: 6 })).toString('base64');
+}
+async function decodePart(d) {
+  if (typeof d !== 'string') throw new Error('덩어리 형식이 아니에요');
+  if (d.startsWith('z2:')) { const a = decodeSegs(new Uint8Array(await inflateP(Buffer.from(d.slice(3), 'base64')))); if (!a) throw new Error('D2 형식이 아니에요'); return a; }
+  if (d.startsWith('z1:')) { const a = JSON.parse((await inflateP(Buffer.from(d.slice(3), 'base64'))).toString('utf8')); if (!Array.isArray(a)) throw new Error('덩어리 형식이 아니에요'); return a; }
+  throw new Error('덩어리 형식이 아니에요');
+}
+// 덩어리 번호 순서를 짧게: 이어지는 번호는 '처음-끝' (보통 거의 순서대로라 그림이 커져도 몇 글자)
+function packPids(a) {
+  const out = [];
+  for (let i = 0; i < a.length;) { let j = i; while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++; out.push(j > i ? a[i] + '-' + a[j] : String(a[i])); i = j + 1; }
+  return out.join(',');
+}
+function unpackPids(t) {
+  const out = [];
+  for (const p of t ? t.split(',') : []) {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(p);
+    if (!m) throw new Error('덩어리 목록 형식이 아니에요');
+    const a = +m[1], b = m[2] === undefined ? a : +m[2];
+    if (b < a || b - a > 1e6) throw new Error('덩어리 목록 형식이 아니에요');
+    for (let k = a; k <= b; k++) out.push(k);
+  }
+  return out;
+}
+// 불러온 방이 DB 에 어떤 덩어리로 저장돼 있는지 기억한다 (다음 저장 때 바뀐 것만 쓰고, 안 쓰는 번호는 지운다)
+function adoptSaved(room, d) {
+  room.savedPids = new Set(d.pids || []);
+  room.nextPid = 1; for (const p of room.savedPids) if (p >= room.nextPid) room.nextPid = p + 1;
+  room.savedHead = d.head || null;
+  room.savedNames = typeof d.namesRaw === 'string' ? d.namesRaw : null;
+}
+// 덩어리 순서대로 그림 넣기 (저장된 덩어리 그대로 → 저장할 때 다시 보내지 않는다)
+function histSetParts(room, arr, parts) {
+  room.hb = [];
+  let i = 0;
+  for (const p of parts) { const b = blockOf(arr.slice(i, i + p.n)); b.pid = p.pid; b.saved = 0; room.hb.push(b); i += p.n; }
+  room.hn = arr.length;
+  histBump(room);
+}
+// force: 바로 저장 (마지막 사람이 나갈 때·종료 신호·전체 지우기 등). 아니면 SAVE_MS 간격으로.
+// 바뀐 덩어리(새로 생겼거나 그 자리에서 바뀐 것)만 DB 에 쓴다: 그림을 그리는 동안은 보통 마지막 덩어리 하나(수 KB).
+// (21차까지는 5초마다 그림 전체(수백 KB~수 MB)를 DB 로 보내서 Render 무료 전송량 5GB 를 이틀 만에 다 썼다)
+// 덩어리 쓰기·안 쓰는 덩어리 지우기·순서 목록 바꾸기는 한 트랜잭션: 중간에 실패하면 DB 는 앞의 저장 그대로다.
 function saveRoom(id, room, force) {
   if (!pool || !room.dirty || room.noSave) return Promise.resolve();
-  if (!force && Date.now() - (room.lastSave || 0) < saveGap(room)) return Promise.resolve();
+  if (!force && Date.now() - (room.lastSave || 0) < SAVE_MS) return Promise.resolve();
   return enqueue(room, async () => {
     if (!room.dirty || room.noSave) return;           // 앞선 저장이 이미 최신 내용을 저장했을 수 있다
     room.dirty = false; room.lastSave = Date.now();
     try {
-      const z = await makeSnap(room);                 // (이 시점의 그림. 그사이 바뀐 건 dirty 가 다시 켜져 다음에 저장된다)
-      await pool.query(
-        'INSERT INTO rooms (id, history, names, updated_at) VALUES ($1, $2, $3, now()) ON CONFLICT (id) DO UPDATE SET history = $2, names = $3, updated_at = now()',
-        [id, z.fmt + ':' + z.buf.toString('base64'), JSON.stringify(room.names)]
-      );
+      if (room.hb.length > 2 * Math.ceil(room.hn / BLOCK) + 8) histSet(room, histArr(room));   // 지우개로 잘게 쪼개진 덩어리는 가끔 다시 묶는다 (그때만 전체를 다시 쓴다)
+      if (!room.savedPids) adoptSaved(room, {});
+      // 이 시점의 그림을 붙잡는다 (그사이 바뀐 건 dirty 가 다시 켜져 다음에 저장된다)
+      const order = [], put = [], keep = new Set();
+      let n = 0;
+      for (const b of room.hb) {
+        n += b.a.length;
+        if (b.pid !== undefined && b.saved === b.rev) { order.push(b.pid); keep.add(b.pid); continue; }
+        const pid = b.pid !== undefined ? b.pid : room.nextPid++;
+        put.push({ b, pid, rev: b.rev, a: b.a.slice() });
+        order.push(pid); keep.add(pid);
+      }
+      const del = [...room.savedPids].filter((p) => !keep.has(p));
+      const head = 'p1:' + n + ':' + packPids(order), names = JSON.stringify(room.names);
+      if (!put.length && !del.length && head === room.savedHead && names === room.savedNames) return;
+      let mark = Date.now();
+      for (const p of put) {
+        p.data = await encodePart(p.a);
+        if (Date.now() - mark >= 8) { await new Promise((r) => setImmediate(r)); mark = Date.now(); }
+      }
+      const c = await pool.connect();
+      let bad = false;
+      try {
+        await c.query('BEGIN');
+        if (!room.savedHead) await c.query('DELETE FROM room_parts WHERE room_id = $1', [id]);   // 처음 덩어리로 저장하는 방: 혹시 남은 옛 덩어리는 지운다
+        for (let i = 0; i < put.length; i += 100) {
+          const ch = put.slice(i, i + 100), vals = [], args = [id];
+          ch.forEach((p, k) => { vals.push(`($1, $${2 + k * 2}, $${3 + k * 2})`); args.push(p.pid, p.data); });
+          await c.query(`INSERT INTO room_parts (room_id, pid, data) VALUES ${vals.join(', ')} ON CONFLICT (room_id, pid) DO UPDATE SET data = EXCLUDED.data`, args);
+        }
+        if (del.length) await c.query('DELETE FROM room_parts WHERE room_id = $1 AND pid = ANY($2::int[])', [id, del]);
+        if (head !== room.savedHead || names !== room.savedNames) {
+          await c.query(
+            'INSERT INTO rooms (id, history, names, updated_at) VALUES ($1, $2, $3, now()) ON CONFLICT (id) DO UPDATE SET history = $2, names = $3, updated_at = now()',
+            [id, head, names]);
+        }
+        await c.query('COMMIT');
+      } catch (e) { bad = true; try { await c.query('ROLLBACK'); } catch {} throw e; }
+      finally { c.release(bad || undefined); }
+      for (const p of put) { p.b.pid = p.pid; p.b.saved = p.rev; }
+      room.savedPids = keep; room.savedHead = head; room.savedNames = names;
+      dbOut += put.reduce((t, p) => t + p.data.length, 0) + head.length + names.length;
       setDbState('ok');
     } catch (e) {
       room.dirty = true;
@@ -656,6 +788,7 @@ async function recoverRoom(id, room) {
     const mem = histArr(room), h = cleanHistory(d.history);
     assignLegacySids(h);
     insertSegs(h, mem);
+    adoptSaved(room, d);
     histReplace(room, h);
     room.names = { ...(isPlainObj(d.names) ? d.names : {}), ...room.names };
     room.meta = normalizeMeta(d.meta);
@@ -685,7 +818,7 @@ async function runSaveAll(force) {
       purgeMeta(room);
       if (room.loadFailed) await recoverRoom(id, room);
       await saveRoom(id, room, force || room.clients.size === 0);   // 아무도 없는 방은 기다릴 이유가 없다
-      await saveMeta(id, room);
+      if (force || room.clients.size === 0 || Date.now() - (room.metaAt || 0) >= META_GAP_MS) await saveMeta(id, room);   // (입장 기록만 바뀐 건 1분에 한 번)
       const clean = !pool || (!room.dirty && !room.metaDirty);       // DB 가 없으면 dirty 표시는 의미가 없다
       const keep = dbState === 'ok' ? ROOM_EMPTY_MS : NO_DB_KEEP_MS;  // 저장된 빈 방은 곧 내리고, 메모리가 유일한 사본일 땐 오래 둔다
       if (room.clients.size === 0 && Date.now() - room.lastActive >= keep && clean && !room.loadFailed) { rooms.delete(id); console.log(`방 ${id}: 비어서 메모리에서 내림${pool ? ' (DB 에 저장돼 있어요)' : ''}`); }
@@ -757,7 +890,9 @@ function getRoom(id) {
     r.ready = loadRoom(id).then((d) => {
       const h = cleanHistory(d.history);
       const legacy = assignLegacySids(h);
-      histSet(r, h);
+      adoptSaved(r, d);
+      if (d.parts && !legacy && h.length === d.history.length) histSetParts(r, h, d.parts);
+      else { histSet(r, h); if (d.parts) r.dirty = true; }        // (덩어리로 저장된 방인데 고친 게 있으면 새로 저장)
       if (legacy) r.dirty = true;
       else if (d.zbuf && Array.isArray(d.history) && h.length === d.history.length) r.zc = { ver: r.ver, fmt: d.zfmt, buf: d.zbuf };   // 저장돼 있던 압축본이 지금 그림과 똑같으면 그대로 보낸다
       r.names = isPlainObj(d.names) ? d.names : {};
@@ -784,13 +919,36 @@ function sendHistory(ws, room) {
   if (ws.readyState !== 1 || ws.hold) return;            // (이미 보내는 중이면 그게 최신 상태를 알려 준다)
   if (!ws.zOk || room.hn < Z_MIN || room.zFail) { send(ws, { type: 'history', data: histArr(room) }); return; }
   const z2 = ws.zOk === 2;                                           // z=2: 'D2' 도 풀 수 있는 화면 / z=1: 옛 화면 (JSON 압축만)
-  if (z2 && room.zc && room.zc.ver === room.ver) { ws.send(room.zc.buf); return; }
+  if (z2 && room.zc && room.zc.ver === room.ver) { ws.send(room.zc.buf, { compress: false }); return; }
   ws.hold = [];
-  (z2 ? makeSnap(room) : makeSnapJson(room)).then((z) => { if (ws.readyState === 1) ws.send(z.buf); }, (e) => {
+  (z2 ? makeSnap(room) : makeSnapJson(room)).then((z) => { if (ws.readyState === 1) ws.send(z.buf, { compress: false }); }, (e) => {
     console.error('그림 압축 실패:', e && e.message); room.zFail = true; ws.hold = null; try { ws.terminate(); } catch {}   // 다시 접속하면 JSON 으로 받는다
   }).then(() => { const q = ws.hold; ws.hold = null; if (q && ws.readyState === 1) for (const d of q) ws.send(d); });
 }
 const broadcastAll = (room, obj) => broadcast(room, null, obj);
+// 커서: 사람마다 마지막 위치만 모아 두었다가 CUR_FLUSH_MS 마다 한 메시지로 ({type:'curs', l:[주인, x, y, …]}, 자기 커서는 빼고)
+// (예전에는 움직일 때마다 다른 모든 사람에게 따로 보냈다: 사람 수의 제곱으로 늘어나는 전송량)
+function queueCur(room, o, x, y) {
+  (room.curs || (room.curs = new Map())).set(o, [x, y]);
+  if (!room.curT) room.curT = setTimeout(() => flushCurs(room), CUR_FLUSH_MS);
+}
+function flushCurs(room) {
+  room.curT = null;
+  const q = room.curs;
+  if (!q || !q.size) return;
+  room.curs = new Map();
+  const cache = new Map();
+  for (const c of room.clients) {
+    let data = cache.get(c.owner);
+    if (data === undefined) {
+      const l = [];
+      for (const [o, p] of q) if (o !== c.owner) l.push(o, p[0], p[1]);
+      data = l.length ? JSON.stringify({ type: 'curs', l }) : null;
+      cache.set(c.owner, data);
+    }
+    if (data) sendRaw(c, data);
+  }
+}
 // 접속자 수와 목록은 소켓 수가 아니라 주인 ID 기준 고유 인원이다 (탭을 여러 개 열어도 1명)
 function announce(room) {
   const owners = [...new Set([...room.clients].map((c) => c.owner))];
@@ -885,11 +1043,11 @@ function saveMeta(id, room) {
   if (!pool || room.noSave || !room.metaDirty) return Promise.resolve();
   return enqueue(room, async () => {
     if (room.noSave || !room.metaDirty) return;
-    room.metaDirty = false;
+    room.metaDirty = false; room.metaAt = Date.now();
     try {
       await pool.query(
         'INSERT INTO rooms (id, history, names, meta, updated_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT (id) DO UPDATE SET meta = $4, updated_at = now()',
-        [id, '[]', '{}', JSON.stringify(room.meta)]
+        [id, '[]', '{}', metaStr(room)]
       );
       setDbState('ok');
     } catch (e) {
@@ -899,6 +1057,7 @@ function saveMeta(id, room) {
     }
   });
 }
+function metaStr(room) { const s = JSON.stringify(room.meta); dbOut += s.length; return s; }
 function persistMeta(room) { room.metaDirty = true; saveMeta(room.id, room); }
 
 // 부방장: 방장이 없을 때도 분탕을 막을 수 있게 강퇴·밴·채팅 금지·관전·그림 지우기·잠금을 맡긴다 (방장 위임·전체 지우기·부방장 지정은 방장만)
@@ -1149,8 +1308,7 @@ function handleCmd(ws, room, roomId, msg) {
     saveRoom(roomId, room, true);
     sysChat(room, '방장이 모든 그림을 지웠습니다');
   } else if (cmd === 'clearuser') {
-    const kept = histArr(room).filter((s) => s.o !== target);
-    if (kept.length !== room.hn) { histReplace(room, kept); broadcastAll(room, { type: 'clear', o: target }); saveRoom(roomId, room, true); }
+    if (histFilter(room, (s) => s.o !== target)) { broadcastAll(room, { type: 'clear', o: target }); saveRoom(roomId, room, true); }
     sysChat(room, `${nm}님의 그림이 모두 지워졌습니다`);
   } else {
     cmdErr(ws, '알 수 없는 명령이에요');
@@ -1284,10 +1442,24 @@ function globalAllow(ws) {
 
 // ---- 웹 서버 ----
 // 어느 파일이 올라갔는지 바로 확인하는 용도 (화면의 설정 맨 아래에 '서버 버전'으로 보인다)
-app.get('/version', (req, res) => res.json({ stage: 3, date: '2026-10-12', db: dbState }));   // db: none(저장소 없음) | connecting | ok | error
+app.get('/version', (req, res) => res.json({ stage: 3, date: '2026-10-12', rev: 22, db: dbState, dbKB: Math.round(dbOut / 1024) }));   // db: none(저장소 없음) | connecting | ok | error
 app.get('/', (req, res, next) => {
   if (!req.query.room) return res.redirect('/?room=' + newRoomId() + '&new=1');   // 방 없이 오면 새 방 (new=1: 화면이 '이 방 링크를 보내 주세요' 안내를 띄운다)
   next();
+});
+// 화면(index.html, 약 210KB)은 미리 gzip 해 두고 보낸다 (약 4분의 1). 압축을 못 받는 브라우저는 아래 static 이 그대로 보낸다.
+const indexGz = (() => {
+  try {
+    const raw = require('fs').readFileSync(path.join(__dirname, 'public', 'index.html'));
+    return { gz: zlib.gzipSync(raw, { level: 9 }), etag: '"g' + crypto.createHash('sha1').update(raw).digest('base64url').slice(0, 20) + '"' };
+  } catch { return null; }
+})();
+app.get(['/', '/index.html'], (req, res, next) => {
+  if (!indexGz || !/\bgzip\b/.test(req.headers['accept-encoding'] || '')) return next();
+  res.setHeader('Cache-Control', 'no-cache'); res.setHeader('ETag', indexGz.etag); res.setHeader('Vary', 'Accept-Encoding');
+  if (req.headers['if-none-match'] === indexGz.etag) return res.status(304).end();
+  res.setHeader('Content-Type', 'text/html; charset=UTF-8'); res.setHeader('Content-Encoding', 'gzip');
+  res.end(indexGz.gz);
 });
 app.use(express.static(path.join(__dirname, 'public'), { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));   // 올릴 때마다 새 화면이 바로 보이게 (매번 변경 여부를 확인)
 
@@ -1346,7 +1518,7 @@ function onMessage(ws, room, roomId, owner, raw) {
       broadcast(room, ws, { type: 'seg', ...s });
     } else if (msg.type === 'clear') {
       // 내가 그린 선만 지운다 (다른 사람 그림은 그대로)
-      histReplace(room, histArr(room).filter((s) => s.o !== owner));
+      histFilter(room, (s) => s.o !== owner);
       broadcast(room, ws, { type: 'clear', o: owner });
       saveRoom(roomId, room, true);
     } else if (msg.type === 'erase') {
@@ -1426,8 +1598,9 @@ function onMessage(ws, room, roomId, owner, raw) {
       ws.lastCur = now;
       const x = r1(msg.x), y = r1(msg.y);
       if (!okNum(x) || !okNum(y)) return;
-      broadcast(room, ws, { type: 'cur', o: owner, x, y });
+      queueCur(room, owner, x, y);
     } else if (msg.type === 'curhide') {
+      if (room.curs) room.curs.delete(owner);
       broadcast(room, ws, { type: 'curhide', o: owner });
     } else if (msg.type === 'nick') {
       if (now - ws.lastNick < 300) return;
@@ -1456,6 +1629,7 @@ function onMessage(ws, room, roomId, owner, raw) {
 function onClose(ws, room, roomId, owner) {
   if (!ws.approved) return;
   room.clients.delete(ws);
+  if (room.curs) room.curs.delete(owner);                           // (모아 둔 커서가 나간 사람 커서를 다시 띄우지 않게)
   broadcastAll(room, { type: 'curhide', o: owner });
   announce(room);
   if (!hasOwner(room, owner)) {

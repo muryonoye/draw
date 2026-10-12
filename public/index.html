@@ -1183,9 +1183,10 @@ const hue = (o) => { let h = 0; for (const ch of String(o)) h = (h * 31 + ch.cha
 const colorOf = (o) => `hsl(${hue(o)} 65% 42%)`;
 const nameOf = (o) => names[o] || '알 수 없음';
 const cursors = new Map();                                   // 주인 ID -> { el, lbl, x, y, t }
-function layoutCursor(c) { const p = toScreen(c.x, c.y); c.el.style.transform = `translate(${p.x}px, ${p.y}px)`; }
+// glide: 서버가 0.1초마다 모아 보내는 커서는 그 사이를 부드럽게 옮긴다 (화면을 움직일 때는 바로)
+function layoutCursor(c, glide) { const p = toScreen(c.x, c.y); c.el.style.transition = glide ? 'transform 0.1s linear' : ''; c.el.style.transform = `translate(${p.x}px, ${p.y}px)`; }
 function layoutCursors() { for (const c of cursors.values()) layoutCursor(c); }
-function showCursor(o, x, y) {
+function showCursor(o, x, y, glide) {
   if (o === me || !S.showCursors) return;
   let c = cursors.get(o);
   if (!c) {
@@ -1195,8 +1196,9 @@ function showCursor(o, x, y) {
     el.append(dot, lbl); curLayer.appendChild(el);
     c = { el, lbl, x, y, t: 0 }; cursors.set(o, c);
   }
+  const fresh = !c.t;
   c.x = x; c.y = y; c.t = now(); c.lbl.textContent = nameOf(o);
-  layoutCursor(c);
+  layoutCursor(c, glide && !fresh);
 }
 function hideCursor(o) { const c = cursors.get(o); if (c) { c.el.remove(); cursors.delete(o); } }
 function refreshLabels() { for (const [o, c] of cursors) c.lbl.textContent = nameOf(o); }
@@ -2014,12 +2016,19 @@ for (const t of ['touchstart', 'touchend', 'touchcancel']) {
 }
 const evT = (e) => (e && e.timeStamp) || now();
 function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+// 내 커서 위치는 0.05초에 한 번만 보낸다. 그 사이 움직임은 마지막 위치만 잠시 뒤 보낸다 (멈춘 자리가 다른 사람 화면에 정확히 남게)
+let curPend = null, curTimer = 0;
 function sendCursor(w) {
   const t = now();
-  if (t - lastCurSent < 50) return;
-  lastCurSent = t;
+  if (t - lastCurSent < 50) {
+    curPend = w;
+    if (!curTimer) curTimer = setTimeout(() => { curTimer = 0; const p = curPend; curPend = null; if (p) sendCursor(p); }, 50 - (t - lastCurSent));
+    return;
+  }
+  curPend = null; lastCurSent = t;
   send({ type: 'cur', x: r1(w.x), y: r1(w.y) });
 }
+function hideMyCursor() { curPend = null; send({ type: 'curhide' }); }   // (기다리던 위치가 숨긴 뒤에 다시 띄우지 않게)
 function pinchState() {
   const [a, b] = touchRecs(), rd = Math.hypot(a.x - b.x, a.y - b.y);
   return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.max(rd, PINCH_MIN_D), rd, a: Math.atan2(b.y - a.y, b.x - a.x) };
@@ -2305,7 +2314,7 @@ board.addEventListener('pointermove', (e) => {
 });
 board.addEventListener('pointerleave', (e) => {
   if (e.pointerType !== 'touch') lastMouse = null;
-  if (e.pointerType === 'mouse') { hideTip(); ring.hidden = true; if (gmode !== 'drop') hideDropPrev(); send({ type: 'curhide' }); }
+  if (e.pointerType === 'mouse') { hideTip(); ring.hidden = true; if (gmode !== 'drop') hideDropPrev(); hideMyCursor(); }
 });
 function endPtr(e) {
   const rec = ptr.get(e.pointerId);
@@ -2325,7 +2334,7 @@ function endPtr(e) {
   }
   ptr.delete(e.pointerId);
   if (rec.type === 'pen') penActive = Math.max(0, penActive - 1);
-  if (rec.type === 'touch') send({ type: 'curhide' });
+  if (rec.type === 'touch') hideMyCursor();
   if (wasPan && solo && !multi && rec.type === 'touch' && e.type === 'pointerup' && Math.hypot(rec.x - rec.sx, rec.y - rec.sy) < TAP_MAX_PX && now() - rec.tn < TAP_MAX_MS) tapTip(rec.x, rec.y);
   if (wasTap && e.type === 'pointerup') doFill(rec);
   if (wasDrop) { if (e.type === 'pointerup') finishDrop(rec, rec.type !== 'mouse'); else hideDropPrev(); }
@@ -2900,6 +2909,7 @@ function handleMsg(m) {
       break;
     }
     case 'cur': showCursor(m.o, m.x, m.y); break;
+    case 'curs': if (Array.isArray(m.l)) for (let i = 0; i + 2 < m.l.length; i += 3) showCursor(m.l[i], m.l[i + 1], m.l[i + 2], true); break;   // 서버가 0.1초마다 모아 보낸 커서들
     case 'curhide': hideCursor(m.o); break;
     case 'notice':
       toast(m.text || '알림', 'warn');
@@ -2952,7 +2962,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-12 21차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-12 22차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
