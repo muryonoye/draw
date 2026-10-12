@@ -27,8 +27,14 @@
     --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
     --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px); --kb: 0px;
   }
+  /* 어두운 화면: 브라우저 기본 부품(목록 상자의 펼친 목록, 스크롤 막대, 체크 상자 등)도 어두운 모양으로 그려서 글씨가 묻히지 않게 */
+  :root { color-scheme: dark; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   [hidden] { display: none !important; }
+  select { color: var(--text); background-color: var(--bg); }
+  option, optgroup { color: var(--text); background-color: var(--panel); }
+  option:checked { color: #fff; background-color: #2f5f9e; }
+  ::placeholder { color: #7d8594; opacity: 1; }
   html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); color: var(--text);
     font: 14px/1.4 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
   body { height: 100dvh; display: flex; flex-direction: column; touch-action: pan-x pan-y;
@@ -232,9 +238,9 @@
   #dropPrev { position: absolute; left: 0; top: 0; z-index: 7; pointer-events: none; display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px;
     border-radius: 999px; background: rgba(23,25,30,.94); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; box-shadow: var(--shadow); white-space: nowrap; }
   #dropPrev i { display: block; width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55); }
-  @media (max-width: 720px) {                                  /* 폰 세로: 도구 12개가 한 줄에 다 들어가게 버튼 폭을 나눠 쓴다 */
+  @media (max-width: 720px) {                                  /* 폰 세로: 도구 12개가 한 줄에 다 들어가게 버튼 폭을 나눠 쓴다 (360px 폰까지) */
     #tools { max-height: none; padding-left: 4px; padding-right: 4px; gap: 0; }
-    .tool, .toolwrap { flex: 1 1 0; min-width: 30px; width: auto; }
+    .tool, .toolwrap { flex: 1 1 0; min-width: 28px; width: auto; }
     .toolwrap > .tool { width: auto; min-width: 0; }
     .toolsep { margin: 8px 1px; }
   }
@@ -252,6 +258,28 @@
   #hintBox .btn { flex: none; min-height: 36px; }
   #hintBox .xbtn { flex: none; width: 36px; height: 36px; border: 0; border-radius: var(--r); background: transparent; color: var(--muted); display: grid; place-items: center; }
   @media (max-width: 720px) { #hintBox { bottom: calc(68px + var(--safe-b)); font-size: 13px; } }   /* 폰: 아래 도구 모음 위에 */
+
+  /* ===== 19차: 입장 기록 · 부방장 · 자 ===== */
+  .tag.mod { background: rgba(90,162,255,.16); color: var(--accent); }
+  .tag.on { background: rgba(76,208,138,.16); color: var(--ok); }
+  .lrow { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  .lrow .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .lrow .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .lrow .nm b { font-weight: 600; }
+  .lrow small { display: block; color: var(--muted); font-size: 11px; line-height: 1.45; }
+  .lrow .tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; vertical-align: middle; }
+  .lhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .lhead .inp { flex: 1; min-height: 36px; font-size: 14px; }
+  .btn { white-space: nowrap; }
+  #side .tabs button.tabbtn { white-space: nowrap; padding: 0 4px; }
+  #modal .field label.chk { display: flex; align-items: flex-start; gap: 8px; color: var(--text); font-size: 13px; margin: 0; }
+  #modal .field label.chk input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--accent); }
+  #modal .field label.chk small { display: block; color: var(--muted); font-size: 11px; }
+  .tool.on { color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); border-radius: var(--r); }
+  .seg3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .seg3 .opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); text-align: center; font-size: 13px; }
+  .seg3 .opt.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+  .seg3 .opt small { color: var(--muted); font-size: 11px; }
 </style>
 </head>
 <body>
@@ -279,6 +307,9 @@
     <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></symbol>
     <symbol id="i-redo" viewBox="0 0 24 24"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></symbol>
     <symbol id="i-bucket" viewBox="0 0 24 24"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></symbol>
+    <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M3 15.5 15.5 3l5.5 5.5L8.5 21z"/><path d="m7.5 11 2 2M10.5 8l2 2M13.5 5l2 2M4.5 14l2 2"/></symbol>
+    <symbol id="i-ruler-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-ruler-radial" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 8V2M12 16v6M8 12H2M16 12h6M9.2 9.2 5 5M14.8 14.8 19 19M14.8 9.2 19 5M9.2 14.8 5 19"/></symbol>
     <symbol id="i-dropper" viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></symbol>
   </defs>
 </svg>
@@ -297,6 +328,7 @@
     <canvas id="grid"></canvas>
     <canvas id="c"></canvas>
     <canvas id="hl"></canvas>
+    <canvas id="rl"></canvas>
   </div>
   <div id="cursors"></div>
   <div id="tip" hidden><span class="dot"></span><b></b><i></i></div>
@@ -321,6 +353,10 @@
     <button id="tFill" class="tool" aria-label="채우기 (F)" title="채우기 (F)" aria-pressed="false"><svg class="ic"><use href="#i-bucket"/></svg></button>
     <button id="tDrop" class="tool" aria-label="스포이드 (I)" title="스포이드 (I)" aria-pressed="false"><svg class="ic"><use href="#i-dropper"/></svg></button>
     <button id="tHand" class="tool" aria-label="화면 이동 (H)" title="화면 이동 (H)" aria-pressed="false"><svg class="ic"><use href="#i-hand"/></svg></button>
+    <div class="toolwrap">
+      <button id="tRuler" class="tool" aria-label="자 켜기·끄기" title="자 (켜면 펜 선이 자를 따라가요)" aria-pressed="false"><svg class="ic"><use id="rulerUse" href="#i-ruler"/></svg><span class="sub" id="rulerSub">자</span></button>
+      <button id="tRulerMode" class="caret" aria-label="자 종류 선택" title="자 종류 선택" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-chevron"/></svg></button>
+    </div>
     <div class="toolsep"></div>
     <button id="tUndo" class="tool" aria-label="이전 (실행 취소, Ctrl+Z)" title="이전 (실행 취소, Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo"/></svg></button>
     <button id="tRedo" class="tool" aria-label="되돌리기 (다시 실행, Ctrl+Shift+Z)" title="되돌리기 (다시 실행, Ctrl+Shift+Z)" disabled><svg class="ic"><use href="#i-redo"/></svg></button>
@@ -357,6 +393,18 @@
   </div>
   <div class="hint" id="eraserHint"></div>
   <div id="eraseScopeRow"></div>
+</section>
+
+<section id="popRuler" class="pop" hidden aria-label="자">
+  <div class="sheetgrab"></div><h3>자 <span id="rulerState" class="hint" style="margin:0"></span></h3>
+  <div class="seg3">
+    <button class="opt" data-rk="line" type="button"><svg class="ic"><use href="#i-ruler"/></svg><b>직선자</b><small>곧은 선</small></button>
+    <button class="opt" data-rk="circle" type="button"><svg class="ic"><use href="#i-ruler-circle"/></svg><b>원형자</b><small>같은 중심의 원</small></button>
+    <button class="opt" data-rk="radial" type="button"><svg class="ic"><use href="#i-ruler-radial"/></svg><b>방사자</b><small>한 점으로 모이는 선</small></button>
+  </div>
+  <div class="hint" id="rulerHint"></div>
+  <div class="hint">자의 가운데 점을 끌면 옮겨지고, 둥근 끝점을 끌면 돌아가요 (Shift: 15°씩).</div>
+  <div class="row" style="margin-top:10px"><button id="rulerHere" class="btn" type="button" style="flex:1">화면 가운데로</button><button id="rulerOnOff" class="btn primary" type="button" style="flex:1">자 켜기</button></div>
 </section>
 
 <section id="popView" class="pop" hidden aria-label="보기">
@@ -409,7 +457,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 18차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 19차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -503,7 +551,7 @@ const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').mat
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -515,6 +563,7 @@ function loadSettings() {
   if (out.eraserMode !== 'part' && out.eraserMode !== 'stroke') out.eraserMode = 'part';
   out.smooth = clampInt(out.smooth, 0, 3);
   if (!['auto', 'zoom', 'pan'].includes(out.wheel)) out.wheel = 'auto';
+  if (!['line', 'circle', 'radial'].includes(out.rulerKind)) out.rulerKind = 'line';
   if (!/^#[0-9a-fA-F]{6}$/.test(out.color)) out.color = DEFAULTS.color;
   return out;
 }
@@ -872,7 +921,7 @@ function paintHighlight() {
   hctx.lineCap = 'round'; hctx.lineJoin = 'round'; hctx.strokeStyle = 'rgba(90,162,255,.5)';
   let hw = -1, hopen = false;                                // 같은 굵기는 한 path 로 모아 한 번에 칠한다 (겹친 칠하기 줄이 더 진하게 보이지 않게)
   for (const s of segs) {
-    if (s.o !== hl.o || s.sid !== hl.sid) continue;
+    if (s.o !== hl.o || (!hl.all && s.sid !== hl.sid)) continue;
     if (!hopen || s.size !== hw) { if (hopen) hctx.stroke(); hctx.beginPath(); hctx.lineWidth = s.size + 10 / scale; hw = s.size; hopen = true; }
     hctx.moveTo(s.x0, s.y0); hctx.lineTo(s.x1, s.y1);
   }
@@ -962,6 +1011,8 @@ function viewChanged(immediate) {
   applyInkTransform();
   if (!rafGrid) rafGrid = requestAnimationFrame(() => { rafGrid = 0; paintGrid(); });
   hudSoon(); layoutCursors();
+  if (ruler.on) rulerSoon();
+  if (hl && hl.all) paintHighlight();                           // ('그린 곳 보기' 강조는 화면을 옮겨도 따라간다)
   if (lastMouse && !ring.hidden) updateRing(lastMouse);        // 휠·키로 확대·축소하면 커서 원도 바로 같이
   clearTimeout(exactT);
   if (immediate) paintInkExact(); else exactT = setTimeout(paintInkExact, GESTURE_REPAINT_MS);
@@ -972,10 +1023,10 @@ function resize() {
   const first = !resize.done;
   const c = centerWorld();                                  // 회전·리사이즈 때 화면 중앙의 월드 좌표를 유지
   cssW = w; cssH = h; dpr = window.devicePixelRatio || 1;
-  for (const cv of [inkCv, gridCv, hlCv]) { cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr)); }
+  for (const cv of [inkCv, gridCv, hlCv, rlCv]) { cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr)); }
   if (first) { resize.done = true; cam.x = -w / 2; cam.y = -h / 2; }
   else { cam.x = c.x - w / 2 / scale; cam.y = c.y - h / 2 / scale; }
-  paintGrid(); paintInkExact(); paintHighlight(); hudSoon(); layoutCursors();
+  paintGrid(); paintInkExact(); paintHighlight(); paintRuler(); hudSoon(); layoutCursors();
 }
 function zoomAt(sx, sy, factor) {
   const u = unrot({ x: sx, y: sy }), wx = cam.x + u.x / scale, wy = cam.y + u.y / scale;
@@ -1016,10 +1067,13 @@ function flyView(ts, wx, wy) {                              // 배율 ts 로 바
 // 전체 그림 한눈에 보기: 모든 선이 도구 모음·상태 알약에 가리지 않고 화면에 들어오게 축소 (작은 그림은 100% 까지만)
 function fitAll() {
   if (!segs.length) { resetView(); toast('아직 그림이 없어요'); return; }
+  fitSegs(segs, 1);
+}
+function fitSegs(list, maxS) {                               // 이 선들이 모두 보이게 (배율은 maxS 까지만)
   // 범위는 화면 방향으로 잰다: 돌린 화면이면 월드 좌표를 같은 각도로 돌린 좌표(가로·세로가 화면과 같다)에서 잰다
   const C = rotC, Sn = rotS, vx = (x, y) => x * C - y * Sn, vy = (x, y) => x * Sn + y * C;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const s of segs) {
+  for (const s of list) {
     const h = s.size / 2, ax = vx(s.x0, s.y0), ay = vy(s.x0, s.y0), bx = vx(s.x1, s.y1), by = vy(s.x1, s.y1);
     x0 = Math.min(x0, ax - h, bx - h); x1 = Math.max(x1, ax + h, bx + h);
     y0 = Math.min(y0, ay - h, by - h); y1 = Math.max(y1, ay + h, by + h);
@@ -1029,7 +1083,7 @@ function fitAll() {
   const padT = hr.bottom - st.top + 10;
   if (tr.width < tr.height) padL = tr.right - st.left + 12; else padB = st.bottom - tr.top + 12;   // 도구 모음이 왼쪽 세로(데스크톱) / 아래 가로(폰)
   const aw = Math.max(40, cssW - padL - padR), ah = Math.max(40, cssH - padT - padB);
-  const ts = clamp(Math.min(aw / Math.max(x1 - x0, 1e-6), ah / Math.max(y1 - y0, 1e-6)), MIN_S, 1);
+  const ts = clamp(Math.min(aw / Math.max(x1 - x0, 1e-6), ah / Math.max(y1 - y0, 1e-6)), MIN_S, maxS);
   const cx = (x0 + x1) / 2 - (padL - padR) / 2 / ts, cy = (y0 + y1) / 2 - (padT - padB) / 2 / ts;   // 여백을 뺀 영역의 가운데에 그림 가운데가 오게
   flyView(ts, cx * C + cy * Sn, -cx * Sn + cy * C);         // (돌린 좌표 → 월드)
 }
@@ -1114,12 +1168,12 @@ function showTip(s, px, py) {
   tip.hidden = false;
   const tw = tip.offsetWidth || 120, th = tip.offsetHeight || 30;
   tip.style.transform = `translate(${clamp(px + 14, 4, Math.max(4, cssW - tw - 4))}px, ${clamp(py + 14, 4, Math.max(4, cssH - th - 4))}px)`;
-  if (!hl || hl.o !== s.o || hl.sid !== s.sid) { hl = { o: s.o, sid: s.sid }; paintHighlight(); }
+  if (!hl || hl.all || hl.o !== s.o || hl.sid !== s.sid) { hl = { o: s.o, sid: s.sid }; paintHighlight(); }
 }
 function hideTip() {
   if (tipTimer) { clearTimeout(tipTimer); tipTimer = 0; }
   if (!tip.hidden) tip.hidden = true;
-  if (hl) { hl = null; paintHighlight(); }
+  if (hl && !hl.all) { hl = null; paintHighlight(); }
 }
 function hoverTip(p) {
   const t = now();
@@ -1166,6 +1220,13 @@ function formModal({ title, body, ok = '확인', cancel = '취소', danger = fal
     const ctl = {};
     for (const f of fields) {
       const wrap = document.createElement('div'); wrap.className = 'field';
+      if (f.type === 'check') {                               // 체크 상자: 값은 true / false
+        const lab = document.createElement('label'); lab.className = 'chk';
+        const inp = document.createElement('input'); inp.type = 'checkbox'; inp.id = 'mf_' + f.key; inp.checked = !!f.value;
+        const tx = document.createElement('span'); tx.textContent = f.label;
+        if (f.hint) { const sm = document.createElement('small'); sm.textContent = f.hint; tx.appendChild(sm); }
+        lab.append(inp, tx); wrap.appendChild(lab); box.appendChild(wrap); ctl[f.key] = { f, inp, wrap }; continue;
+      }
       const lab = document.createElement('label'); lab.htmlFor = 'mf_' + f.key; lab.textContent = f.label;
       let inp;
       if (f.type === 'select') { inp = document.createElement('select'); for (const [v, tx] of f.options) { const op = document.createElement('option'); op.value = v; op.textContent = tx; inp.appendChild(op); } }
@@ -1173,7 +1234,7 @@ function formModal({ title, body, ok = '확인', cancel = '취소', danger = fal
       inp.id = 'mf_' + f.key; inp.className = 'inp'; if (f.value !== undefined) inp.value = f.value;
       wrap.append(lab, inp); box.appendChild(wrap); ctl[f.key] = { f, inp, wrap };
     }
-    const values = () => { const v = {}; for (const k in ctl) { let s = ctl[k].inp.value; if (ctl[k].f.maxChars) s = Array.from(s).slice(0, ctl[k].f.maxChars).join(''); v[k] = s; } return v; };
+    const values = () => { const v = {}; for (const k in ctl) { if (ctl[k].f.type === 'check') { v[k] = ctl[k].inp.checked; continue; } let s = ctl[k].inp.value; if (ctl[k].f.maxChars) s = Array.from(s).slice(0, ctl[k].f.maxChars).join(''); v[k] = s; } return v; };
     const refresh = () => { const v = values(); for (const k in ctl) if (ctl[k].f.showIf) ctl[k].wrap.hidden = !ctl[k].f.showIf(v); };
     box.oninput = box.onchange = refresh; refresh();
     modalCtl = { values, validate };
@@ -1370,6 +1431,13 @@ let roomMax = 100000, capWarned = false;
 const FULL_MSG = '그림이 가득 찼어요. 안 쓰는 그림을 지우거나 새 방을 만들어 주세요';
 const fmtN = (n) => (n >= 10000 ? Math.round(n / 1000) / 10 + '만' : String(n));
 const capPct = () => Math.min(100, Math.round(segs.length / roomMax * 100));
+function shareCapped() {                                    // 방장·부방장이 아니면 한 사람이 방 용량의 roomShare 까지만 (서버와 같은 규칙. 미리 막아서 안 저장될 선을 긋지 않게)
+  if (!roomShare || isStaff()) return false;
+  const cap = Math.floor(roomMax * roomShare);
+  if (segs.length < cap) return false;
+  let n = 0; for (const s of segs) if (s.o === me) n++;
+  return n >= cap;
+}
 const capText = () => `그림 용량 ${capPct()}% (${fmtN(segs.length)} / ${fmtN(roomMax)} 조각)`;
 function checkCap() {
   if (capWarned || segs.length < roomMax * 0.9) return;
@@ -1721,7 +1789,127 @@ function setPersist(v) {
 $('hudPersist').onclick = () => confirmModal({ title: '그림이 저장되지 않고 있어요',
   body: '서버에 저장소(DB)가 연결돼 있지 않거나 지금 연결이 안 돼요.\n모두 나가거나 서버가 재시작·절전되면 그림이 사라질 수 있어요.\n서버 관리자는 Render 의 환경변수 DATABASE_URL 을 설정해 주세요.', ok: '확인', cancel: '닫기' });
 
-/* ===== 입력: 상태 머신 (none / pan / pinch / pending / draw / tap / drop) ===== */
+/* ===== 자 (19차): 켜면 펜 선이 자를 따라간다. 직선자(곧은 선) · 원형자(같은 중심의 원) · 방사자(한 점으로 모이는 선, 집중선) =====
+   자 가까이(RULER_SNAP_PX)에서 긋기 시작하면 자 위에, 멀리서 시작하면 직선자는 자와 나란히, 원형자는 같은 중심의 다른 원으로 그려진다.
+   자는 그림(월드)에 붙어 있어 화면을 옮기거나 확대하면 같이 움직인다. 내 화면에만 보이고, 방마다 이 기기에 기억한다. */
+const RULER_SNAP_PX = 24, RULER_HANDLE_PX = 72, RULER_HIT_MOUSE = 14, RULER_HIT_TOUCH = 24;
+const RULER_ROT_STEP = Math.PI / 12, RULER_ANG_SNAP = 2 * Math.PI / 180;   // Shift: 15°씩 / 가로·세로·45° 근처(±2°)는 붙는다
+const RULER_COLOR = '#1f8fff', RULER_KEY = 'draw:ruler:' + room;
+const RULER_INFO = {
+  line: ['직선자', '#i-ruler', '직선', '자 가까이에서 그으면 자 위에, 멀리서 그으면 자와 나란히 곧게 그려져요.'],
+  circle: ['원형자', '#i-ruler-circle', '원', '자의 가운데 점을 중심으로 하는 원을 따라 그려져요. 자의 원 가까이에서 그으면 그 원 위에.'],
+  radial: ['방사자', '#i-ruler-radial', '방사', '어디서 그어도 자의 가운데 점을 향하는 곧은 선이 돼요 (집중선).'],
+};
+const rlCv = $('rl'), rctx = rlCv.getContext('2d');
+const ruler = (() => {
+  try {
+    const j = JSON.parse(lsGet(RULER_KEY) || 'null');
+    if (j && [j.x, j.y, j.a, j.r].every(Number.isFinite) && Math.abs(j.x) <= MAX_COORD && Math.abs(j.y) <= MAX_COORD && j.r > 0) return { on: j.on === true, x: j.x, y: j.y, a: j.a, r: j.r, placed: true };
+  } catch {}
+  return { on: false, x: 0, y: 0, a: 0, r: 150, placed: false };
+})();
+let rulerDrag = null, rulerHover = false, rafRuler = 0;
+const saveRuler = () => lsSet(RULER_KEY, JSON.stringify({ on: ruler.on, x: ruler.x, y: ruler.y, a: ruler.a, r: ruler.r }));
+const rulerSoon = () => { if (!rafRuler) rafRuler = requestAnimationFrame(paintRuler); };
+function rulerScreen() {                                       // 자의 화면 위치: 가운데 c, 방향 (ux, uy), 손잡이들 (move: 옮기기, rot: 돌리기, rad: 원 크기)
+  const c = toScreen(ruler.x, ruler.y), sa = ruler.a + rot, ux = Math.cos(sa), uy = Math.sin(sa);
+  const hs = [{ k: 'move', x: c.x, y: c.y }];
+  if (S.rulerKind === 'line') hs.push({ k: 'rot', x: c.x + ux * RULER_HANDLE_PX, y: c.y + uy * RULER_HANDLE_PX, s: 0 }, { k: 'rot', x: c.x - ux * RULER_HANDLE_PX, y: c.y - uy * RULER_HANDLE_PX, s: Math.PI });
+  else if (S.rulerKind === 'circle') { const R = Math.max(ruler.r * scale, 40); hs.push({ k: 'rad', x: c.x + ux * R, y: c.y + uy * R, s: 0 }); }
+  return { c, ux, uy, hs };
+}
+function paintRuler() {
+  rafRuler = 0;
+  rctx.setTransform(1, 0, 0, 1, 0, 0); rctx.clearRect(0, 0, rlCv.width, rlCv.height);
+  if (!ruler.on) return;
+  rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const { c, ux, uy, hs } = rulerScreen(), far = Math.hypot(cssW, cssH) + Math.hypot(c.x - cssW / 2, c.y - cssH / 2);
+  const twice = (path) => { rctx.lineCap = 'round'; rctx.strokeStyle = 'rgba(255,255,255,.9)'; rctx.lineWidth = 4; path(); rctx.stroke(); rctx.strokeStyle = RULER_COLOR; rctx.lineWidth = 1.5; path(); rctx.stroke(); };   // 흰 테두리 + 파란 선: 어떤 그림 위에서도 보이게
+  if (S.rulerKind === 'line') twice(() => { rctx.beginPath(); rctx.moveTo(c.x - ux * far, c.y - uy * far); rctx.lineTo(c.x + ux * far, c.y + uy * far); });
+  else if (S.rulerKind === 'circle') { const R = ruler.r * scale; if (R < far * 4) twice(() => { rctx.beginPath(); rctx.arc(c.x, c.y, Math.max(R, 0.5), 0, Math.PI * 2); }); }
+  else {
+    rctx.save(); rctx.globalAlpha = 0.45;
+    twice(() => { rctx.beginPath(); for (let i = 0; i < 24; i++) { const t = ruler.a + rot + i * Math.PI / 12, dx = Math.cos(t), dy = Math.sin(t); rctx.moveTo(c.x + dx * 16, c.y + dy * 16); rctx.lineTo(c.x + dx * far, c.y + dy * far); } });
+    rctx.restore();
+  }
+  for (const h of hs) {
+    const mv = h.k === 'move';
+    rctx.beginPath(); rctx.arc(h.x, h.y, mv ? 9 : 7, 0, Math.PI * 2);
+    rctx.fillStyle = mv ? '#fff' : RULER_COLOR; rctx.fill(); rctx.lineWidth = 2; rctx.strokeStyle = mv ? RULER_COLOR : '#fff'; rctx.stroke();
+    if (mv) { rctx.beginPath(); rctx.arc(h.x, h.y, 2.5, 0, Math.PI * 2); rctx.fillStyle = RULER_COLOR; rctx.fill(); }
+  }
+}
+function rulerHit(p, touch) {                                  // 화면 p 에서 가장 가까운 자 손잡이 (없으면 null)
+  if (!ruler.on) return null;
+  let best = null, bd = touch ? RULER_HIT_TOUCH : RULER_HIT_MOUSE;
+  for (const h of rulerScreen().hs) { const d = Math.hypot(p.x - h.x, p.y - h.y); if (d <= bd) { bd = d; best = h; } }
+  return best;
+}
+function rulerDragStart(h, p) { const c = toScreen(ruler.x, ruler.y); rulerDrag = { k: h.k, s: h.s || 0, dx: p.x - c.x, dy: p.y - c.y }; }
+function rulerDragTo(p, shift) {
+  const d = rulerDrag;
+  if (!d) return;
+  if (d.k === 'move') { const w = toWorld({ x: p.x - d.dx, y: p.y - d.dy }); ruler.x = clamp(w.x, -MAX_COORD, MAX_COORD); ruler.y = clamp(w.y, -MAX_COORD, MAX_COORD); }
+  else {
+    const c = toScreen(ruler.x, ruler.y), dist = Math.hypot(p.x - c.x, p.y - c.y);
+    if (dist < 4) return;
+    let a = Math.atan2(p.y - c.y, p.x - c.x) - rot - d.s;       // 월드 기준 방향 (화면을 돌려도 자는 그림에 붙어 있다)
+    if (shift) a = Math.round(a / RULER_ROT_STEP) * RULER_ROT_STEP;
+    else { const q = Math.round(a / (Math.PI / 4)) * (Math.PI / 4); if (Math.abs(a - q) < RULER_ANG_SNAP) a = q; }
+    ruler.a = Math.atan2(Math.sin(a), Math.cos(a));
+    if (d.k === 'rad') ruler.r = Math.max(dist, 1) / scale;
+  }
+  paintRuler();
+}
+function placeRuler() {                                        // 화면 가운데에, 화면에서 가로로 (원형자 원은 화면 짧은 쪽의 1/4 반지름)
+  const c = centerWorld();
+  ruler.x = c.x; ruler.y = c.y; ruler.a = -rot; ruler.r = Math.min(cssW, cssH) / 4 / scale; ruler.placed = true;
+}
+const rulerOnScreen = () => { const c = toScreen(ruler.x, ruler.y); return c.x >= 0 && c.y >= 0 && c.x <= cssW && c.y <= cssH; };
+function setRuler(on) {
+  ruler.on = on;
+  if (on && (!ruler.placed || !rulerOnScreen())) placeRuler();   // 처음이거나 화면 밖에 있으면 화면 가운데로
+  saveRuler(); syncRulerUI(); paintRuler();
+}
+function syncRulerUI() {
+  const [nm, ic, short, hint] = RULER_INFO[S.rulerKind];
+  $('tRuler').classList.toggle('on', ruler.on); $('tRuler').setAttribute('aria-pressed', String(ruler.on));
+  $('rulerUse').setAttribute('href', ic); $('rulerSub').textContent = short;
+  $('tRuler').title = $('tRuler').ariaLabel = nm + (ruler.on ? ' 켜짐 (누르면 끄기)' : ' (누르면 켜기)');
+  for (const b of document.querySelectorAll('#popRuler .opt')) b.classList.toggle('on', b.dataset.rk === S.rulerKind);
+  $('rulerHint').textContent = hint; $('rulerState').textContent = ruler.on ? '켜짐' : '꺼짐';
+  $('rulerOnOff').textContent = ruler.on ? '자 끄기' : '자 켜기';
+}
+$('tRuler').onclick = () => { setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐: 펜 선이 자를 따라가요' : '자 꺼짐'); };
+$('tRulerMode').onclick = () => { syncRulerUI(); openPop('popRuler', $('tRulerMode')); };
+for (const b of document.querySelectorAll('#popRuler .opt')) b.onclick = () => {
+  S.rulerKind = b.dataset.rk; saveSettings();
+  if (!ruler.on) setRuler(true); else { syncRulerUI(); paintRuler(); }
+  closePop(); toast(RULER_INFO[S.rulerKind][0] + ': ' + RULER_INFO[S.rulerKind][3]);
+};
+$('rulerHere').onclick = () => { placeRuler(); ruler.on = true; saveRuler(); syncRulerUI(); paintRuler(); closePop(); };
+$('rulerOnOff').onclick = () => { setRuler(!ruler.on); closePop(); };
+// 이 점(월드)에서 시작하는 획이 따라갈 선·원. 직선: 지나는 점 (ox, oy) + 방향 (ux, uy) / 원: 중심 (cx, cy) + 반지름 R
+function rulerGuide(w) {
+  if (!ruler.on) return null;
+  const tol = RULER_SNAP_PX / scale;
+  if (S.rulerKind === 'line') {
+    const ux = Math.cos(ruler.a), uy = Math.sin(ruler.a), d = (w.x - ruler.x) * -uy + (w.y - ruler.y) * ux;   // d: 자에서 떨어진 거리
+    const off = Math.abs(d) <= tol ? 0 : d;
+    return { k: 'line', ox: ruler.x - uy * off, oy: ruler.y + ux * off, ux, uy };
+  }
+  const dx = w.x - ruler.x, dy = w.y - ruler.y, L = Math.hypot(dx, dy);
+  if (L < 1e-6) return null;                                   // (가운데 점에서 시작하면 방향을 알 수 없어 자 없이)
+  if (S.rulerKind === 'circle') return { k: 'circle', cx: ruler.x, cy: ruler.y, R: Math.abs(L - ruler.r) <= tol ? ruler.r : L };
+  return { k: 'line', ox: ruler.x, oy: ruler.y, ux: dx / L, uy: dy / L };
+}
+function guidePoint(g, p) {                                    // p 를 그 선·원 위의 가장 가까운 점으로
+  if (g.k === 'line') { const t = (p.x - g.ox) * g.ux + (p.y - g.oy) * g.uy; return { x: g.ox + g.ux * t, y: g.oy + g.uy * t }; }
+  const dx = p.x - g.cx, dy = p.y - g.cy, L = Math.hypot(dx, dy);
+  return L < 1e-9 ? null : { x: g.cx + dx / L * g.R, y: g.cy + dy / L * g.R };
+}
+
+/* ===== 입력: 상태 머신 (none / pan / pinch / pending / draw / tap / drop / rot / ruler) ===== */
 const ptr = new Map();                                       // pointerId -> { id, type, x, y, sx, sy, t0, tn }
 let gmode = 'none', strokeSt = null, pinchPrev = null, pinchView = null, pinchRot = null, penActive = 0, lastCurSent = 0, qSeq = 0;
 let rotDrag = null, lastMouse = null;                        // 회전 끌기 { a0, r0, moved } / 마우스·펜이 보드 위에 마지막으로 있던 곳 (키보드 확대 기준점)
@@ -1826,6 +2014,11 @@ function strokePoint(st, sx, sy, t, force, p) {                // 너무 가깝�
   if (st.tau) {                                                 // 손떨림 보정: 선 끝이 손(펜) 위치를 시간에 따라 부드럽게 따라간다. 끝낼 때(force)는 뗀 자리까지
     if (!force) { const a = 1 - Math.exp(-Math.max(0, t - st.et) / st.tau); st.ex += (sx - st.ex) * a; st.ey += (sy - st.ey) * a; st.et = t; sx = st.ex; sy = st.ey; }
   }
+  if (st.guide) {                                               // 자: 그 선·원 위로 옮긴다 (손떨림 보정한 뒤에)
+    const q = guidePoint(st.guide, toWorld({ x: sx, y: sy }));
+    if (!q) return;
+    const v = toScreen(q.x, q.y); sx = v.x; sy = v.y;
+  }
   const same = sx === st.lsx && sy === st.lsy;
   if (!force) {
     const d = Math.hypot(sx - st.lsx, sy - st.lsy);
@@ -1899,7 +2092,9 @@ function startStroke(rec) {
   const kind = tool === 'eraser' ? (S.eraserMode === 'stroke' ? 'estroke' : 'epart') : 'pen';
   const erase = kind !== 'pen';
   const w = toWorld(rec);
-  const st = strokeSt = { id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: S.color, size: S.penSize,
+  const guide = kind === 'pen' ? rulerGuide(w) : null;         // 자가 켜져 있으면 이 획이 따라갈 선·원
+  if (guide) { const q = guidePoint(guide, w); if (q) { w.x = q.x; w.y = q.y; } }
+  const st = strokeSt = { guide, id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: S.color, size: S.penSize,
     r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, skip: [], sx: rec.x, sy: rec.y, moved: 0, born: now(), confirmedAt: 0, timer: 0, act: null,
     press: kind === 'pen' && rec.type === 'pen' && S.pressure, pp: clamp(rec.p || 0.5, 0, 1),   // 필압은 펜(애플펜슬·태블릿 펜)일 때만
     tau: kind === 'pen' ? SMOOTH_MS[S.smooth] || 0 : 0, ex: rec.x, ey: rec.y, et: rec.t0 };     // 손떨림 보정은 펜 도구일 때
@@ -1916,6 +2111,7 @@ function startStroke(rec) {
   }
 }
 function enterPinch() {                                        // 손가락이 2개 이상: 그리기 중단, 핀치 줌 + 두 손가락 이동
+  if (rulerDrag) { rulerDrag = null; saveRuler(); }
   const st = strokeSt;
   if (st) {
     // 획을 시작한 지 얼마 안 돼 두 번째 손가락이 닿았다 = 확대·이동하려던 것 (손가락이 조금 먼저 닿아 그어진 선). 움직인 거리와 상관없이 방금 획을 없던 일로.
@@ -1960,14 +2156,19 @@ board.addEventListener('pointerdown', (e) => {
   if (rec.type === 'touch' && touchRecs().length >= 2) { enterPinch(); return; }
   if (ptr.size > 1) return;                                    // 서로 다른 종류 입력이 겹치면 첫 입력만
   if (heldTool) heldTool.used = true;                          // 도구 키를 누른 채 썼으면 키를 뗄 때 원래 도구로
+  if (ruler.on && !spaceDown && e.button !== 1 && e.button !== 2) {   // 자의 손잡이를 잡으면 (어느 도구든) 자를 옮기거나 돌린다
+    const h = rulerHit(p, rec.type !== 'mouse');
+    if (h) { gmode = 'ruler'; rulerDragStart(h, p); hideTip(); return; }
+  }
   if (e.button !== 1 && e.button !== 2 && rotWanted(e.shiftKey)) { gmode = 'rot'; rotDrag = { a0: rotAngle(p), r0: rot, moved: false, p, tmp: tool !== 'rotate' }; return; }
   const panWanted = e.button === 1 || tool === 'hand' || spaceDown || (rec.type === 'touch' && S.penOnly);
   if (panWanted) { gmode = 'pan'; return; }
   if (rec.type === 'mouse' && e.button !== 0) return;
   if (tool === 'drop') { gmode = 'drop'; showDropPrev(rec, rec.type !== 'mouse'); return; }   // 스포이드: 누른 채 색 미리보기, 떼면 선택 (연결 전에도 쓸 수 있다)
   if (!me) { toast('연결 중이에요. 잠시 후 다시 그려 주세요', 'warn'); return; }
-  if (myRestr.spectator) { toast('방장이 그리기를 제한했어요 (보기만 가능)', 'warn'); return; }
-  if (tool === 'fill') { gmode = 'tap'; return; }              // 채우기: 가만히 떼면 채우고, 끌면 화면 이동
+  if (myRestr.spectator) { toast(myRestr.wait ? '방장·부방장이 허락하면 그릴 수 있어요 (지금은 보기만)' : '방장이 그리기를 제한했어요 (보기만 가능)', 'warn'); return; }
+  if (tool === 'fill') { gmode = 'tap'; return; }
+  if (tool === 'pen' && shareCapped()) { toast(`한 사람은 이 방 그림 용량의 ${Math.round(roomShare * 100)}%까지만 쓸 수 있어요. 내 그림을 조금 지우고 그려 주세요`, 'warn'); return; }              // 채우기: 가만히 떼면 채우고, 끌면 화면 이동
   if (tool === 'pen' && segs.length >= roomMax) { toast(FULL_MSG, 'warn'); return; }   // 가득 찬 방: 그어도 저장되지 않으니 미리 막는다 (지우개는 된다)
   startStroke(rec);
 });
@@ -1976,7 +2177,8 @@ board.addEventListener('pointermove', (e) => {
   sendCursor(toWorld(p));
   if (e.pointerType !== 'touch') {
     lastMouse = p;
-    updateRing(p);
+    if ((gmode === 'none' || gmode === 'ruler') && (rulerDrag || rulerHit(p, false))) { ring.hidden = true; board.style.cursor = 'move'; rulerHover = true; }   // 자 손잡이 위
+    else { if (rulerHover) { rulerHover = false; syncCursor(); } updateRing(p); }
     if (gmode === 'none' && (tool === 'hand' || spaceDown || (tool === 'pen' && S.penHover))) hoverTip(p); else hideTip();
     if (gmode === 'none' && tool === 'drop' && !spaceDown) showDropPrev(p, false);       // 마우스는 올려만 둬도 색이 보인다
   }
@@ -1990,6 +2192,7 @@ board.addEventListener('pointermove', (e) => {
     if (!rotDrag.moved && Math.hypot(p.x - rec.sx, p.y - rec.sy) > TAP_MAX_PX) rotDrag.moved = true;
     rotDrag.p = p; rotDragTo(e.shiftKey);
   }
+  else if (gmode === 'ruler') rulerDragTo(p, e.shiftKey);
   else if (gmode === 'drop') showDropPrev(rec, rec.type !== 'mouse');
   else if (gmode === 'pinch') doPinch();
   else if ((gmode === 'pending' || gmode === 'draw') && strokeSt && strokeSt.id === e.pointerId) {
@@ -2015,6 +2218,7 @@ function endPtr(e) {
     else if (rotDrag && rotDrag.moved) viewChanged(true);
     rotDrag = null;
   }
+  if (gmode === 'ruler' && rulerDrag) { rulerDrag = null; saveRuler(); }
   const st = strokeSt, wasPan = gmode === 'pan', solo = ptr.size === 1;
   const wasTap = gmode === 'tap' && solo, wasDrop = gmode === 'drop' && solo, multi = !!(tapG && tapG.max >= 2);
   if (st && st.id === e.pointerId) {
@@ -2136,9 +2340,15 @@ window.addEventListener('blur', () => {                        // 다른 창으�
 
 /* ===== 방장 / 사람 / 채팅 / 방 관리 (2단계) ===== */
 let ownerId = null, locked = false, admin = null, adminAt = 0, byeInfo = null;
-let myRestr = { muted: null, spectator: false };
+let myRestr = { muted: null, spectator: false, wait: false };
 let chatMsgs = [], unread = 0, sideTab = 'people';
+let mods = new Set(), gateOn = false, roomShare = 0;          // 부방장들 / '새로 온 사람은 보기만' / 한 사람이 쓸 수 있는 용량 비율
 const isOwner = () => !!me && !!ownerId && me === ownerId;
+const isMod = () => !!me && mods.has(me);
+const isStaff = () => isOwner() || isMod();                   // 방장·부방장: 방 관리·입장 기록을 보고 강퇴·밴 등을 할 수 있다
+const canTarget = (o) => !!o && o !== me && o !== ownerId && (isOwner() || !mods.has(o));   // 부방장은 방장·다른 부방장에게 못 쓴다
+const logEntry = (o) => (admin && Array.isArray(admin.log) ? admin.log.find((e) => e.o === o) : null);
+const whoName = (o) => names[o] || (logEntry(o) || {}).name || '알 수 없음';
 const eraseScope = () => (isOwner() && S.eraseAll ? null : me);   // 지우개 범위: 방장이 켜면 모든 사람, 아니면 내 것만
 const fmtTime = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 function fmtRemain(ms) {
@@ -2158,14 +2368,16 @@ const sendCmd = (c) => send({ type: 'cmd', ...c });
 /* --- 패널 열고 닫기 / 탭 --- */
 const sideOpen = () => !$('side').hidden;
 function showTab(t) {
-  if (t === 'admin' && !isOwner()) t = 'people';
+  if ((t === 'admin' || t === 'log') && !isStaff()) t = 'people';
   sideTab = t;
-  const tabs = { people: $('tabPeople'), chat: $('tabChat'), admin: $('tabAdmin') };
+  const tabs = { people: $('tabPeople'), chat: $('tabChat'), admin: $('tabAdmin'), log: $('tabLog') };
   for (const k in tabs) if (tabs[k]) { tabs[k].classList.toggle('on', k === t); tabs[k].setAttribute('aria-selected', String(k === t)); }
   $('paneP').hidden = t !== 'people'; $('paneC').hidden = t !== 'chat';
   if ($('paneA')) $('paneA').hidden = t !== 'admin';
+  if ($('paneL')) $('paneL').hidden = t !== 'log';
   if (t === 'chat') { unread = 0; updateChatBadge(); scrollChatBottom(); }
   if (t === 'admin') renderAdmin();
+  if (t === 'log') renderLog();
 }
 function openSide(t) {
   if (isNarrow()) { closePop(); $('scrim').hidden = false; }
@@ -2178,16 +2390,17 @@ $('tabPeople').onclick = () => showTab('people');
 $('tabChat').onclick = () => showTab('chat');
 $('sideClose').onclick = closeSide;
 
-/* --- 방장에게만 보이는 것: 방 관리 탭, 지우개 범위 (방장이 아니면 DOM 에 아예 만들지 않는다) --- */
+/* --- 방장·부방장에게만 보이는 것: 방 관리·입장 기록 탭 / 방장만: 지우개 범위 (아니면 DOM 에 아예 만들지 않는다) --- */
 function syncOwnerUI() {
-  const own = isOwner();
-  if (own && !$('tabAdmin')) {
-    const b = mk('button', 'tabbtn', '방 관리'); b.id = 'tabAdmin'; b.type = 'button'; b.setAttribute('role', 'tab'); b.onclick = () => showTab('admin');
-    $('sideClose').before(b);
-    const p = mk('div', 'pane'); p.id = 'paneA'; p.hidden = true; $('side').appendChild(p);
-  } else if (!own && $('tabAdmin')) {
-    $('tabAdmin').remove(); $('paneA').remove(); admin = null;
-    if (sideTab === 'admin') showTab('people');
+  const own = isOwner(), staff = isStaff();
+  if (staff && !$('tabAdmin')) {
+    const tab = (id, label, t) => { const b = mk('button', 'tabbtn', label); b.id = id; b.type = 'button'; b.setAttribute('role', 'tab'); b.onclick = () => showTab(t); return b; };
+    $('sideClose').before(tab('tabAdmin', '방 관리', 'admin'), tab('tabLog', '기록', 'log'));
+    for (const id of ['paneA', 'paneL']) { const p = mk('div', 'pane'); p.id = id; p.hidden = true; $('side').appendChild(p); }
+  } else if (!staff && $('tabAdmin')) {
+    for (const id of ['tabAdmin', 'paneA', 'tabLog', 'paneL']) $(id).remove();
+    admin = null;
+    if (sideTab === 'admin' || sideTab === 'log') showTab('people');
   }
   const row = $('eraseScopeRow'); row.textContent = '';
   if (own) {
@@ -2196,7 +2409,7 @@ function syncOwnerUI() {
     cb.onchange = () => { S.eraseAll = cb.checked; saveSettings(); syncEraserUI(); toast(eraserHint()); };
     lab.append(d, cb); row.appendChild(lab);
   }
-  renderPeople(); renderAdmin(); syncEraserUI(); updateRestrUi();
+  renderPeople(); renderAdmin(); renderLog(); syncEraserUI(); updateRestrUi();
 }
 function updateRestrUi() {
   $('chatInput').placeholder = myRestr.muted ? '채팅이 금지되었어요' : '메시지 보내기';
@@ -2209,35 +2422,45 @@ function renderPeople() {
   const list = [...online];
   list.sort((a, b) => (b === ownerId) - (a === ownerId) || (b === me) - (a === me) || nameOf(a).localeCompare(nameOf(b), 'ko'));
   $('peopleN').textContent = list.length ? String(list.length) : '';
-  const own = isOwner();
+  const staff = isStaff();
   for (const o of list) {
     const li = mk('li', 'prow'); li.dataset.o = o;
     const dot = mk('span', 'dot'); dot.style.background = colorOf(o);
     li.append(dot, mk('span', 'nm', nameOf(o)));
     if (o === ownerId) { const t = mk('span', 'tag own'); t.append(icon('i-crown'), document.createTextNode('방장')); li.appendChild(t); }
+    else if (mods.has(o)) li.appendChild(mk('span', 'tag mod', '부방장'));
     if (o === me) li.appendChild(mk('span', 'tag', '나'));
-    const muted = o === me ? !!myRestr.muted : !!(own && admin && admin.mutes.some((x) => x.o === o));   // 제한 배지는 방장과 당사자에게만 보인다
-    const spec = o === me ? myRestr.spectator : !!(own && admin && admin.spectators.some((x) => x.o === o));
+    const ent = staff ? logEntry(o) : null;
+    const muted = o === me ? !!myRestr.muted : !!(staff && admin && admin.mutes.some((x) => x.o === o));   // 제한 배지는 방장·부방장과 당사자에게만 보인다
+    const spec = o === me ? myRestr.spectator && !myRestr.wait : !!(staff && admin && admin.spectators.some((x) => x.o === o));
+    const wait = o === me ? !!myRestr.wait : !!(ent && ent.wait);
     if (muted) li.appendChild(mk('span', 'tag warn', '채팅 금지'));
     if (spec) li.appendChild(mk('span', 'tag warn', '관전'));
-    if (own && o !== me) {                                                                              // ⋯ 메뉴는 방장에게만 그린다
+    if (wait) li.appendChild(mk('span', 'tag warn', '허락 대기'));
+    if (staff && canTarget(o)) {                                                                        // ⋯ 메뉴는 방장·부방장에게만 그린다
       const b = mk('button', 'rowmenu'); b.type = 'button'; b.setAttribute('aria-label', nameOf(o) + ' 관리'); b.title = '관리';
       b.appendChild(icon('i-dots')); b.onclick = () => openRowMenu(o, b); li.appendChild(b);
     }
     box.appendChild(li);
   }
 }
-function openRowMenu(o, anchor) {
+const segCount = (o) => { let n = 0; for (const s of segs) if (s.o === o) n++; return n; };
+function openRowMenu(o, anchor) {                                 // 사람 목록·입장 기록의 ⋯ 메뉴 (지금 없는 사람도: 밴·채팅 금지·관전·그림 지우기)
   if (openPopId === 'popRow') closePop();
-  $('rowMenuTitle').textContent = nameOf(o);
+  $('rowMenuTitle').textContent = whoName(o);
   const body = $('rowMenuBody'); body.textContent = '';
-  const muted = !!(admin && admin.mutes.some((x) => x.o === o)), spec = !!(admin && admin.spectators.some((x) => x.o === o));
-  const items = [
-    ['강퇴…', () => doKick(o), true], ['밴…', () => doBan(o), true],
-    [muted ? '채팅 금지 해제' : '채팅 금지…', () => (muted ? sendCmd({ cmd: 'unmute', target: o }) : doMute(o)), false],
-    [spec ? '관전 해제 (그리기 허용)' : '관전으로 전환 (보기만 가능)', () => sendCmd({ cmd: 'spectate', target: o, on: !spec }), false],
-    ['방장 위임…', () => doTransfer(o), false], ['이 사람의 그림 모두 지우기…', () => doClearUser(o), true],
-  ];
+  const has = (k) => !!(admin && admin[k] && admin[k].some((x) => x.o === o));
+  const banned = has('bans'), muted = has('mutes'), spec = has('spectators'), ent = logEntry(o), wait = !!(ent && ent.wait), on = online.has(o), n = segCount(o);
+  const items = [];
+  if (n) items.push([`그린 곳 보기 (${fmtN(n)} 조각)`, () => showStrokesOf(o), false]);
+  if (on) items.push(['강퇴…', () => doKick(o), true]);
+  items.push(banned ? ['밴 해제', () => sendCmd({ cmd: 'unban', target: o }), false] : ['밴…', () => doBan(o), true]);
+  items.push([muted ? '채팅 금지 해제' : '채팅 금지…', () => (muted ? sendCmd({ cmd: 'unmute', target: o }) : doMute(o)), false]);
+  if (wait && !spec) items.push(['그리기 허락', () => sendCmd({ cmd: 'spectate', target: o, on: false }), false]);
+  else items.push([spec ? '관전 해제 (그리기 허용)' : '관전으로 전환 (보기만 가능)', () => sendCmd({ cmd: 'spectate', target: o, on: !spec }), false]);
+  if (isOwner() && !String(o).startsWith('g') && !banned) items.push([mods.has(o) ? '부방장 해제' : '부방장으로 지정…', () => doMod(o, !mods.has(o)), false]);
+  if (isOwner() && on) items.push(['방장 위임…', () => doTransfer(o), false]);
+  items.push(['이 사람의 그림 모두 지우기…', () => doClearUser(o), true]);
   for (const [label, fn, danger] of items) {
     const b = mk('button', danger ? 'danger' : '', label); b.type = 'button';
     b.onclick = () => { closePop(); fn(); }; body.appendChild(b);
@@ -2253,50 +2476,136 @@ function durFields(zeroLabel) {
 const minutesOf = (v) => (v.dur === 'custom' ? (/^\d+$/.test(v.custom.trim()) ? parseInt(v.custom, 10) : NaN) : Number(v.dur));
 const durCheck = (v) => { const m = minutesOf(v); return Number.isInteger(m) && (m === 0 || (m >= 1 && m <= 43200)) ? '' : '분은 1~43200 사이의 정수로 입력해 주세요'; };
 async function doKick(o) {
-  const v = await formModal({ title: `${nameOf(o)}님을 강퇴할까요?`, body: '강퇴되어도 바로 다시 들어올 수 있어요.', ok: '강퇴', danger: true, fields: [{ key: 'reason', type: 'text', label: '사유 (선택, 최대 50자)', maxChars: 50 }] });
+  const v = await formModal({ title: `${whoName(o)}님을 강퇴할까요?`, body: '강퇴되어도 바로 다시 들어올 수 있어요.', ok: '강퇴', danger: true, fields: [{ key: 'reason', type: 'text', label: '사유 (선택, 최대 50자)', maxChars: 50 }] });
   if (v) sendCmd({ cmd: 'kick', target: o, reason: v.reason.trim() });
 }
 async function doBan(o) {
-  const v = await formModal({ title: `${nameOf(o)}님을 밴할까요?`, body: '밴되면 이 방에 들어올 수 없어요. (브라우저 데이터를 지우면 우회될 수 있어요)', ok: '밴', danger: true,
-    fields: [...durFields('영구'), { key: 'reason', type: 'text', label: '사유 (선택, 최대 50자)', maxChars: 50 }], validate: durCheck });
-  if (v) sendCmd({ cmd: 'ban', target: o, minutes: minutesOf(v), reason: v.reason.trim() });
+  const v = await formModal({ title: `${whoName(o)}님을 밴할까요?`, body: online.has(o) ? '밴되면 이 방에 들어올 수 없어요.' : '지금 접속해 있지 않아도 밴할 수 있어요. 다음부터 들어올 수 없어요.', ok: '밴', danger: true,
+    fields: [...durFields('영구'),
+      { key: 'ip', type: 'check', label: '같은 인터넷(와이파이)에서 새로 오는 사람도 막기', hint: '브라우저를 바꾸거나 기록을 지우고 다시 오는 것을 막아요 (최대 7일). 전부터 이 방에 오던 사람은 막지 않아요.', value: true },
+      { key: 'reason', type: 'text', label: '사유 (선택, 최대 50자)', maxChars: 50 }], validate: durCheck });
+  if (v) sendCmd({ cmd: 'ban', target: o, minutes: minutesOf(v), reason: v.reason.trim(), ip: v.ip === true });
+}
+async function doMod(o, on) {
+  if (on && !(await confirmModal({ title: `${whoName(o)}님을 부방장으로 지정할까요?`, body: '부방장은 방장이 없을 때도 강퇴·밴·채팅 금지·관전·그림 지우기·방 잠금·새 사람 허락을 할 수 있어요.\n방장 위임·전체 지우기·부방장 지정은 방장만 할 수 있어요.', ok: '지정' }))) return;
+  sendCmd({ cmd: 'mod', target: o, on });
+}
+// 그린 곳 보기: 그 사람의 그림이 모두 보이게 화면을 옮기고 잠깐 파랗게 강조한다
+let hlAllT = 0;
+function showStrokesOf(o) {
+  const list = segs.filter((s) => s.o === o);
+  if (!list.length) { toast('이 사람의 그림이 없어요'); return; }
+  if (isNarrow()) closeSide();
+  fitSegs(list, 2);
+  hl = { o, all: true }; paintHighlight();
+  clearTimeout(hlAllT); hlAllT = setTimeout(() => { if (hl && hl.all) { hl = null; paintHighlight(); } }, 5000);
 }
 async function doMute(o) {
-  const v = await formModal({ title: `${nameOf(o)}님의 채팅을 금지할까요?`, body: '그림은 계속 그릴 수 있어요.', ok: '채팅 금지', fields: durFields('해제할 때까지'), validate: durCheck });
+  const v = await formModal({ title: `${whoName(o)}님의 채팅을 금지할까요?`, body: '그림은 계속 그릴 수 있어요.', ok: '채팅 금지', fields: durFields('해제할 때까지'), validate: durCheck });
   if (v) sendCmd({ cmd: 'mute', target: o, minutes: minutesOf(v) });
 }
 async function doTransfer(o) {
   if (await confirmModal({ title: `${nameOf(o)}님에게 방장을 넘길까요?`, body: '넘기면 나는 일반 사용자가 돼요.', ok: '방장 위임', danger: true })) sendCmd({ cmd: 'transfer', target: o });
 }
 async function doClearUser(o) {
-  if (await confirmModal({ title: `${nameOf(o)}님의 그림을 모두 지울까요?`, body: '되돌릴 수 없어요.', ok: '지우기', danger: true })) sendCmd({ cmd: 'clearuser', target: o });
+  if (await confirmModal({ title: `${whoName(o)}님의 그림을 모두 지울까요?`, body: '되돌릴 수 없어요.', ok: '지우기', danger: true })) sendCmd({ cmd: 'clearuser', target: o });
 }
 
 /* --- 방 관리 패널 (방장 전용) --- */
 function renderAdmin() {
   const pane = $('paneA'); if (!pane) return;
   pane.textContent = '';
-  const a = admin || { locked, bans: [], mutes: [], spectators: [] };
+  const a = admin || { locked, gate: gateOn, bans: [], mutes: [], spectators: [], mods: [], log: [] };
   const sec = (title) => { const s = mk('div', 'asec'); s.appendChild(mk('h4', '', title)); pane.appendChild(s); return s; };
-  const s1 = sec('접속'), lab = mk('label', 'switch'), d = mk('div', '', '방 잠금'); d.appendChild(mk('small', '', '켜면 새 접속을 막아요 (이미 있는 사람과 방장은 그대로)'));
-  const cb = mk('input'); cb.type = 'checkbox'; cb.id = 'adminLock'; cb.checked = !!locked; cb.setAttribute('aria-label', '방 잠금');
-  cb.onchange = () => sendCmd({ cmd: 'lock', on: cb.checked });
-  lab.append(d, cb); s1.appendChild(lab);
+  const sw = (box, id, title, sub, on, fn) => {
+    const lab = mk('label', 'switch'), d = mk('div', '', title); d.appendChild(mk('small', '', sub));
+    const cb = mk('input'); cb.type = 'checkbox'; cb.id = id; cb.checked = !!on; cb.setAttribute('aria-label', title);
+    cb.onchange = () => fn(cb.checked); lab.append(d, cb); box.appendChild(lab);
+  };
+  const s1 = sec('접속');
+  sw(s1, 'adminLock', '방 잠금', '켜면 새 접속을 막아요 (이미 있는 사람과 방장은 그대로)', locked, (v) => sendCmd({ cmd: 'lock', on: v }));
+  sw(s1, 'adminGate', '새로 온 사람은 보기만', '처음 온 사람은 방장·부방장이 허락해야 그릴 수 있어요 (전에 왔던 사람은 그대로). 분탕이 걱정될 때 켜 두세요', gateOn, (v) => sendCmd({ cmd: 'gate', on: v }));
   const srvNow = a.now ? a.now + (now() - adminAt) : Date.now();
+  const row = (s, name, sub, label, fn) => {
+    const r = mk('div', 'arow'), nm = mk('div', 'nm', name);
+    nm.appendChild(mk('small', '', sub));
+    r.appendChild(nm);
+    if (label) { const btn = mk('button', 'btn', label); btn.type = 'button'; btn.setAttribute('aria-label', name + ' ' + label); btn.onclick = fn; r.appendChild(btn); }
+    s.appendChild(r);
+  };
   const list = (title, arr, kind) => {
     const s = sec(title + ' (' + arr.length + ')');
     if (!arr.length) { s.appendChild(mk('div', 'empty', '없어요')); return; }
     for (const it of arr) {
-      const row = mk('div', 'arow'), nm = mk('div', 'nm', it.name);
-      nm.appendChild(mk('small', '', (kind === 'spec' ? '보기만 가능' : it.until === 0 ? (kind === 'ban' ? '영구' : '해제할 때까지') : '남은 시간 ' + fmtRemain(it.until - srvNow)) + (it.reason ? ' · ' + it.reason : '')));
-      const btn = mk('button', 'btn', '해제'); btn.type = 'button'; btn.setAttribute('aria-label', it.name + ' 해제');
-      btn.onclick = () => sendCmd(kind === 'ban' ? { cmd: 'unban', target: it.o } : kind === 'mute' ? { cmd: 'unmute', target: it.o } : { cmd: 'spectate', target: it.o, on: false });
-      row.append(nm, btn); s.appendChild(row);
+      const left = kind === 'spec' ? '보기만 가능' : it.until === 0 ? (kind === 'ban' ? '영구' : '해제할 때까지') : '남은 시간 ' + fmtRemain(it.until - srvNow);
+      const extra = kind === 'ban' ? (it.ipBlock ? ' · 같은 인터넷도 막음' : '') + (it.tries ? ` · 다시 들어오려다 막힘 ${it.tries}번` : '') : '';
+      row(s, it.name, left + extra + (it.reason ? ' · ' + it.reason : ''), '해제',
+        () => sendCmd(kind === 'ban' ? { cmd: 'unban', target: it.o } : kind === 'mute' ? { cmd: 'unmute', target: it.o } : { cmd: 'spectate', target: it.o, on: false }));
     }
   };
+  const waits = (a.log || []).filter((e) => e.wait);
+  if (gateOn || waits.length) {
+    const s = sec('허락 대기 (' + waits.length + ')');
+    if (!waits.length) s.appendChild(mk('div', 'empty', '없어요'));
+    for (const e of waits) row(s, e.name, (e.on ? '접속 중' : '나감') + ' · 처음 ' + fmtWhen(e.first, srvNow), '허락', () => sendCmd({ cmd: 'spectate', target: e.o, on: false }));
+  }
   list('밴 목록', a.bans, 'ban'); list('채팅 금지', a.mutes, 'mute'); list('관전 (보기만 가능)', a.spectators, 'spec');
+  const ms = sec('부방장 (' + (a.mods || []).length + ')');
+  if (!(a.mods || []).length) ms.appendChild(mk('div', 'empty', isOwner() ? '없어요. 사람 목록이나 입장 기록의 ⋯ 메뉴에서 지정할 수 있어요' : '없어요'));
+  for (const m of a.mods || []) row(ms, m.name, online.has(m.o) ? '접속 중' : '접속 안 함', isOwner() ? '해제' : '', () => sendCmd({ cmd: 'mod', target: m.o, on: false }));
 }
-setInterval(() => { if (sideOpen() && sideTab === 'admin') renderAdmin(); }, 15000);
+setInterval(() => { if (sideOpen() && sideTab === 'admin') renderAdmin(); if (sideOpen() && sideTab === 'log') renderLog(); }, 15000);
+
+/* --- 입장 기록 (방장·부방장): 최근 들어온 사람 300명까지. 이름 검색, 지금 없는 사람도 ⋯ 메뉴로 밴·그림 지우기 --- */
+const p2 = (n) => String(n).padStart(2, '0');
+function fmtWhen(t, nowT) {                                       // 오늘이면 시:분, 아니면 월/일 시:분 (+ 얼마 전)
+  if (!t) return '-';
+  const d = new Date(t), n = new Date(nowT), hm = p2(d.getHours()) + ':' + p2(d.getMinutes());
+  const day = d.toDateString() === n.toDateString() ? hm : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+  const m = Math.round((nowT - t) / 60000);
+  return day + ' (' + (m < 1 ? '방금' : m < 60 ? m + '분 전' : m < 1440 ? Math.round(m / 60) + '시간 전' : Math.round(m / 1440) + '일 전') + ')';
+}
+let logQuery = '';
+function renderLog() {
+  const pane = $('paneL'); if (!pane) return;
+  if (!$('logList')) {
+    const head = mk('div', 'lhead'), q = mk('input', 'inp'); q.id = 'logSearch'; q.type = 'search'; q.placeholder = '이름으로 찾기 (예전 이름도)'; q.autocomplete = 'off'; q.setAttribute('aria-label', '입장 기록에서 이름 찾기');
+    q.oninput = () => { logQuery = q.value.trim().toLowerCase(); renderLog(); };
+    head.appendChild(q);
+    const info = mk('div', 'hint'); info.id = 'logInfo'; info.style.margin = '0 0 6px';
+    const box = mk('div'); box.id = 'logList';
+    pane.append(head, info, box);
+  }
+  const box = $('logList'); box.textContent = '';
+  const a = admin || { log: [], bans: [], mutes: [], spectators: [] }, srvNow = a.now ? a.now + (now() - adminAt) : Date.now();
+  const cnt = new Map(); for (const s of segs) cnt.set(s.o, (cnt.get(s.o) || 0) + 1);
+  const setOf = (k) => new Set((a[k] || []).map((x) => x.o));
+  const banned = setOf('bans'), muted = setOf('mutes'), spec = setOf('spectators');
+  let list = (a.log || []).slice().sort((x, y) => (y.on - x.on) || (y.last - x.last));
+  const total = list.length;
+  if (logQuery) list = list.filter((e) => [e.name, ...(e.names || [])].some((n) => String(n).toLowerCase().includes(logQuery)));
+  $('logInfo').textContent = logQuery ? `${list.length}명 찾음 (전체 ${total}명)` : `${total}명 · 최근 들어온 순 (300명까지 기록돼요)`;
+  if (!list.length) { box.appendChild(mk('div', 'empty', total ? '찾는 이름이 없어요' : '아직 기록이 없어요')); return; }
+  for (const e of list) {
+    const r = mk('div', 'lrow'); r.dataset.o = e.o;
+    const dot = mk('span', 'dot'); dot.style.background = colorOf(e.o);
+    const nm = mk('div', 'nm'), b = mk('b', '', e.name), tags = mk('span', 'tags');
+    const tag = (cls, t) => tags.appendChild(mk('span', 'tag ' + cls, t));
+    if (e.on) tag('on', '접속 중');
+    if (e.o === ownerId) tag('own', '방장'); else if (mods.has(e.o)) tag('mod', '부방장');
+    if (e.o === me) tag('', '나');
+    if (banned.has(e.o)) tag('warn', '밴');
+    if (e.wait) tag('warn', '허락 대기'); else if (spec.has(e.o)) tag('warn', '관전');
+    if (muted.has(e.o)) tag('warn', '채팅 금지');
+    nm.append(b, tags);
+    nm.appendChild(mk('small', '', (e.on ? '지금 접속 중' : '마지막 ' + fmtWhen(e.last, srvNow)) + ' · 처음 ' + fmtWhen(e.first, srvNow) + ' · ' + e.n + '번 들어옴'));
+    const n = cnt.get(e.o) || 0, old = (e.names || []).filter((x) => x !== e.name);
+    nm.appendChild(mk('small', '', (n ? '그림 ' + fmtN(n) + ' 조각' : '그림 없음') + (old.length ? ' · 예전 이름: ' + old.join(', ') : '')));
+    r.append(dot, nm);
+    if (canTarget(e.o)) { const btn = mk('button', 'rowmenu'); btn.type = 'button'; btn.title = '관리'; btn.setAttribute('aria-label', e.name + ' 관리'); btn.appendChild(icon('i-dots')); btn.onclick = () => openRowMenu(e.o, btn); r.appendChild(btn); }
+    box.appendChild(r);
+  }
+}
 
 /* --- 채팅 --- */
 const chatList = $('chatList'), chatInput = $('chatInput');
@@ -2374,7 +2683,7 @@ $('tUndo').onclick = doUndo; $('tRedo').onclick = doRedo;
 /* --- 서버가 의도적으로 끊었을 때의 안내 화면 --- */
 let endTimer = 0;
 function showEnd(code) {
-  const b = byeInfo, titles = { kicked: '강퇴되었어요', banned: '이 방에서 밴되었어요', locked: '방이 잠겨 있어요' };
+  const b = byeInfo, titles = { kicked: '강퇴되었어요', banned: '이 방에서 밴되었어요', locked: '방이 잠겨 있어요', toomany: '접속이 너무 많아요' };
   $('endTitle').textContent = (b && titles[b.code]) || '연결이 종료되었어요';
   const base = b ? b.text : '서버가 연결을 종료했어요. (코드 ' + code + ')';
   $('endText').textContent = base; $('endScreen').hidden = false; $('banner').hidden = true;
@@ -2439,7 +2748,7 @@ function connect() {
 }
 function onDisconnected(code) {
   connected = false; me = null; count = 0; online = new Set();
-  ownerId = null; admin = null; myRestr = { muted: null, spectator: false };
+  ownerId = null; admin = null; mods = new Set(); myRestr = { muted: null, spectator: false, wait: false };
   for (const o of [...cursors.keys()]) hideCursor(o);
   abortStroke(); resetUndo(); syncOwnerUI(); hudSoon();
   if (code >= 4000 && code < 5000) { ended = true; showEnd(code); return; }       // 서버가 의도적으로 끊음: 자동 재접속 안 함
@@ -2487,18 +2796,20 @@ function handleMsg(m) {
     }
     case 'cur': showCursor(m.o, m.x, m.y); break;
     case 'curhide': hideCursor(m.o); break;
-    case 'notice': toast(m.text || '알림', 'warn'); break;
-    case 'roomstate': ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); if (m.max > 0) { roomMax = m.max; checkCap(); } syncOwnerUI(); break;
+    case 'notice': toast(m.text || '알림', 'warn'); if (m.code === 'share') send({ type: 'resync' }); break;   // (서버가 받지 않은 내 선을 화면에서도 맞춘다)
+    case 'roomstate': ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); if (m.max > 0) { roomMax = m.max; checkCap(); }
+      mods = new Set(Array.isArray(m.mods) ? m.mods : []); gateOn = !!m.gate; roomShare = m.share > 0 && m.share < 1 ? m.share : 0;
+      syncOwnerUI(); break;
     case 'me': {
       const was = myRestr;
-      myRestr = { muted: m.muted ? { ...m.muted } : null, spectator: !!m.spectator };
-      if (!was.spectator && myRestr.spectator) toast('방장이 그리기를 제한했어요 (보기만 가능)', 'warn');
-      if (was.spectator && !myRestr.spectator) toast('그리기 제한이 풀렸어요', 'ok');
+      myRestr = { muted: m.muted ? { ...m.muted } : null, spectator: !!m.spectator, wait: !!m.wait };
+      if (!was.spectator && myRestr.spectator) toast(myRestr.wait ? '이 방은 방장·부방장이 허락해야 그릴 수 있어요 (지금은 보기만)' : '방장이 그리기를 제한했어요 (보기만 가능)', 'warn');
+      if (was.spectator && !myRestr.spectator) toast(was.wait ? '그리기를 허락받았어요. 이제 그릴 수 있어요' : '그리기 제한이 풀렸어요', 'ok');
       if (!was.muted && myRestr.muted) toast('채팅이 금지되었어요', 'warn');
       if (was.muted && !myRestr.muted) toast('채팅 금지가 풀렸어요', 'ok');
       renderPeople(); updateRestrUi(); break;
     }
-    case 'admin': admin = m; adminAt = now(); renderAdmin(); renderPeople(); break;
+    case 'admin': admin = m.none ? null : m; adminAt = now(); renderAdmin(); renderLog(); renderPeople(); break;
     case 'chats': chatMsgs = Array.isArray(m.list) ? m.list : []; renderChatAll(); break;
     case 'chat': if (m.m) addChat(m.m); break;
     case 'bye': byeInfo = m; break;
@@ -2509,7 +2820,7 @@ function handleMsg(m) {
     case 'fillno': {                                                               // 서버가 내 칠하기를 받지 않았다: 내 화면에서도 되돌린다
       const sid = typeof m.sid === 'string' ? m.sid : null;
       if (sid) { segs = segs.filter((s) => !(s.o === me && s.sid === sid)); undoSt = undoSt.filter((a) => a.sid !== sid); redoSt = redoSt.filter((a) => a.sid !== sid); syncUndoUi(); redrawInk(); }
-      const why = { rate: '너무 빠르게 칠하고 있어요. 잠시 뒤에 다시 해 주세요', bad: '이 칠하기는 저장하지 못했어요', full: '', spectator: '' }[m.reason];
+      const why = { rate: '너무 빠르게 칠하고 있어요. 잠시 뒤에 다시 해 주세요', bad: '이 칠하기는 저장하지 못했어요', full: '', spectator: '', share: '' }[m.reason];
       if (why !== '') toast(why || '칠하기가 저장되지 않았어요', 'warn');
       break;
     }
@@ -2523,7 +2834,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-12 18차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-12 19차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
@@ -2531,7 +2842,7 @@ $('setSmooth').value = String(S.smooth);
 $('setSmooth').onchange = () => { S.smooth = clampInt(+$('setSmooth').value, 0, 3); saveSettings(); };
 $('setWheel').value = S.wheel;
 $('setWheel').onchange = () => { S.wheel = $('setWheel').value; saveSettings(); };
-setColor(S.color); syncEraserUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
+setColor(S.color); syncEraserUI(); syncRulerUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);

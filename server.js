@@ -29,7 +29,13 @@ const MIN_MS = +process.env.MIN_MS || 60000;                   // 밴·채팅 �
 const LEAVE_GRACE_MS = +process.env.LEAVE_GRACE_MS || 10000;   // 이 시간 안에 다시 들어오면 입장/퇴장 메시지를 내지 않는다
 const LOCK_GRACE_MS = +process.env.LOCK_GRACE_MS || 120000;    // 방이 잠겨 있어도 방금 나간 사람은 다시 들어올 수 있다
 const MAX_CHAT = 100, CHAT_MAX_CHARS = 200, REASON_MAX = 50, MAX_LIST = 200, BAN_MAX_MIN = 43200;
-const BYE_CODE = { kicked: 4001, banned: 4002, locked: 4003 };
+const BYE_CODE = { kicked: 4001, banned: 4002, locked: 4003, toomany: 4004 };
+// ---- 분탕 방지 ----
+const MAX_LOG = 300, MAX_MODS = 20;                             // 입장 기록(방마다 최근 300명) / 부방장 수
+const IP_BAN_MAX_MS = 7 * 24 * 60 * 60 * 1000;                  // 밴할 때 같은 인터넷(IP)도 막는 기간은 최대 7일 (IP 는 바뀌고, 나중에 다른 사람이 쓸 수 있다)
+const OWNER_SHARE = +process.env.OWNER_SHARE || 0.5;            // 방장·부방장이 아닌 한 사람이 쓸 수 있는 그림 용량 비율 (혼자 방을 가득 채워 아무도 못 그리게 하는 것 방지)
+const CONN_BURST = +process.env.CONN_BURST || 40, CONN_PER_SEC = +process.env.CONN_PER_SEC || 1;   // 같은 IP 의 새 접속: 한꺼번에 40번, 그 뒤 초당 1번
+const CONN_PER_IP = +process.env.CONN_PER_IP || 40;            // 같은 IP 에서 동시에 열 수 있는 접속 수
 const SAVE_MS = +process.env.SAVE_MS || 5000;
 const ROOM_EMPTY_MS = +process.env.ROOM_EMPTY_MS || 10 * 60 * 1000;      // DB 에 저장해 둔 빈 방을 메모리에 남겨 두는 시간
 const NO_DB_KEEP_MS = +process.env.NO_DB_KEEP_MS || 24 * 60 * 60 * 1000;  // DB 가 없거나 고장났을 땐 메모리가 유일한 사본이라 오래 둔다
@@ -532,7 +538,7 @@ async function recoverRoom(id, room) {
     broadcastAll(room, { type: 'names', names: room.names });
     broadcastAll(room, roomStateMsg(room));
     for (const c of [...room.clients]) {                 // 이제 방장·밴·잠금 정보를 알 수 있으니 다시 확인한다
-      const v = admit(room, id, c.owner);
+      const v = admit(room, id, c.owner, c.ipt);
       if (v) { byeAndClose(c, v); continue; }
       send(c, meMsg(room, c.owner));
       if (isRoomOwner(room, c.owner)) send(c, adminMsg(room));
@@ -708,20 +714,28 @@ function fmtRemain(ms) {
   return `${Math.floor(sec / 3600)}시간 ${Math.floor((sec % 3600) / 60)}분`;
 }
 
+const IPT_RE = /^[A-Za-z0-9_-]{12}$/;
+const tagList = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && IPT_RE.test(x)).slice(0, 3) : []);
+const numOr = (v, d) => (Number.isFinite(+v) ? +v : d);
 function normalizeMeta(j) {
-  const m = { owner: null, locked: false, bans: {}, mutes: {}, spectators: {} };
+  const m = { owner: null, locked: false, gate: false, bans: {}, mutes: {}, spectators: {}, mods: {}, log: {} };
   if (!j || typeof j !== 'object') return m;
   if (typeof j.owner === 'string' && OWNER_RE.test(j.owner)) m.owner = j.owner;
   m.locked = j.locked === true;
+  m.gate = j.gate === true;
+  const each = (src, max, fn) => { if (src && typeof src === 'object') for (const o of Object.keys(src).slice(0, max)) { const v = src[o]; if (v && typeof v === 'object' && OWNER_RE.test(o)) fn(o, v); } };
   for (const key of ['bans', 'mutes', 'spectators']) {
-    const src = j[key];
-    if (!src || typeof src !== 'object') continue;
-    for (const o of Object.keys(src).slice(0, MAX_LIST)) {
-      const v = src[o];
-      if (!v || typeof v !== 'object' || !OWNER_RE.test(o)) continue;
-      m[key][o] = { until: Number.isFinite(+v.until) ? +v.until : 0, name: cleanNick(v.name) || '알 수 없음', reason: cleanReason(v.reason) };
-    }
+    each(j[key], MAX_LIST, (o, v) => {
+      const e = m[key][o] = { until: numOr(v.until, 0), name: cleanNick(v.name) || '알 수 없음', reason: cleanReason(v.reason) };
+      if (key === 'bans') { e.at = numOr(v.at, 0); e.ip = tagList(v.ip); e.ipUntil = numOr(v.ipUntil, 0); e.tries = Math.max(0, numOr(v.tries, 0) | 0); }
+    });
   }
+  each(j.mods, MAX_MODS, (o, v) => { m.mods[o] = { name: cleanNick(v.name) || '알 수 없음' }; });
+  each(j.log, MAX_LOG, (o, v) => {
+    const e = m.log[o] = { name: cleanNick(v.name) || '알 수 없음', names: (Array.isArray(v.names) ? v.names : []).map(cleanNick).filter(Boolean).slice(0, 5),
+      first: numOr(v.first, 0), last: numOr(v.last, 0), n: Math.max(0, numOr(v.n, 0) | 0), ip: tagList(v.ip) };
+    if (v.wait) e.wait = 1;
+  });
   return m;
 }
 // 만료된 밴·채팅 금지를 정리한다
@@ -758,16 +772,51 @@ function saveMeta(id, room) {
 }
 function persistMeta(room) { room.metaDirty = true; saveMeta(room.id, room); }
 
-const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked, persist: dbState === 'ok' && !room.noSave, max: MAX_HISTORY });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
+// 부방장: 방장이 없을 때도 분탕을 막을 수 있게 강퇴·밴·채팅 금지·관전·그림 지우기·잠금을 맡긴다 (방장 위임·전체 지우기·부방장 지정은 방장만)
+const isMod = (room, o) => !room.noSave && !!room.meta.mods[o];
+const isStaff = (room, o) => isRoomOwner(room, o) || isMod(room, o);
+// '새로 온 사람은 보기만'(gate)이 켜진 방에서 처음 온 사람은 방장·부방장이 허락할 때까지 그릴 수 없다
+const isWaiting = (room, o) => room.meta.gate && !!(room.meta.log[o] && room.meta.log[o].wait) && !isStaff(room, o);
+const isSpect = (room, o) => !!room.meta.spectators[o] || isWaiting(room, o);
+const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked, persist: dbState === 'ok' && !room.noSave, max: MAX_HISTORY,
+  mods: room.noSave ? [] : Object.keys(room.meta.mods), gate: room.meta.gate, share: OWNER_SHARE });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
 function meMsg(room, o, now = Date.now()) {
   const mu = room.meta.mutes[o];
-  return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: !!room.meta.spectators[o] };
+  return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: isSpect(room, o), wait: isWaiting(room, o) };
 }
 function adminMsg(room) {
+  const now = Date.now();
   const L = (src) => Object.keys(src).map((o) => ({ o, name: src[o].name, until: src[o].until, reason: src[o].reason || '' }));
-  return { type: 'admin', now: Date.now(), locked: room.meta.locked, bans: L(room.meta.bans), mutes: L(room.meta.mutes), spectators: L(room.meta.spectators) };
+  const bans = Object.keys(room.meta.bans).map((o) => { const b = room.meta.bans[o]; return { o, name: b.name, until: b.until, reason: b.reason || '', ipBlock: b.ip.length > 0 && b.ipUntil > now, tries: b.tries || 0 }; });
+  const log = Object.keys(room.meta.log).map((o) => { const e = room.meta.log[o]; return { o, name: e.name, names: e.names, first: e.first, last: e.last, n: e.n, on: hasOwner(room, o), wait: isWaiting(room, o) }; });   // (IP 표시는 보내지 않는다)
+  return { type: 'admin', now, locked: room.meta.locked, gate: room.meta.gate, bans, mutes: L(room.meta.mutes), spectators: L(room.meta.spectators), mods: Object.keys(room.meta.mods).map((o) => ({ o, name: room.meta.mods[o].name })), log };
 }
-function sendAdmin(room) { for (const c of room.clients) if (isRoomOwner(room, c.owner)) send(c, adminMsg(room)); }
+function sendAdmin(room) { let m = null; for (const c of room.clients) if (isStaff(room, c.owner)) send(c, m || (m = adminMsg(room))); }
+// 입장 기록: 사람(주인 ID)마다 이름·예전 이름·처음/마지막 입장·횟수·최근 IP 표시(되돌릴 수 없게 바꾼 값, 같은 인터넷 밴용). 방장·부방장만 본다.
+function logVisit(room, ws, name, entered) {
+  if (room.id === 'lobby') return;
+  const now = Date.now(), L = room.meta.log, o = ws.owner;
+  let e = L[o];
+  if (!e) {
+    e = L[o] = { name, names: [], first: now, last: now, n: 0, ip: [] };
+    if (room.meta.gate && !isStaff(room, o)) e.wait = 1;
+    const keys = Object.keys(L);
+    if (keys.length > MAX_LOG) {                                   // 가득 차면 접속 중이 아닌 사람 중 가장 오래전에 온 사람부터 뺀다
+      keys.sort((a, b) => L[a].last - L[b].last);
+      for (const k of keys) { if (Object.keys(L).length <= MAX_LOG) break; if (k !== o && !hasOwner(room, k)) delete L[k]; }
+    }
+  }
+  e.last = now; if (entered) e.n++;
+  logName(room, o, name);
+  if (ws.ipt) e.ip = [ws.ipt, ...e.ip.filter((x) => x !== ws.ipt)].slice(0, 3);
+  room.metaDirty = true;                                          // (5초마다 도는 저장 점검이 저장한다)
+}
+function logName(room, o, name) {
+  const e = room.meta.log[o];
+  if (!e || !name || e.name === name) return;
+  e.names = [e.name, ...e.names.filter((x) => x !== name && x !== e.name)].slice(0, 5);   // 이름을 바꿔 가며 분탕치는 사람도 알아볼 수 있게
+  e.name = name; room.metaDirty = true;
+}
 function sendMe(room, o) { for (const c of room.clients) if (c.owner === o) send(c, meMsg(room, o)); }
 
 function pushChat(room, m) {
@@ -790,8 +839,8 @@ function byeAndClose(ws, info) {                        // 서버가 의도적�
   try { ws.close(BYE_CODE[info.code], info.code); } catch {}
 }
 
-// 접속 승인: 방장 지정 → 밴 → 잠금 (거부하면 안내 정보를 돌려준다)
-function admit(room, roomId, owner) {
+// 접속 승인: 방장 지정 → 밴 → 같은 인터넷 밴 → 잠금 (거부하면 안내 정보를 돌려준다). ipt: 접속한 곳의 IP 표시
+function admit(room, roomId, owner, ipt) {
   const now = Date.now();
   purgeMeta(room, now);
   if (roomId !== 'lobby' && !room.noSave && !room.meta.owner && !isGuest(owner)) {
@@ -799,30 +848,43 @@ function admit(room, roomId, owner) {
     persistMeta(room);
   }
   if (isRoomOwner(room, owner)) return null;            // 방장은 밴·잠금과 무관하게 항상 입장
+  const tried = (b) => { b.tries = (b.tries || 0) + 1; room.metaDirty = true; sendAdmin(room); };   // 밴된 뒤 다시 들어오려 한 횟수 (방장이 볼 수 있게)
   const b = room.meta.bans[owner];
-  if (b && (b.until === 0 || b.until > now)) return { code: 'banned', text: '방장에 의해 밴되었습니다' + (b.reason ? `(${b.reason})` : ''), until: b.until, reason: b.reason || '' };
+  if (b && (b.until === 0 || b.until > now)) { tried(b); return { code: 'banned', text: '방장에 의해 밴되었습니다' + (b.reason ? `(${b.reason})` : ''), until: b.until, reason: b.reason || '' }; }
+  // 밴된 사람이 브라우저를 바꾸거나 기록을 지워 새 사람으로 돌아오는 것: 같은 인터넷(IP)에서 처음 오는 사람은 막는다.
+  // 밴 전부터 이 방에 오던 사람(같은 와이파이의 친구 등)과 부방장은 막지 않는다.
+  if (ipt && !isMod(room, owner)) {
+    const e = room.meta.log[owner];
+    for (const bo of Object.keys(room.meta.bans)) {
+      const bb = room.meta.bans[bo];
+      if (!bb.ip.includes(ipt) || !(bb.ipUntil > now) || !(bb.until === 0 || bb.until > now) || (e && e.first < bb.at)) continue;
+      tried(bb);
+      return { code: 'banned', text: '같은 인터넷(와이파이)에서 밴된 사람이 있어 들어올 수 없어요. 아는 사이라면 방장에게 말해 주세요.', until: bb.until === 0 ? bb.ipUntil : Math.min(bb.until, bb.ipUntil), reason: '' };
+    }
+  }
   if (room.meta.locked && !hasOwner(room, owner) && !((room.recent.get(owner) || 0) > now - LOCK_GRACE_MS)) return { code: 'locked', text: '방장이 새 접속을 막아 두었어요. 잠시 뒤 다시 시도해 주세요.' };
   return null;
 }
 function approve(ws, room, wantName) {
   const owner = ws.owner;
   ws.approved = true;
-  const wasPresent = hasOwner(room, owner);
+  const wasPresent = hasOwner(room, owner), back = room.leaveTimers.get(owner);   // back: 10초 안에 다시 들어옴(앱 전환 등) — 입장/퇴장 메시지를 내지 않는다
   room.clients.add(ws);
   room.recent.set(owner, Date.now());
   const name = setName(room, owner, wantName);
+  const firstTime = !room.meta.log[owner];
+  logVisit(room, ws, name, !back && !wasPresent);
   send(ws, { type: 'hello', me: owner });
   sendHistory(ws, room);
   send(ws, { type: 'names', names: room.names });
   send(ws, roomStateMsg(room));
   send(ws, meMsg(room, owner));
-  if (isRoomOwner(room, owner)) send(ws, adminMsg(room));
+  sendAdmin(room);                                      // 방장·부방장에게 입장 기록·접속 표시를 바로 (들어온 사람이 방장·부방장이면 그 사람도 받는다)
   send(ws, { type: 'chats', list: room.chat });
   broadcastAll(room, { type: 'name', o: owner, name });
   announce(room);
-  const t = room.leaveTimers.get(owner);                // 10초 안에 다시 들어오면(앱 전환 등) 입장/퇴장 메시지를 내지 않는다
-  if (t) { clearTimeout(t); room.leaveTimers.delete(owner); }
-  else if (!wasPresent) sysChat(room, `${name}님이 들어왔어요`);
+  if (back) { clearTimeout(back); room.leaveTimers.delete(owner); }
+  else if (!wasPresent) sysChat(room, isWaiting(room, owner) && firstTime ? `${name}님이 처음 들어왔어요 (방장·부방장이 허락하면 그릴 수 있어요)` : `${name}님이 들어왔어요`);
 }
 
 // 방장 명령: 모든 명령은 서버가 방장 여부를 검사한다
@@ -834,39 +896,50 @@ function handleCmd(ws, room, roomId, msg) {
   if (ws.cmdTok < 1) return cmdErr(ws, '명령을 너무 빠르게 보내고 있어요');
   ws.cmdTok -= 1;
   if (room.noSave) return cmdErr(ws, '이 방은 저장소를 읽지 못해 방장 기능을 쓸 수 없어요');
-  if (!isRoomOwner(room, ws.owner)) return cmdErr(ws, '권한이 없습니다');
+  const boss = isRoomOwner(room, ws.owner);
+  if (!boss && !isMod(room, ws.owner)) return cmdErr(ws, '권한이 없습니다');
   const cmd = msg.cmd;
-  const TARGET_CMDS = ['kick', 'ban', 'unban', 'mute', 'unmute', 'spectate', 'transfer', 'clearuser'];
+  const MOD_CMDS = ['kick', 'ban', 'unban', 'mute', 'unmute', 'spectate', 'clearuser', 'lock', 'gate'];   // 부방장이 할 수 있는 것
+  if (!boss && !MOD_CMDS.includes(cmd)) return cmdErr(ws, '방장만 할 수 있어요');
+  const TARGET_CMDS = ['kick', 'ban', 'unban', 'mute', 'unmute', 'spectate', 'transfer', 'clearuser', 'mod'];
   let target = null;
   if (TARGET_CMDS.includes(cmd)) {
     target = typeof msg.target === 'string' && OWNER_RE.test(msg.target) ? msg.target : null;
     if (!target) return cmdErr(ws, '대상이 올바르지 않아요');
     if (target === room.meta.owner) return cmdErr(ws, '방장에게는 쓸 수 없는 명령이에요');
+    if (!boss && isMod(room, target)) return cmdErr(ws, '부방장에게는 쓸 수 없어요');
   }
   const online = target ? [...room.clients].filter((c) => c.owner === target) : [];
-  const nm = target ? (room.names[target] || (room.meta.bans[target] || room.meta.mutes[target] || room.meta.spectators[target] || {}).name || '알 수 없음') : '';
+  const logged = target ? room.meta.log[target] : null;
+  const known = online.length > 0 || !!logged;                   // 지금 없어도 입장 기록에 있는 사람이면 밴·채팅 금지·관전을 걸 수 있다
+  const nm = target ? (room.names[target] || (logged || room.meta.bans[target] || room.meta.mutes[target] || room.meta.spectators[target] || room.meta.mods[target] || {}).name || '알 수 없음') : '';
+  const who = boss ? '방장' : '부방장';
   const reason = cleanReason(msg.reason);
   const minutes = msg.minutes;
   if (cmd === 'kick') {
     if (!online.length) return cmdErr(ws, '접속 중인 사용자가 아니에요');
-    for (const c of online) byeAndClose(c, { code: 'kicked', text: '방장에 의해 강퇴되었습니다' + (reason ? `(${reason})` : ''), reason });
+    for (const c of online) byeAndClose(c, { code: 'kicked', text: `${who}에 의해 강퇴되었습니다` + (reason ? `(${reason})` : ''), reason });
     sysChat(room, `${nm}님이 강퇴되었습니다`);
   } else if (cmd === 'ban') {
-    if (!online.length) return cmdErr(ws, '접속 중인 사용자가 아니에요');
+    if (!known) return cmdErr(ws, '접속 중이거나 입장 기록에 있는 사용자만 밴할 수 있어요');
     if (!checkMinutes(minutes)) return cmdErr(ws, '밴 시간이 올바르지 않아요 (1~43200분 또는 영구)');
     if (Object.keys(room.meta.bans).length >= MAX_LIST && !room.meta.bans[target]) return cmdErr(ws, '밴 목록이 가득 찼어요');
     const until = minutes === 0 ? 0 : now + minutes * MIN_MS;
-    room.meta.bans[target] = { until, name: nm, reason };
+    // ip: 같은 인터넷(IP)에서 새로 오는 사람도 막기 (밴된 사람이 새 브라우저로 돌아오는 것 방지). 지금 접속한 곳 + 입장 기록의 최근 IP
+    const ip = msg.ip === true ? [...new Set([...online.map((c) => c.ipt), ...(logged ? logged.ip : [])].filter(Boolean))].slice(0, 3) : [];
+    room.meta.bans[target] = { until, name: nm, reason, at: now, ip, ipUntil: ip.length ? (until === 0 ? now + IP_BAN_MAX_MS : Math.min(until, now + IP_BAN_MAX_MS)) : 0, tries: 0 };
+    delete room.meta.mods[target];                                // (방장이 부방장을 밴하면 부방장도 해제)
     persistMeta(room);
-    for (const c of online) byeAndClose(c, { code: 'banned', text: '방장에 의해 밴되었습니다' + (reason ? `(${reason})` : ''), until, reason });
+    for (const c of online) byeAndClose(c, { code: 'banned', text: `${who}에 의해 밴되었습니다` + (reason ? `(${reason})` : ''), until, reason });
     sysChat(room, minutes === 0 ? `${nm}님이 영구 밴되었습니다` : `${nm}님이 ${fmtDur(minutes)} 동안 밴되었습니다`);
+    broadcastAll(room, roomStateMsg(room));
     sendAdmin(room);
   } else if (cmd === 'unban') {
     if (!room.meta.bans[target]) return cmdErr(ws, '밴 목록에 없는 사용자예요');
     delete room.meta.bans[target]; persistMeta(room);
     sysChat(room, `${nm}님의 밴이 해제되었습니다`); sendAdmin(room);
   } else if (cmd === 'mute') {
-    if (!online.length) return cmdErr(ws, '접속 중인 사용자가 아니에요');
+    if (!known) return cmdErr(ws, '접속 중이거나 입장 기록에 있는 사용자가 아니에요');
     if (!checkMinutes(minutes)) return cmdErr(ws, '시간이 올바르지 않아요 (1~43200분 또는 해제할 때까지)');
     if (Object.keys(room.meta.mutes).length >= MAX_LIST && !room.meta.mutes[target]) return cmdErr(ws, '채팅 금지 목록이 가득 찼어요');
     room.meta.mutes[target] = { until: minutes === 0 ? 0 : now + minutes * MIN_MS, name: nm, reason };
@@ -878,26 +951,53 @@ function handleCmd(ws, room, roomId, msg) {
     delete room.meta.mutes[target]; persistMeta(room); sendMe(room, target);
     sysChat(room, `${nm}님의 채팅 금지가 해제되었습니다`); sendAdmin(room);
   } else if (cmd === 'spectate') {
+    let text;
     if (msg.on === true) {
-      if (!online.length) return cmdErr(ws, '접속 중인 사용자가 아니에요');
+      if (!known) return cmdErr(ws, '접속 중이거나 입장 기록에 있는 사용자가 아니에요');
       if (Object.keys(room.meta.spectators).length >= MAX_LIST && !room.meta.spectators[target]) return cmdErr(ws, '관전 목록이 가득 찼어요');
       room.meta.spectators[target] = { until: 0, name: nm, reason: '' };
-    } else {
-      if (!room.meta.spectators[target]) return cmdErr(ws, '관전 목록에 없는 사용자예요');
-      delete room.meta.spectators[target];
+      text = `${nm}님이 관전(보기만 가능)으로 바뀌었습니다`;
+    } else {                                                       // 관전 해제 = 그리기 허락 ('새로 온 사람은 보기만' 대기도 함께 푼다)
+      const waiting = !!(logged && logged.wait);
+      if (!room.meta.spectators[target] && !waiting) return cmdErr(ws, '관전 목록에 없는 사용자예요');
+      text = room.meta.spectators[target] ? `${nm}님의 그리기 제한이 해제되었습니다` : `${nm}님이 그리기를 허락받았어요`;
+      delete room.meta.spectators[target]; if (logged) delete logged.wait;
     }
     persistMeta(room); sendMe(room, target);
-    sysChat(room, msg.on === true ? `${nm}님이 관전(보기만 가능)으로 바뀌었습니다` : `${nm}님의 그리기 제한이 해제되었습니다`);
+    sysChat(room, text);
     sendAdmin(room);
   } else if (cmd === 'lock') {
     room.meta.locked = msg.on === true; persistMeta(room);
     broadcastAll(room, roomStateMsg(room));
     sysChat(room, room.meta.locked ? '방이 잠겼습니다 (새 접속을 막아요)' : '방 잠금이 해제되었습니다');
     sendAdmin(room);
+  } else if (cmd === 'gate') {                                     // 새로 온 사람은 보기만 (방장·부방장이 허락하면 그리기)
+    room.meta.gate = msg.on === true; persistMeta(room);
+    broadcastAll(room, roomStateMsg(room));
+    for (const o of new Set([...room.clients].map((c) => c.owner))) sendMe(room, o);   // 기다리던 사람들의 상태가 바뀔 수 있다
+    sysChat(room, room.meta.gate ? '이제 처음 온 사람은 방장·부방장이 허락해야 그릴 수 있어요' : '이제 처음 온 사람도 바로 그릴 수 있어요');
+    sendAdmin(room);
+  } else if (cmd === 'mod') {                                      // 부방장 지정·해제 (방장만)
+    if (msg.on === true) {
+      if (!known || isGuest(target)) return cmdErr(ws, '접속 중이거나 입장 기록에 있는 사용자만 부방장이 될 수 있어요');
+      if (room.meta.bans[target]) return cmdErr(ws, '밴된 사용자는 부방장이 될 수 없어요');
+      if (Object.keys(room.meta.mods).length >= MAX_MODS && !room.meta.mods[target]) return cmdErr(ws, `부방장은 ${MAX_MODS}명까지예요`);
+      room.meta.mods[target] = { name: nm };
+      delete room.meta.spectators[target]; if (logged) delete logged.wait;
+    } else {
+      if (!room.meta.mods[target]) return cmdErr(ws, '부방장이 아니에요');
+      delete room.meta.mods[target];
+    }
+    persistMeta(room);
+    broadcastAll(room, roomStateMsg(room));
+    sendMe(room, target);
+    sysChat(room, msg.on === true ? `${nm}님이 부방장이 되었습니다` : `${nm}님의 부방장이 해제되었습니다`);
+    sendAdmin(room);
+    if (msg.on !== true) for (const c of online) send(c, { type: 'admin', none: true });   // 해제된 사람 화면에서 관리 정보를 지운다
   } else if (cmd === 'transfer') {
     if (!online.length || isGuest(target)) return cmdErr(ws, '접속 중인 다른 사용자에게만 넘길 수 있어요');
     const old = ws.owner, oldName = room.names[old] || '방장';
-    room.meta.owner = target; persistMeta(room);
+    room.meta.owner = target; delete room.meta.mods[target]; persistMeta(room);
     broadcastAll(room, roomStateMsg(room));
     sendMe(room, old); sendMe(room, target); sendAdmin(room);
     sysChat(room, `${oldName}님이 ${nm}님에게 방장을 넘겼습니다`);
@@ -948,6 +1048,17 @@ function checkFill(m) {
   return { sid: m.sid, color: m.color.toLowerCase(), cell: c, rows };
 }
 // 접속 단위 전체 메시지 상한 (도배로 서버 CPU 를 점유하는 것 방지). 초과분은 조용히 버린다.
+// 한 사람(방장·부방장 제외)이 그림 용량의 OWNER_SHARE 넘게 쓰지 못하게: 방이 그 비율만큼 찼을 때만 센다 (사람별 수는 2초마다 다시 세고 그사이 추가분을 더한다)
+function shareFull(ws, room, owner, add) {
+  const cap = Math.floor(MAX_HISTORY * OWNER_SHARE);
+  if (room.hn + add <= cap || isStaff(room, owner)) return false;
+  const t = Date.now();
+  if (!room.own || t - room.own.t > 2000) { const m = new Map(); for (const b of room.hb) for (const s of b.a) m.set(s.o, (m.get(s.o) || 0) + 1); room.own = { t, m }; }
+  const c = room.own.m.get(owner) || 0;
+  if (c + add > cap) { notice(ws, 'share', '한 사람은 이 방 그림 용량의 ' + Math.round(OWNER_SHARE * 100) + '%까지만 쓸 수 있어요. 내 그림을 조금 지우고 그려 주세요.'); return true; }
+  room.own.m.set(owner, c + add);
+  return false;
+}
 function globalAllow(ws) {
   const now = Date.now();
   ws.gTok = Math.min(1000, ws.gTok + (now - ws.gAt) * 0.8);
@@ -959,7 +1070,7 @@ function globalAllow(ws) {
 
 // ---- 웹 서버 ----
 // 어느 파일이 올라갔는지 바로 확인하는 용도 (화면의 설정 맨 아래에 '서버 버전'으로 보인다)
-app.get('/version', (req, res) => res.json({ stage: 3, date: '2026-10-11', db: dbState }));   // db: none(저장소 없음) | connecting | ok | error
+app.get('/version', (req, res) => res.json({ stage: 3, date: '2026-10-12', db: dbState }));   // db: none(저장소 없음) | connecting | ok | error
 app.get('/', (req, res, next) => {
   if (!req.query.room) return res.redirect('/?room=' + newRoomId() + '&new=1');   // 방 없이 오면 새 방 (new=1: 화면이 '이 방 링크를 보내 주세요' 안내를 띄운다)
   next();
@@ -1000,8 +1111,8 @@ function onMessage(ws, room, roomId, owner, raw) {
     try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object') return;
     const now = Date.now();
-    if (DRAW_TYPES.has(msg.type) && room.meta.spectators[owner]) {   // 관전(보기만 가능)으로 바뀐 사람은 그리기를 할 수 없다
-      notice(ws, 'spectator', '방장이 그리기를 제한했어요 (보기만 가능)');
+    if (DRAW_TYPES.has(msg.type) && isSpect(room, owner)) {   // 관전(보기만 가능)으로 바뀐 사람·허락을 기다리는 사람은 그리기를 할 수 없다
+      notice(ws, 'spectator', isWaiting(room, owner) ? '방장·부방장이 허락하면 그릴 수 있어요 (지금은 보기만)' : '방장이 그리기를 제한했어요 (보기만 가능)');
       if (msg.type === 'fill') send(ws, { type: 'fillno', sid: typeof msg.sid === 'string' && SID_RE.test(msg.sid) ? msg.sid : null, reason: 'spectator' });   // 보낸 화면이 방금 칠한 걸 되돌릴 수 있게
       return;
     }
@@ -1016,6 +1127,7 @@ function onMessage(ws, room, roomId, owner, raw) {
       if (![s.x0, s.y0, s.x1, s.y1].every(okNum)) return;
       s.sid = typeof msg.sid === 'string' && SID_RE.test(msg.sid) ? msg.sid : autoSid(ws, s);
       if (room.hn >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return; }
+      if (shareFull(ws, room, owner, 1)) return;
       histPush(room, s);
       broadcast(room, ws, { type: 'seg', ...s });
     } else if (msg.type === 'clear') {
@@ -1062,7 +1174,7 @@ function onMessage(ws, room, roomId, owner, raw) {
         if (room.hn + list.length >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); break; }
         list.push(s);
       }
-      if (!list.length) return;
+      if (!list.length || shareFull(ws, room, owner, list.length)) return;
       histInsert(room, list);
       broadcast(room, ws, { type: 'segs', list });
     } else if (msg.type === 'fill') {
@@ -1073,6 +1185,7 @@ function onMessage(ws, room, roomId, owner, raw) {
       const f = checkFill(msg);
       if (!f) return no('bad');
       if (room.hn + f.rows.length > MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return no('full'); }
+      if (shareFull(ws, room, owner, f.rows.length)) return no('share');
       histInsert(room, fillSegs(owner, f.sid, f.color, f.cell, f.rows));
       broadcast(room, ws, { type: 'fill', o: owner, sid: f.sid, color: f.color, cell: f.cell, rows: f.rows });
     } else if (msg.type === 'removesegs') {
@@ -1104,7 +1217,9 @@ function onMessage(ws, room, roomId, owner, raw) {
     } else if (msg.type === 'nick') {
       if (now - ws.lastNick < 300) return;
       ws.lastNick = now;
-      broadcastAll(room, { type: 'name', o: owner, name: setName(room, owner, msg.name) });
+      const name = setName(room, owner, msg.name);
+      logName(room, owner, name);
+      broadcastAll(room, { type: 'name', o: owner, name });
     } else if (msg.type === 'chat') {
       const mu = room.meta.mutes[owner];
       if (mu && (mu.until === 0 || mu.until > now)) {
@@ -1130,6 +1245,9 @@ function onClose(ws, room, roomId, owner) {
   announce(room);
   if (!hasOwner(room, owner)) {
     room.recent.set(owner, Date.now());
+    const e = room.meta.log[owner];
+    if (e) { e.last = Date.now(); room.metaDirty = true; }
+    sendAdmin(room);                                                   // (입장 기록의 '접속 중' 표시)
     if (!ws.noLeaveMsg) {                                              // 강퇴·밴은 이미 시스템 메시지가 있으니 퇴장 메시지는 생략
       const nm = room.names[owner] || '누군가';
       room.leaveTimers.set(owner, setTimeout(() => {
@@ -1146,8 +1264,46 @@ function onClose(ws, room, roomId, owner) {
   }
 }
 
+// ---- 접속한 곳(IP): 같은 인터넷 밴과 접속 수 제한에만 쓴다. 원래 IP 는 저장하지 않고, 서버만 아는 비밀 값으로 되돌릴 수 없게 바꾼 표시(ipt)만 쓴다 ----
+const IP_KEY = crypto.createHash('sha256').update('ip-tag:' + (process.env.IP_SALT || process.env.DATABASE_URL || crypto.randomBytes(16).toString('hex'))).digest();
+function ip6Prefix(ip) {                                           // IPv6 는 앞 64비트만 (기기마다·시간마다 바뀌는 뒷부분은 뺀다)
+  const [head, tail] = ip.split('::');
+  const h = head ? head.split(':') : [], t = tail === undefined ? null : tail ? tail.split(':') : [];
+  const parts = t ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill('0'), ...t] : h;
+  return parts.slice(0, 4).map((x) => (parseInt(x, 16) || 0).toString(16)).join(':');
+}
+// Render 앞단(Cloudflare)이 넣어 주는 실제 접속 IP. 프록시 없이 이 컴퓨터에서 바로 붙은 접속(테스트)은 local
+function clientIp(req) {
+  const h = req.headers;
+  const fwd = String(h['cf-connecting-ip'] || h['true-client-ip'] || String(h['x-forwarded-for'] || '').split(',')[0] || '').trim();
+  const sock = String(req.socket.remoteAddress || '').replace(/^::ffff:/i, '');
+  return { ip: (fwd || sock).replace(/%.*$/, '').replace(/^::ffff:/i, ''), local: !fwd && (sock === '127.0.0.1' || sock === '::1') };
+}
+function ipTag(ip) {
+  if (!ip) return '';
+  const key = ip.includes(':') ? ip6Prefix(ip.toLowerCase()) : ip;
+  return crypto.createHmac('sha256', IP_KEY).update(key).digest('base64url').slice(0, 12);
+}
+const connRate = new Map();                                        // IP 표시 -> { tok, at }
+function connAllow(ipt) {                                          // 같은 곳에서 새 접속을 너무 빨리 많이 열지 못하게 (사람을 잔뜩 만들어 분탕치는 것 방지)
+  const t = Date.now(), r = connRate.get(ipt) || { tok: CONN_BURST, at: t };
+  r.tok = Math.min(CONN_BURST, r.tok + (t - r.at) / 1000 * CONN_PER_SEC); r.at = t;
+  connRate.set(ipt, r);
+  if (r.tok < 1) return false;
+  r.tok -= 1; return true;
+}
+const connTimer = setInterval(() => { const t = Date.now(); for (const [k, r] of connRate) if (r.tok + (t - r.at) / 1000 * CONN_PER_SEC >= CONN_BURST) connRate.delete(k); }, 60000);
+if (connTimer.unref) connTimer.unref();
+
 wss.on('connection', async (ws, req) => {
   ws.on('error', (e) => console.error('ws error:', e.message)); // 없으면 잘못된 프레임 하나에 서버가 죽는다
+  const cip = clientIp(req);
+  ws.ipt = cip.local ? '' : ipTag(cip.ip);
+  if (ws.ipt) {
+    let same = 0;
+    for (const c of wss.clients) if (c.ipt === ws.ipt) same++;
+    if (same > CONN_PER_IP || !connAllow(ws.ipt)) { byeAndClose(ws, { code: 'toomany', text: '같은 인터넷에서 접속이 너무 많아요. 잠시 뒤 다시 들어와 주세요.' }); return; }
+  }
 
   const url = new URL(req.url, 'http://localhost');
   const rawRoom = url.searchParams.get('room') || 'lobby';
@@ -1172,7 +1328,7 @@ wss.on('connection', async (ws, req) => {
 
   try { await room.ready; } catch (e) { console.error('방 불러오기 오류:', e.message); try { ws.close(1011, 'room load error'); } catch {} return; }
   if (ws.readyState !== 1) return;
-  const verdict = admit(room, roomId, owner);          // 1) 방장 지정  2) 밴  3) 잠금
+  const verdict = admit(room, roomId, owner, ws.ipt);  // 1) 방장 지정  2) 밴  3) 같은 인터넷 밴  4) 잠금
   if (verdict) { byeAndClose(ws, verdict); return; }   // 거부: clients 에 넣지 않고 입장·접속자 수 알림도 하지 않는다
   approve(ws, room, url.searchParams.get('n'));        // 승인: 초기 동기화
 });
