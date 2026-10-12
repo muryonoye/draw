@@ -835,8 +835,11 @@ function chatAllow(room, o, now) {                      // 2초에 3개 (사람 
 }
 function byeAndClose(ws, info) {                        // 서버가 의도적으로 끊을 때: 안내 메시지 + 4000번대 코드 (클라이언트는 자동 재접속하지 않는다)
   send(ws, { type: 'bye', ...info, now: Date.now() });
-  ws.noLeaveMsg = true;
+  ws.noLeaveMsg = true; ws.bye = true;                  // (이 뒤로 이 접속이 보내는 메시지는 받지 않는다)
   try { ws.close(BYE_CODE[info.code], info.code); } catch {}
+  // Render 앞단(Cloudflare)을 거치면 닫기 인사가 끝나지 않아 접속이 30초 넘게 남아 있다: 잠시 뒤 끊어 버린다 (화면은 'bye' 를 받자마자 스스로 끝낸다)
+  const t = setTimeout(() => { try { ws.terminate(); } catch {} }, 1500);
+  if (t.unref) t.unref();
 }
 
 // 접속 승인: 방장 지정 → 밴 → 같은 인터넷 밴 → 잠금 (거부하면 안내 정보를 돌려준다). ipt: 접속한 곳의 IP 표시
@@ -1323,7 +1326,7 @@ wss.on('connection', async (ws, req) => {
   ws.lastCur = 0; ws.lastNick = 0; ws.lastSync = 0;
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
-  ws.on('message', (raw, isBinary) => { if (ws.approved) onRaw(ws, room, roomId, owner, raw, isBinary); });   // 승인 전에 도착한 메시지는 무시한다
+  ws.on('message', (raw, isBinary) => { if (ws.approved && !ws.bye) onRaw(ws, room, roomId, owner, raw, isBinary); });   // 승인 전·강퇴/밴 뒤에 도착한 메시지는 무시한다
   ws.on('close', () => onClose(ws, room, roomId, owner));
 
   try { await room.ready; } catch (e) { console.error('방 불러오기 오류:', e.message); try { ws.close(1011, 'room load error'); } catch {} return; }

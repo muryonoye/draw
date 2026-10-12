@@ -457,7 +457,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 19차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 19차-2)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -2812,7 +2812,13 @@ function handleMsg(m) {
     case 'admin': admin = m.none ? null : m; adminAt = now(); renderAdmin(); renderLog(); renderPeople(); break;
     case 'chats': chatMsgs = Array.isArray(m.list) ? m.list : []; renderChatAll(); break;
     case 'chat': if (m.m) addChat(m.m); break;
-    case 'bye': byeInfo = m; break;
+    case 'bye': {                                                                  // 강퇴·밴·잠금 등: 서버의 닫기 신호가 앞단(Cloudflare)에서 늦거나 안 와도 바로 끝낸다
+      byeInfo = m;
+      if (ended || !ws) break;
+      const sock = ws; ws = null; try { sock.close(); } catch {}
+      onDisconnected({ kicked: 4001, banned: 4002, locked: 4003, toomany: 4004 }[m.code] || 4000);
+      break;
+    }
     case 'cmderr': toast(m.text || '명령을 실행하지 못했어요', 'err'); break;
     case 'clearall': segs = []; resetUndo(); redrawInk(); break;
     case 'segs': insertSegs(segs, Array.isArray(m.list) ? m.list : []); redrawInk(); break;
@@ -2834,7 +2840,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-12 19차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-12 19차-2)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
