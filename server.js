@@ -732,7 +732,7 @@ function normalizeMeta(j) {
   for (const key of ['bans', 'mutes', 'spectators']) {
     each(j[key], MAX_LIST, (o, v) => {
       const e = m[key][o] = { until: numOr(v.until, 0), name: cleanNick(v.name) || '알 수 없음', reason: cleanReason(v.reason) };
-      if (key === 'bans') { e.at = numOr(v.at, 0); e.ip = tagList(v.ip); e.ipUntil = numOr(v.ipUntil, 0); e.tries = Math.max(0, numOr(v.tries, 0) | 0); }
+      if (key === 'bans') { e.at = numOr(v.at, 0); e.ip = tagList(v.ip); e.ipUntil = numOr(v.ipUntil, 0); e.tries = Math.max(0, numOr(v.tries, 0) | 0); e.ipWanted = v.ipWanted === true; }
     });
   }
   each(j.mods, MAX_MODS, (o, v) => { m.mods[o] = { name: cleanNick(v.name) || '알 수 없음' }; });
@@ -792,7 +792,7 @@ function meMsg(room, o, now = Date.now()) {
 function adminMsg(room) {
   const now = Date.now();
   const L = (src) => Object.keys(src).map((o) => ({ o, name: src[o].name, until: src[o].until, reason: src[o].reason || '' }));
-  const bans = Object.keys(room.meta.bans).map((o) => { const b = room.meta.bans[o]; return { o, name: b.name, until: b.until, reason: b.reason || '', ipBlock: b.ip.length > 0 && b.ipUntil > now, tries: b.tries || 0 }; });
+  const bans = Object.keys(room.meta.bans).map((o) => { const b = room.meta.bans[o]; return { o, name: b.name, until: b.until, reason: b.reason || '', ipBlock: b.ip.length > 0 && b.ipUntil > now, ipLater: !!b.ipWanted && !b.ip.length, tries: b.tries || 0 }; });
   const log = Object.keys(room.meta.log).map((o) => { const e = room.meta.log[o]; return { o, name: e.name, names: e.names, first: e.first, last: e.last, n: e.n, on: hasOwner(room, o), wait: isWaiting(room, o) }; });   // (IP 표시는 보내지 않는다)
   return { type: 'admin', now, locked: room.meta.locked, gate: room.meta.gate, cover: !room.meta.noCover, bans, mutes: L(room.meta.mutes), spectators: L(room.meta.spectators), mods: Object.keys(room.meta.mods).map((o) => ({ o, name: room.meta.mods[o].name })), log };
 }
@@ -858,7 +858,11 @@ function admit(room, roomId, owner, ipt) {
   if (isRoomOwner(room, owner)) return null;            // 방장은 밴·잠금과 무관하게 항상 입장
   const tried = (b) => { b.tries = (b.tries || 0) + 1; room.metaDirty = true; sendAdmin(room); };   // 밴된 뒤 다시 들어오려 한 횟수 (방장이 볼 수 있게)
   const b = room.meta.bans[owner];
-  if (b && (b.until === 0 || b.until > now)) { tried(b); return { code: 'banned', text: '방장에 의해 밴되었습니다' + (b.reason ? `(${b.reason})` : ''), until: b.until, reason: b.reason || '' }; }
+  if (b && (b.until === 0 || b.until > now)) {
+    if (b.ipWanted && ipt && !b.ip.includes(ipt)) {               // 밴할 때 IP 를 몰랐던 사람(기록이 생기기 전에만 왔던 사람): 다시 오면 그 인터넷도 막는다
+      b.ip = [ipt, ...b.ip].slice(0, 3); b.ipUntil = b.until === 0 ? now + IP_BAN_MAX_MS : Math.min(b.until, now + IP_BAN_MAX_MS); room.metaDirty = true;
+    }
+    tried(b); return { code: 'banned', text: '방장에 의해 밴되었습니다' + (b.reason ? `(${b.reason})` : ''), until: b.until, reason: b.reason || '' }; }
   // 밴된 사람이 브라우저를 바꾸거나 기록을 지워 새 사람으로 돌아오는 것: 같은 인터넷(IP)에서 처음 오는 사람은 막는다.
   // 밴 전부터 이 방에 오던 사람(같은 와이파이의 친구 등)과 부방장은 막지 않는다.
   if (ipt && !isMod(room, owner)) {
@@ -919,7 +923,8 @@ function handleCmd(ws, room, roomId, msg) {
   }
   const online = target ? [...room.clients].filter((c) => c.owner === target) : [];
   const logged = target ? room.meta.log[target] : null;
-  const known = online.length > 0 || !!logged;                   // 지금 없어도 입장 기록에 있는 사람이면 밴·채팅 금지·관전을 걸 수 있다
+  // 지금 없어도 입장 기록에 있거나 이 방에 그림이 있는 사람(기록이 생기기 전에만 왔던 사람)이면 밴·채팅 금지·관전을 걸 수 있다
+  const known = online.length > 0 || !!logged || (!!target && (!!room.names[target] || histArr(room).some((s) => s.o === target)));
   const nm = target ? (room.names[target] || (logged || room.meta.bans[target] || room.meta.mutes[target] || room.meta.spectators[target] || room.meta.mods[target] || {}).name || '알 수 없음') : '';
   const who = boss ? '방장' : '부방장';
   const reason = cleanReason(msg.reason);
@@ -929,13 +934,13 @@ function handleCmd(ws, room, roomId, msg) {
     for (const c of online) byeAndClose(c, { code: 'kicked', text: `${who}에 의해 강퇴되었습니다` + (reason ? `(${reason})` : ''), reason });
     sysChat(room, `${nm}님이 강퇴되었습니다`);
   } else if (cmd === 'ban') {
-    if (!known) return cmdErr(ws, '접속 중이거나 입장 기록에 있는 사용자만 밴할 수 있어요');
+    if (!known) return cmdErr(ws, '접속 중이거나 입장 기록·그림이 있는 사용자만 밴할 수 있어요');
     if (!checkMinutes(minutes)) return cmdErr(ws, '밴 시간이 올바르지 않아요 (1~43200분 또는 영구)');
     if (Object.keys(room.meta.bans).length >= MAX_LIST && !room.meta.bans[target]) return cmdErr(ws, '밴 목록이 가득 찼어요');
     const until = minutes === 0 ? 0 : now + minutes * MIN_MS;
     // ip: 같은 인터넷(IP)에서 새로 오는 사람도 막기 (밴된 사람이 새 브라우저로 돌아오는 것 방지). 지금 접속한 곳 + 입장 기록의 최근 IP
     const ip = msg.ip === true ? [...new Set([...online.map((c) => c.ipt), ...(logged ? logged.ip : [])].filter(Boolean))].slice(0, 3) : [];
-    room.meta.bans[target] = { until, name: nm, reason, at: now, ip, ipUntil: ip.length ? (until === 0 ? now + IP_BAN_MAX_MS : Math.min(until, now + IP_BAN_MAX_MS)) : 0, tries: 0 };
+    room.meta.bans[target] = { until, name: nm, reason, at: now, ip, ipUntil: ip.length ? (until === 0 ? now + IP_BAN_MAX_MS : Math.min(until, now + IP_BAN_MAX_MS)) : 0, tries: 0, ipWanted: msg.ip === true };
     delete room.meta.mods[target];                                // (방장이 부방장을 밴하면 부방장도 해제)
     persistMeta(room);
     for (const c of online) byeAndClose(c, { code: 'banned', text: `${who}에 의해 밴되었습니다` + (reason ? `(${reason})` : ''), until, reason });

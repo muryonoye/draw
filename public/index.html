@@ -457,7 +457,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 20차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 20차-2)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -2540,7 +2540,7 @@ function renderAdmin() {
     if (!arr.length) { s.appendChild(mk('div', 'empty', '없어요')); return; }
     for (const it of arr) {
       const left = kind === 'spec' ? '보기만 가능' : it.until === 0 ? (kind === 'ban' ? '영구' : '해제할 때까지') : '남은 시간 ' + fmtRemain(it.until - srvNow);
-      const extra = kind === 'ban' ? (it.ipBlock ? ' · 같은 인터넷도 막음' : '') + (it.tries ? ` · 다시 들어오려다 막힘 ${it.tries}번` : '') : '';
+      const extra = kind === 'ban' ? (it.ipBlock ? ' · 같은 인터넷도 막음' : it.ipLater ? ' · 같은 인터넷: 다시 오면 막음' : '') + (it.tries ? ` · 다시 들어오려다 막힘 ${it.tries}번` : '') : '';
       row(s, it.name, left + extra + (it.reason ? ' · ' + it.reason : ''), '해제',
         () => sendCmd(kind === 'ban' ? { cmd: 'unban', target: it.o } : kind === 'mute' ? { cmd: 'unmute', target: it.o } : { cmd: 'spectate', target: it.o, on: false }));
     }
@@ -2584,9 +2584,13 @@ function renderLog() {
   const setOf = (k) => new Set((a[k] || []).map((x) => x.o));
   const banned = setOf('bans'), muted = setOf('mutes'), spec = setOf('spectators');
   let list = (a.log || []).slice().sort((x, y) => (y.on - x.on) || (y.last - x.last));
+  const logged = new Set(list.map((e) => e.o)), extra = [];      // 입장 기록이 생기기 전에만 와서 그림만 남은 사람도 (밴·그림 지우기를 할 수 있게)
+  for (const [o, n] of cnt) if (!logged.has(o)) extra.push({ o, name: whoName(o), names: [], first: 0, last: 0, n: 0, on: online.has(o), noLog: true, cnt: n });
+  extra.sort((x, y) => y.cnt - x.cnt);
+  list = list.concat(extra);
   const total = list.length;
   if (logQuery) list = list.filter((e) => [e.name, ...(e.names || [])].some((n) => String(n).toLowerCase().includes(logQuery)));
-  $('logInfo').textContent = logQuery ? `${list.length}명 찾음 (전체 ${total}명)` : `${total}명 · 최근 들어온 순 (300명까지 기록돼요)`;
+  $('logInfo').textContent = logQuery ? `${list.length}명 찾음 (전체 ${total}명)` : `${total}명 · 최근 들어온 순 (300명까지 기록돼요)` + (extra.length ? ` · 기록 전에만 왔던 사람 ${extra.length}명은 맨 아래` : '');
   if (!list.length) { box.appendChild(mk('div', 'empty', total ? '찾는 이름이 없어요' : '아직 기록이 없어요')); return; }
   for (const e of list) {
     const r = mk('div', 'lrow'); r.dataset.o = e.o;
@@ -2600,7 +2604,7 @@ function renderLog() {
     if (e.wait) tag('warn', '허락 대기'); else if (spec.has(e.o)) tag('warn', '관전');
     if (muted.has(e.o)) tag('warn', '채팅 금지');
     nm.append(b, tags);
-    nm.appendChild(mk('small', '', (e.on ? '지금 접속 중' : '마지막 ' + fmtWhen(e.last, srvNow)) + ' · 처음 ' + fmtWhen(e.first, srvNow) + ' · ' + e.n + '번 들어옴'));
+    nm.appendChild(mk('small', '', e.noLog ? (e.on ? '지금 접속 중' : '입장 기록 없음 (기록이 생기기 전에 왔던 사람)') : (e.on ? '지금 접속 중' : '마지막 ' + fmtWhen(e.last, srvNow)) + ' · 처음 ' + fmtWhen(e.first, srvNow) + ' · ' + e.n + '번 들어옴'));
     const n = cnt.get(e.o) || 0, old = (e.names || []).filter((x) => x !== e.name);
     nm.appendChild(mk('small', '', (n ? '그림 ' + fmtN(n) + ' 조각' : '그림 없음') + (old.length ? ' · 예전 이름: ' + old.join(', ') : '')));
     r.append(dot, nm);
@@ -2849,7 +2853,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-12 20차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-12 20차-2)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
