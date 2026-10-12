@@ -1486,9 +1486,11 @@ function newsSoon() {
   newsDone = true;
   const seen = +(lsGet('draw:news') || 0);
   if (seen >= NEWS_VER) return;
-  lsSet('draw:news', String(NEWS_VER));
-  if (!returning) return;                                      // (처음 온 사람은 이미 새 화면이다)
-  setTimeout(() => { if (!modalResolve && $('modal').hidden) formModal({ title: '새로 생긴 기능', body: NEWS.map((t) => '• ' + t).join('\n'), ok: '좋아요', cancel: '닫기' }); }, 900);
+  setTimeout(() => {                                            // (그림을 받은 뒤에 판단: 이 기기에서 전에 써 본 사람이거나, 그림이 꽤 있는 방 = 새 주소로 옮겨 온 친구들)
+    if (!returning && segs.length < 200) { newsDone = false; return; }   // (빈 새 방에 처음 온 사람은 이미 새 화면이다: 나중에 그림 있는 방에 가면 그때)
+    lsSet('draw:news', String(NEWS_VER));
+    if (!modalResolve && $('modal').hidden) formModal({ title: '새로 생긴 기능', body: NEWS.map((t) => '• ' + t).join('\n'), ok: '좋아요', cancel: '닫기' });
+  }, 900);
 }
 function closeModal(v) { $('modal').hidden = true; const r = modalResolve; modalResolve = null; modalCtl = null; if (r) r(v); }
 const confirmModal = (o) => formModal(o).then((v) => v !== null);
@@ -1904,7 +1906,8 @@ function dupSel() {                                            // 복제: 새 �
   if (!src.length) return;
   if (segs.length + src.length > roomMax) { toast(FULL_MSG, 'warn'); return; }
   const sids = new Map(), off = 24 / scale;
-  const added = src.map((s) => { if (!sids.has(s.sid)) sids.set(s.sid, newSid()); const n = { x0: r1(s.x0 + off), y0: r1(s.y0 + off), x1: r1(s.x1 + off), y1: r1(s.y1 + off), color: s.color, size: s.size, o: me, sid: sids.get(s.sid) }; if (s.f) n.f = 1; return n; });
+  const added = src.map((s) => { if (!sids.has(s.sid)) sids.set(s.sid, newSid()); const n = { x0: r1(s.x0 + off), y0: r1(s.y0 + off), x1: r1(s.x1 + off), y1: r1(s.y1 + off), color: s.color, size: s.size, o: me, sid: sids.get(s.sid) }; if (s.f) n.f = 1; return n; }).filter((n) => inRange(n.x0, n.y0, n.x1, n.y1));
+  if (!added.length) return;
   addSegs(added); sendSegs('addsegs', added);
   pushAct({ t: 'erase', removed: [], added: added.slice() });
   sel = { list: added, set: new Set(added), box: selBoxOf(added) };
@@ -2488,7 +2491,8 @@ async function askText(at) {
   placeText(at, text, S.textPx);
 }
 function textSegs(at, text, px, sid, color) {                  // 글자를 칸(래스터)으로 그려 네모로 묶고 → 펜 선분 목록 (너무 크면 null)
-  const cellPx = Math.max(1, px / 64, 0.75 * scale);            // 칸 하나 = 화면 몇 px (한 줄 최대 약 80칸, 월드로 0.75 이상: 선 굵기 최소 1 에 맞게)
+  const cellPx = Math.max(1, px / 64, 0.75 * scale);
+  if (1.4 * cellPx / scale > PEN_MAX) return 'far';                // (너무 멀리 축소: 글자 한 칸이 가장 굵은 선보다 크다)            // 칸 하나 = 화면 몇 px (한 줄 최대 약 80칸, 월드로 0.75 이상: 선 굵기 최소 1 에 맞게)
   const fc = px / cellPx, lh = Math.ceil(fc * 1.3), lines = text.split('\n');
   const cv = document.createElement('canvas'), g = cv.getContext('2d');
   const font = TEXT_FONT.replace('{px}', String(Math.max(4, Math.round(fc * 10) / 10)));
@@ -2522,12 +2526,14 @@ function textSegs(at, text, px, sid, color) {                  // 글자를 칸(
     const w = r.b - r.a + 1, h = r.bt - r.t + 1, t = Math.min(w, h);
     const p = w >= h ? P(r.a + t / 2, r.t + h / 2) : P(r.a + w / 2, r.t + t / 2);
     const q = w >= h ? P(r.b + 1 - t / 2, r.t + h / 2) : P(r.a + w / 2, r.bt + 1 - t / 2);
+    if (!inRange(p.x, p.y, q.x, q.y)) continue;
     out.push({ x0: r1(p.x), y0: r1(p.y), x1: r1(q.x), y1: r1(q.y), color, size: clamp(Math.round((t + 0.4) * cw * 10) / 10, 1, PEN_MAX), o: me, sid });
   }
   return out;
 }
 function placeText(at, text, px) {
   const sid = newSid(), list = textSegs(at, text, px, sid, penColor());
+  if (list === 'far') { toast('너무 멀리 축소했어요. 조금 확대해서 넣어 주세요', 'warn'); return; }
   if (!list) { toast('글자가 너무 많거나 커요. 조금 줄여 주세요', 'warn'); return; }
   if (!list.length) return;
   if (segs.length + list.length > roomMax) { toast(FULL_MSG, 'warn'); return; }
@@ -2689,12 +2695,15 @@ function doPinch() {
 // --- 획 내보내기 (펜 / 부분 지우개 / 획 지우개) ---
 // 필압 굵기: 정한 굵기 x (PRESS_MIN ~ 1), 0.1 단위, 서버와 같은 범위(1 ~ PEN_MAX). 필압이 없는 점이면 정한 굵기 그대로.
 function pressSize(st, p) { return p == null ? st.size : clamp(Math.round(st.size * (PRESS_MIN + (1 - PRESS_MIN) * p) * 10) / 10, 1, PEN_MAX); }
+const inRange = (...v) => v.every((n) => Math.abs(n) <= MAX_COORD);   // 서버가 받는 좌표 범위 (밖이면 서버가 버린다)
 function penSeg(st, a, b) {
+  if (!inRange(a.x, a.y, b.x, b.y)) return;                     // (그릴 수 있는 범위 밖: 화면에서도 그리지 않는다)
   const size = st.press ? pressSize(st, a.p == null ? b.p : b.p == null ? a.p : (a.p + b.p) / 2) : st.size;
   const s = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: st.color, size, o: me, sid: st.sid };
   segs.push(s); if (st.act) st.act.segs.push(s); incSeg(s); send({ type: 'seg', ...s });
   if (st.mirror) {                                             // 대칭자: 거울에 비친 선분 (같은 굵기·색, 다른 획)
     const A = mirrorPt(st.mirror, a), B = mirrorPt(st.mirror, b);
+    if (!inRange(A.x, A.y, B.x, B.y)) return;
     const m = { x0: r1(A.x), y0: r1(A.y), x1: r1(B.x), y1: r1(B.y), color: st.color, size, o: me, sid: st.msid };
     segs.push(m); if (st.act) st.act.segs.push(m); incSeg(m); send({ type: 'seg', ...m });
   }
@@ -2743,12 +2752,14 @@ function hitSegs(owner, x0, y0, x1, y1, r, max) {               // hitStrokes(se
   return [...keys.values()];
 }
 function erasePart(st, a, b) {
+  if (!inRange(a.x, a.y, b.x, b.y)) return;
   const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
   const diff = { removed: [], added: [] };
   const res = eraseSegs(sc, x0, y0, x1, y1, r, diff);
   if (res) { segs = res; if (st.act) mergeDiff(st.act, diff); eraseArea(x0, y0, x1, y1, r, diff.removed); send({ type: 'erase', x0, y0, x1, y1, r, ...(sc === null ? { all: true } : {}) }); }
 }
 function eraseStroke(st, a, b) {
+  if (!inRange(a.x, a.y, b.x, b.y)) return;
   const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
   const keys = hitSegs(sc, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
   if (!keys.length) return;
