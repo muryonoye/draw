@@ -1,0 +1,23 @@
+# Cloudflare 배포 설정. 이 파일은 배포 폴더(C:\Users\LSH\draw-cf\app) 맨 위로 복사해서 쓴다 (core.js, cf/worker.js, public/ 도 같은 모양으로 복사)
+name = "draw"
+main = "cf/worker.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+run_worker_first = ["/"]        # 방 없이 온 첫 화면만 Worker 가 새 방으로 보낸다 (나머지 파일은 Cloudflare 가 바로 보냄 — 요청 수에 안 셈)
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[vars]
+MAX_HISTORY = "200000"          # 방 객체 메모리 한도 128MB 에 맞춤 (조각당 약 220바이트 → 약 45MB)
+META_GAP_MS = "1"               # 방 설정 저장은 바로 (Cloudflare 는 저장이 객체 안이라 전송량이 없다)
+SAVE_MS = "2000"                # 그림 저장 간격 (배포·재시작 때 잃을 수 있는 최대 시간). 1번 저장 = 몇 줄 쓰기 (무료 하루 10만 줄)

@@ -309,6 +309,8 @@
     <symbol id="i-bucket" viewBox="0 0 24 24"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></symbol>
     <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M3 15.5 15.5 3l5.5 5.5L8.5 21z"/><path d="m7.5 11 2 2M10.5 8l2 2M13.5 5l2 2M4.5 14l2 2"/></symbol>
     <symbol id="i-ruler-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-ruler-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9.5" ry="5" transform="rotate(-28 12 12)"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-ruler-mirror" viewBox="0 0 24 24"><path d="M12 2.5v3M12 9v3M12 15.5v3M12 21v.5"/><path d="M9 6.5 4 12l5 5.5M15 6.5l5 5.5-5 5.5"/></symbol>
     <symbol id="i-ruler-radial" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 8V2M12 16v6M8 12H2M16 12h6M9.2 9.2 5 5M14.8 14.8 19 19M14.8 9.2 19 5M9.2 14.8 5 19"/></symbol>
     <symbol id="i-dropper" viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></symbol>
   </defs>
@@ -401,9 +403,11 @@
     <button class="opt" data-rk="line" type="button"><svg class="ic"><use href="#i-ruler"/></svg><b>직선자</b><small>곧은 선</small></button>
     <button class="opt" data-rk="circle" type="button"><svg class="ic"><use href="#i-ruler-circle"/></svg><b>원형자</b><small>같은 중심의 원</small></button>
     <button class="opt" data-rk="radial" type="button"><svg class="ic"><use href="#i-ruler-radial"/></svg><b>방사자</b><small>한 점으로 모이는 선</small></button>
+    <button class="opt" data-rk="ellipse" type="button"><svg class="ic"><use href="#i-ruler-ellipse"/></svg><b>타원자</b><small>같은 중심의 타원</small></button>
+    <button class="opt" data-rk="mirror" type="button"><svg class="ic"><use href="#i-ruler-mirror"/></svg><b>대칭자</b><small>거울처럼 하나 더</small></button>
   </div>
   <div class="hint" id="rulerHint"></div>
-  <div class="hint">자의 가운데 점을 끌면 옮겨지고, 둥근 끝점을 끌면 돌아가요 (Shift: 15°씩).</div>
+  <div class="hint">자의 가운데 점을 끌면 옮겨지고, 둥근 끝점을 끌면 돌아가요 (Shift: 15°씩). 타원자의 흰 점은 납작한 정도. 키보드 U: 자 켜기·끄기.</div>
   <div class="row" style="margin-top:10px"><button id="rulerHere" class="btn" type="button" style="flex:1">화면 가운데로</button><button id="rulerOnOff" class="btn primary" type="button" style="flex:1">자 켜기</button></div>
 </section>
 
@@ -563,7 +567,7 @@ function loadSettings() {
   if (out.eraserMode !== 'part' && out.eraserMode !== 'stroke') out.eraserMode = 'part';
   out.smooth = clampInt(out.smooth, 0, 3);
   if (!['auto', 'zoom', 'pan'].includes(out.wheel)) out.wheel = 'auto';
-  if (!['line', 'circle', 'radial'].includes(out.rulerKind)) out.rulerKind = 'line';
+  if (!['line', 'circle', 'radial', 'ellipse', 'mirror'].includes(out.rulerKind)) out.rulerKind = 'line';
   if (!/^#[0-9a-fA-F]{6}$/.test(out.color)) out.color = DEFAULTS.color;
   return out;
 }
@@ -754,6 +758,14 @@ function d2Reader(u) {
     end() { if (p !== n) throw new Error('D2: 남는 데이터'); },
   };
 }
+// 덩어리 이름: D2 바이트의 64비트 해시를 36진수 14글자로 (서버와 화면이 같은 함수: 화면이 보관해 둔 덩어리가 그대로인지 확인한다)
+function blockHash(u) {
+  let h1 = 0xdeadbeef ^ u.length, h2 = 0x41c6ce57 ^ u.length;
+  for (let i = 0; i < u.length; i++) { const c = u[i]; h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(36).padStart(7, '0') + (h1 >>> 0).toString(36).padStart(7, '0');
+}
 // @@SHARED_END
 
 /* ===== 방 / 내 키 / 닉네임 ===== */
@@ -765,6 +777,20 @@ function makeKey() {
   const a = crypto.getRandomValues(new Uint8Array(18));
   return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
+// 이사: 옛 주소(Render)의 안내 페이지가 주소 뒤 #mig= 로 넘겨준 '나'(비밀 키)·닉네임·설정·최근 방·자 위치를 이 주소에 저장한다.
+// 다른 사이트가 만든 링크로 남의 키를 심지 못하게, 옛 주소에서 넘어왔을 때(document.referrer)만 받는다.
+const OLD_ORIGIN = 'https://muryonoye-board.onrender.com';
+(function importMoved() {
+  const m = /^#mig=([A-Za-z0-9_-]+)$/.exec(location.hash);
+  if (!m) return;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch {}
+  if (!String(document.referrer || '').startsWith(OLD_ORIGIN + '/') && document.referrer !== OLD_ORIGIN) return;
+  try {
+    const b = atob(m[1].replace(/-/g, '+').replace(/_/g, '/'));
+    const j = JSON.parse(new TextDecoder().decode(Uint8Array.from(b, (c) => c.charCodeAt(0))));
+    for (const k of Object.keys(j)) if (/^draw:[A-Za-z0-9:_-]{1,80}$/.test(k) && typeof j[k] === 'string' && j[k].length < 20000) lsSet(k, j[k]);
+  } catch {}
+})();
 function getKey() {
   let k = lsGet('draw:key');
   if (!k) { k = makeKey(); lsSet('draw:key', k); }
@@ -1863,23 +1889,30 @@ const RULER_INFO = {
   line: ['직선자', '#i-ruler', '직선', '자 가까이에서 그으면 자 위에, 멀리서 그으면 자와 나란히 곧게 그려져요.'],
   circle: ['원형자', '#i-ruler-circle', '원', '자의 가운데 점을 중심으로 하는 원을 따라 그려져요. 자의 원 가까이에서 그으면 그 원 위에.'],
   radial: ['방사자', '#i-ruler-radial', '방사', '어디서 그어도 자의 가운데 점을 향하는 곧은 선이 돼요 (집중선).'],
+  ellipse: ['타원자', '#i-ruler-ellipse', '타원', '자의 가운데 점을 중심으로 하는 같은 모양의 타원을 따라 그려져요. 흰 점을 끌면 납작한 정도가 바뀌어요.'],
+  mirror: ['대칭자', '#i-ruler-mirror', '대칭', '자를 거울 삼아 반대쪽에 같은 선이 하나 더 그려져요. 이전을 누르면 두 선이 같이 지워져요.'],
 };
+const RULER_E_MIN = 0.05;                                      // 타원자: 짧은 지름 / 긴 지름 (가장 납작할 때)
 const rlCv = $('rl'), rctx = rlCv.getContext('2d');
 const ruler = (() => {
   try {
     const j = JSON.parse(lsGet(RULER_KEY) || 'null');
-    if (j && [j.x, j.y, j.a, j.r].every(Number.isFinite) && Math.abs(j.x) <= MAX_COORD && Math.abs(j.y) <= MAX_COORD && j.r > 0) return { on: j.on === true, x: j.x, y: j.y, a: j.a, r: j.r, placed: true };
+    if (j && [j.x, j.y, j.a, j.r].every(Number.isFinite) && Math.abs(j.x) <= MAX_COORD && Math.abs(j.y) <= MAX_COORD && j.r > 0) return { on: j.on === true, x: j.x, y: j.y, a: j.a, r: j.r, e: Number.isFinite(j.e) ? clamp(j.e, RULER_E_MIN, 1) : 0.5, placed: true };
   } catch {}
-  return { on: false, x: 0, y: 0, a: 0, r: 150, placed: false };
+  return { on: false, x: 0, y: 0, a: 0, r: 150, e: 0.5, placed: false };
 })();
 let rulerDrag = null, rulerHover = false, rafRuler = 0;
-const saveRuler = () => lsSet(RULER_KEY, JSON.stringify({ on: ruler.on, x: ruler.x, y: ruler.y, a: ruler.a, r: ruler.r }));
+const saveRuler = () => lsSet(RULER_KEY, JSON.stringify({ on: ruler.on, x: ruler.x, y: ruler.y, a: ruler.a, r: ruler.r, e: ruler.e }));
 const rulerSoon = () => { if (!rafRuler) rafRuler = requestAnimationFrame(paintRuler); };
 function rulerScreen() {                                       // 자의 화면 위치: 가운데 c, 방향 (ux, uy), 손잡이들 (move: 옮기기, rot: 돌리기, rad: 원 크기)
   const c = toScreen(ruler.x, ruler.y), sa = ruler.a + rot, ux = Math.cos(sa), uy = Math.sin(sa);
   const hs = [{ k: 'move', x: c.x, y: c.y }];
-  if (S.rulerKind === 'line') hs.push({ k: 'rot', x: c.x + ux * RULER_HANDLE_PX, y: c.y + uy * RULER_HANDLE_PX, s: 0 }, { k: 'rot', x: c.x - ux * RULER_HANDLE_PX, y: c.y - uy * RULER_HANDLE_PX, s: Math.PI });
+  if (S.rulerKind === 'line' || S.rulerKind === 'mirror') hs.push({ k: 'rot', x: c.x + ux * RULER_HANDLE_PX, y: c.y + uy * RULER_HANDLE_PX, s: 0 }, { k: 'rot', x: c.x - ux * RULER_HANDLE_PX, y: c.y - uy * RULER_HANDLE_PX, s: Math.PI });
   else if (S.rulerKind === 'circle') { const R = Math.max(ruler.r * scale, 40); hs.push({ k: 'rad', x: c.x + ux * R, y: c.y + uy * R, s: 0 }); }
+  else if (S.rulerKind === 'ellipse') {                        // 긴 지름 끝 = 크기·방향, 짧은 지름 끝(흰 점) = 납작한 정도
+    const R = Math.max(ruler.r * scale, 40), Rb = Math.max(R * ruler.e, 18);
+    hs.push({ k: 'rad', x: c.x + ux * R, y: c.y + uy * R, s: 0 }, { k: 'ecc', x: c.x - uy * Rb, y: c.y + ux * Rb });
+  }
   return { c, ux, uy, hs };
 }
 function paintRuler() {
@@ -1891,16 +1924,18 @@ function paintRuler() {
   const twice = (path) => { rctx.lineCap = 'round'; rctx.strokeStyle = 'rgba(255,255,255,.9)'; rctx.lineWidth = 4; path(); rctx.stroke(); rctx.strokeStyle = RULER_COLOR; rctx.lineWidth = 1.5; path(); rctx.stroke(); };   // 흰 테두리 + 파란 선: 어떤 그림 위에서도 보이게
   if (S.rulerKind === 'line') twice(() => { rctx.beginPath(); rctx.moveTo(c.x - ux * far, c.y - uy * far); rctx.lineTo(c.x + ux * far, c.y + uy * far); });
   else if (S.rulerKind === 'circle') { const R = ruler.r * scale; if (R < far * 4) twice(() => { rctx.beginPath(); rctx.arc(c.x, c.y, Math.max(R, 0.5), 0, Math.PI * 2); }); }
+  else if (S.rulerKind === 'ellipse') { const R = ruler.r * scale; if (R < far * 4) twice(() => { rctx.beginPath(); rctx.ellipse(c.x, c.y, Math.max(R, 0.5), Math.max(R * ruler.e, 0.5), Math.atan2(uy, ux), 0, Math.PI * 2); }); }
+  else if (S.rulerKind === 'mirror') { rctx.save(); rctx.setLineDash([10, 7]); twice(() => { rctx.beginPath(); rctx.moveTo(c.x - ux * far, c.y - uy * far); rctx.lineTo(c.x + ux * far, c.y + uy * far); }); rctx.restore(); }
   else {
     rctx.save(); rctx.globalAlpha = 0.45;
     twice(() => { rctx.beginPath(); for (let i = 0; i < 24; i++) { const t = ruler.a + rot + i * Math.PI / 12, dx = Math.cos(t), dy = Math.sin(t); rctx.moveTo(c.x + dx * 16, c.y + dy * 16); rctx.lineTo(c.x + dx * far, c.y + dy * far); } });
     rctx.restore();
   }
   for (const h of hs) {
-    const mv = h.k === 'move';
-    rctx.beginPath(); rctx.arc(h.x, h.y, mv ? 9 : 7, 0, Math.PI * 2);
+    const mv = h.k === 'move' || h.k === 'ecc';
+    rctx.beginPath(); rctx.arc(h.x, h.y, h.k === 'move' ? 9 : 7, 0, Math.PI * 2);
     rctx.fillStyle = mv ? '#fff' : RULER_COLOR; rctx.fill(); rctx.lineWidth = 2; rctx.strokeStyle = mv ? RULER_COLOR : '#fff'; rctx.stroke();
-    if (mv) { rctx.beginPath(); rctx.arc(h.x, h.y, 2.5, 0, Math.PI * 2); rctx.fillStyle = RULER_COLOR; rctx.fill(); }
+    if (h.k === 'move') { rctx.beginPath(); rctx.arc(h.x, h.y, 2.5, 0, Math.PI * 2); rctx.fillStyle = RULER_COLOR; rctx.fill(); }
   }
 }
 function rulerHit(p, touch) {                                  // 화면 p 에서 가장 가까운 자 손잡이 (없으면 null)
@@ -1914,7 +1949,10 @@ function rulerDragTo(p, shift) {
   const d = rulerDrag;
   if (!d) return;
   if (d.k === 'move') { const w = toWorld({ x: p.x - d.dx, y: p.y - d.dy }); ruler.x = clamp(w.x, -MAX_COORD, MAX_COORD); ruler.y = clamp(w.y, -MAX_COORD, MAX_COORD); }
-  else {
+  else if (d.k === 'ecc') {                                    // 타원자 흰 점: 가운데에서 짧은 지름 방향으로 떨어진 만큼 / 긴 지름
+    const c = toScreen(ruler.x, ruler.y), sa = ruler.a + rot, n = Math.abs((p.x - c.x) * -Math.sin(sa) + (p.y - c.y) * Math.cos(sa));
+    ruler.e = clamp(n / Math.max(ruler.r * scale, 1), RULER_E_MIN, 1);
+  } else {
     const c = toScreen(ruler.x, ruler.y), dist = Math.hypot(p.x - c.x, p.y - c.y);
     if (dist < 4) return;
     let a = Math.atan2(p.y - c.y, p.x - c.x) - rot - d.s;       // 월드 기준 방향 (화면을 돌려도 자는 그림에 붙어 있다)
@@ -1955,7 +1993,7 @@ $('rulerHere').onclick = () => { placeRuler(); ruler.on = true; saveRuler(); syn
 $('rulerOnOff').onclick = () => { setRuler(!ruler.on); closePop(); };
 // 이 점(월드)에서 시작하는 획이 따라갈 선·원. 직선: 지나는 점 (ox, oy) + 방향 (ux, uy) / 원: 중심 (cx, cy) + 반지름 R
 function rulerGuide(w) {
-  if (!ruler.on) return null;
+  if (!ruler.on || S.rulerKind === 'mirror') return null;      // (대칭자는 선을 옮기지 않고 거울 선을 하나 더 그린다)
   const tol = RULER_SNAP_PX / scale;
   if (S.rulerKind === 'line') {
     const ux = Math.cos(ruler.a), uy = Math.sin(ruler.a), d = (w.x - ruler.x) * -uy + (w.y - ruler.y) * ux;   // d: 자에서 떨어진 거리
@@ -1965,16 +2003,28 @@ function rulerGuide(w) {
   const dx = w.x - ruler.x, dy = w.y - ruler.y, L = Math.hypot(dx, dy);
   if (L < 1e-6) return null;                                   // (가운데 점에서 시작하면 방향을 알 수 없어 자 없이)
   if (S.rulerKind === 'circle') return { k: 'circle', cx: ruler.x, cy: ruler.y, R: Math.abs(L - ruler.r) <= tol ? ruler.r : L };
+  if (S.rulerKind === 'ellipse') {                             // 자의 방향·납작함을 펴서 원으로 보고 (긴 지름 기준 반지름 Le), 자 가까이면 자의 타원 위에
+    const ca = Math.cos(ruler.a), sa = Math.sin(ruler.a), lx = dx * ca + dy * sa, ly = (-dx * sa + dy * ca) / ruler.e, Le = Math.hypot(lx, ly);
+    const near = Math.hypot(lx / Le * ruler.r - lx, (ly / Le * ruler.r - ly) * ruler.e) <= tol;   // (자의 타원까지 실제 거리)
+    return { k: 'ellipse', cx: ruler.x, cy: ruler.y, ca, sa, e: ruler.e, R: near ? ruler.r : Le };
+  }
   return { k: 'line', ox: ruler.x, oy: ruler.y, ux: dx / L, uy: dy / L };
 }
 function guidePoint(g, p) {                                    // p 를 그 선·원 위의 가장 가까운 점으로
   if (g.k === 'line') { const t = (p.x - g.ox) * g.ux + (p.y - g.oy) * g.uy; return { x: g.ox + g.ux * t, y: g.oy + g.uy * t }; }
+  if (g.k === 'ellipse') {                                     // 펴서 원 위로 옮긴 뒤 다시 타원으로
+    const dx = p.x - g.cx, dy = p.y - g.cy, lx = dx * g.ca + dy * g.sa, ly = (-dx * g.sa + dy * g.ca) / g.e, L = Math.hypot(lx, ly);
+    if (L < 1e-9) return null;
+    const qx = lx / L * g.R, qy = ly / L * g.R * g.e;
+    return { x: g.cx + qx * g.ca - qy * g.sa, y: g.cy + qx * g.sa + qy * g.ca };
+  }
   const dx = p.x - g.cx, dy = p.y - g.cy, L = Math.hypot(dx, dy);
   return L < 1e-9 ? null : { x: g.cx + dx / L * g.R, y: g.cy + dy / L * g.R };
 }
 
 /* ===== 입력: 상태 머신 (none / pan / pinch / pending / draw / tap / drop / rot / ruler) ===== */
 const ptr = new Map();                                       // pointerId -> { id, type, x, y, sx, sy, t0, tn }
+let histOk = false;                                            // 이번 접속에서 그림(history/B3)을 받았나 (받기 전에는 그리지 않는다)
 let gmode = 'none', strokeSt = null, pinchPrev = null, pinchView = null, pinchRot = null, penActive = 0, lastCurSent = 0, qSeq = 0;
 let rotDrag = null, lastMouse = null;                        // 회전 끌기 { a0, r0, moved } / 마우스·펜이 보드 위에 마지막으로 있던 곳 (키보드 확대 기준점)
 let heldTool = null, altDrop = null, revertTo = null;        // 누르고 있는 도구 키 { code, t, prev, used } / Alt 스포이드 { prev } / 그리기가 끝나면 돌아갈 도구
@@ -2015,7 +2065,29 @@ for (const t of ['touchstart', 'touchend', 'touchcancel']) {
   }, { capture: true, passive: true });
 }
 const evT = (e) => (e && e.timeStamp) || now();
-function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+// 보내기: 선·커서·지우개처럼 자주 보내는 메시지는 모았다가 0.08초마다 한 번에 ({type:'b', l:[…]}).
+// Cloudflare 무료 플랜은 서버가 받은 메시지 수로 하루 한도를 센다 (그리는 사람 한 명이 초당 25~45개 → 12개 이하).
+// 다른 메시지(채팅·칠하기·명령 등)는 모아 둔 것을 먼저 보내고 바로 보낸다 (순서 그대로). 커서는 마지막 위치만.
+const BATCH_TYPES = new Set(['seg', 'cur', 'curhide', 'erase', 'erasestroke']), BATCH_MS = 80, BATCH_MAX = 40;
+let outQ = [], outT = 0;
+function flushOut() {
+  if (outT) { clearTimeout(outT); outT = 0; }
+  if (!outQ.length) return;
+  const l = outQ; outQ = [];
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(l.length === 1 ? l[0] : { type: 'b', l }));
+}
+function send(o) {
+  if (!ws || ws.readyState !== 1) return;
+  if (BATCH_TYPES.has(o.type)) {
+    if (o.type === 'cur' && outQ.length && outQ[outQ.length - 1].type === 'cur') outQ[outQ.length - 1] = o;
+    else outQ.push(o);
+    if (outQ.length >= BATCH_MAX) flushOut();
+    else if (!outT) outT = setTimeout(flushOut, BATCH_MS);
+    return;
+  }
+  flushOut();
+  ws.send(JSON.stringify(o));
+}
 // 내 커서 위치는 0.05초에 한 번만 보낸다. 그 사이 움직임은 마지막 위치만 잠시 뒤 보낸다 (멈춘 자리가 다른 사람 화면에 정확히 남게)
 let curPend = null, curTimer = 0;
 function sendCursor(w) {
@@ -2048,7 +2120,13 @@ function penSeg(st, a, b) {
   const size = st.press ? pressSize(st, a.p == null ? b.p : b.p == null ? a.p : (a.p + b.p) / 2) : st.size;
   const s = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: st.color, size, o: me, sid: st.sid };
   segs.push(s); if (st.act) st.act.segs.push(s); incSeg(s); send({ type: 'seg', ...s });
+  if (st.mirror) {                                             // 대칭자: 거울에 비친 선분 (같은 굵기·색, 다른 획)
+    const A = mirrorPt(st.mirror, a), B = mirrorPt(st.mirror, b);
+    const m = { x0: r1(A.x), y0: r1(A.y), x1: r1(B.x), y1: r1(B.y), color: st.color, size, o: me, sid: st.msid };
+    segs.push(m); if (st.act) st.act.segs.push(m); incSeg(m); send({ type: 'seg', ...m });
+  }
 }
+function mirrorPt(g, p) { const t = (p.x - g.ox) * g.ux + (p.y - g.oy) * g.uy; return { x: 2 * (g.ox + g.ux * t) - p.x, y: 2 * (g.oy + g.uy * t) - p.y }; }
 // 부분 지우개가 지나간 곳만 다시 그린다: 지워진 부분은 지우개 경로에서 (반지름 + 선 굵기/2) 안이고, 그 선이 그려진 자리와 잘린 끝의 둥근 마감까지 (선 굵기/2) 더
 function eraseArea(x0, y0, x1, y1, r, removed) {
   let m = 0;
@@ -2113,7 +2191,9 @@ function emit(st, a, b) { if (st.kind === 'pen') penSeg(st, a, b); else if (st.k
 function previewSeg(st, a, b) {                                // 확정 전 터치 획: 내 화면에만 임시로 그린다
   ensureAligned(); ctxView();
   ctx.lineCap = 'round'; ctx.strokeStyle = st.color; ctx.lineWidth = Math.max(st.size, 0.6 / scale);
-  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+  if (st.mirror) { const A = mirrorPt(st.mirror, a), B = mirrorPt(st.mirror, b); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); }
+  ctx.stroke();
 }
 function strokePoint(st, sx, sy, t, force, p) {                // 너무 가깝거나 빠른 점은 생략 (마지막 점은 force 로 반드시 보낸다). p: 펜 필압(0~1)
   if (st.press && p > 0) st.pp = st.pp * 0.5 + p * 0.5;         // 필압은 튀지 않게 조금 부드럽게
@@ -2165,8 +2245,9 @@ function discardPending(st) {                                  // 네트워크 �
 }
 function cancelStroke(st) {                                    // 이미 전송된 획을 모두의 화면과 저장본에서 취소
   if (strokeSt === st) strokeSt = null;
-  segs = segs.filter((s) => !(s.o === me && s.sid === st.sid));
+  segs = segs.filter((s) => !(s.o === me && (s.sid === st.sid || (st.msid && s.sid === st.msid))));
   send({ type: 'cancelstroke', sid: st.sid });
+  if (st.msid) send({ type: 'cancelstroke', sid: st.msid });
   redrawInk();
 }
 let lastEnd = null;                                            // 마지막 획이 끝난 월드 위치 { x, y, pen } (Shift+클릭 직선용)
@@ -2184,6 +2265,7 @@ function finishStroke(st) {
   if (st.last) lastEnd = { x: st.last.x, y: st.last.y, pen: st.kind === 'pen' };
   commitAct(st);
   if (strokeSt === st) strokeSt = null;
+  flushOut();                                                    // (획이 끝나면 모아 둔 선을 바로 보낸다: 다음 사람이 곧바로 그려도 모두의 순서가 같게)
 }
 function abortStroke() {
   const st = strokeSt;
@@ -2205,7 +2287,8 @@ function startStroke(rec) {
     press: kind === 'pen' && rec.type === 'pen' && S.pressure, pp: clamp(rec.p || 0.5, 0, 1),   // 필압은 펜(애플펜슬·태블릿 펜)일 때만
     tau: kind === 'pen' ? SMOOTH_MS[S.smooth] || 0 : 0, ex: rec.x, ey: rec.y, et: rec.t0 };     // 손떨림 보정은 펜 도구일 때
   if (st.press) w.p = st.pp;
-  st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
+  if (kind === 'pen' && ruler.on && S.rulerKind === 'mirror') { st.mirror = { ox: ruler.x, oy: ruler.y, ux: Math.cos(ruler.a), uy: Math.sin(ruler.a) }; st.msid = newSid(); }   // 대칭자: 거울 선은 다른 획
+  st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, sid2: st.msid || null, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
   if (touch) {
     gmode = 'pending'; st.pts.push(w);
     if (kind === 'pen') previewSeg(st, w, w);
@@ -2271,7 +2354,7 @@ board.addEventListener('pointerdown', (e) => {
   if (panWanted) { gmode = 'pan'; return; }
   if (rec.type === 'mouse' && e.button !== 0) return;
   if (tool === 'drop') { gmode = 'drop'; showDropPrev(rec, rec.type !== 'mouse'); return; }   // 스포이드: 누른 채 색 미리보기, 떼면 선택 (연결 전에도 쓸 수 있다)
-  if (!me) { toast('연결 중이에요. 잠시 후 다시 그려 주세요', 'warn'); return; }
+  if (!me || !histOk) { toast('연결 중이에요. 잠시 후 다시 그려 주세요', 'warn'); return; }
   if (myRestr.spectator) { toast(myRestr.wait ? '방장·부방장이 허락하면 그릴 수 있어요 (지금은 보기만)' : '방장이 그리기를 제한했어요 (보기만 가능)', 'warn'); return; }
   if (tool === 'fill') { gmode = 'tap'; return; }
   if (tool === 'pen' && shareCapped()) { toast(`한 사람은 이 방 그림 용량의 ${Math.round(roomShare * 100)}%까지만 쓸 수 있어요. 내 그림을 조금 지우고 그려 주세요`, 'warn'); return; }              // 채우기: 가만히 떼면 채우고, 끌면 화면 이동
@@ -2426,6 +2509,7 @@ window.addEventListener('keydown', (e) => {
     if (!spaceDown) { spaceDown = true; ring.hidden = true; syncCursor(); }
     return;
   }
+  if (k === 'u' && !e.repeat) { setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐 (U: 끄기)' : '자 꺼짐'); return; }   // U: 자 켜기·끄기
   const t = TOOL_KEYS[k];
   if (!t || e.repeat || ptr.size) return;
   heldTool = { code: e.code, t, prev: tool, used: false };
@@ -2779,7 +2863,7 @@ function commitAct(st) {
 function doUndo() {
   if (!me || strokeSt || myRestr.spectator) return;
   const a = undoSt.pop(); if (!a) return;
-  if (a.t === 'draw') { segs = segs.filter((s) => !(s.o === me && s.sid === a.sid)); send({ type: 'cancelstroke', sid: a.sid }); }
+  if (a.t === 'draw') { segs = segs.filter((s) => !(s.o === me && (s.sid === a.sid || (a.sid2 && s.sid === a.sid2)))); send({ type: 'cancelstroke', sid: a.sid }); if (a.sid2) send({ type: 'cancelstroke', sid: a.sid2 }); }
   else { const r = removeExactSegs(segs, a.added); if (r) segs = r; addLocal(a.removed); sendSegs('removesegs', a.added); sendSegs('addsegs', a.removed); }
   redoSt.push(a); redrawInk(); syncUndoUi();
 }
@@ -2827,6 +2911,74 @@ let zOk = (() => { try { new DecompressionStream('deflate'); return true; } catc
 const inflateBytes = async (buf) => new Uint8Array(await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
 // 받은 압축 그림 풀기: 'D2'(작은 이진 형식)이면 decodeSegs, 아니면 JSON
 const unpackHistory = (u) => (u.length >= 2 && u[0] === 68 && u[1] === 50 ? decodeSegs(u) : JSON.parse(new TextDecoder().decode(u)));
+// ---- 덩어리 보관 (z=3): 서버에서 받은 그림 덩어리를 이 기기에 보관해 두고, 다시 들어올 때 가진 덩어리 이름을 먼저 알린다 → 서버는 없는 덩어리만 보낸다 ----
+// map: 이름 → { b: D2 바이트, s: 풀어 둔 선분 }. 지금 그림에 없는 덩어리는 버린다. IndexedDB('draw-blocks')에 방마다 최근 12개 방까지.
+const blk = { map: new Map(), reqs: new Map(), nextId: 1, saveT: 0 };
+const IDB_NAME = 'draw-blocks', IDB_STORE = 'rooms', IDB_KEEP = 12;
+function idbReq(r) { return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+function idbOpen() { const r = indexedDB.open(IDB_NAME, 1); r.onupgradeneeded = () => { r.result.createObjectStore(IDB_STORE); }; return idbReq(r); }
+async function idbLoadBlocks(roomId) {
+  const db = await idbOpen();
+  try { return await idbReq(db.transaction(IDB_STORE).objectStore(IDB_STORE).get(roomId)); } finally { db.close(); }
+}
+async function idbSaveBlocks(roomId) {
+  const db = await idbOpen();
+  try {
+    const st = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE);
+    await idbReq(st.put({ t: Date.now(), blocks: [...blk.map].map(([h, e]) => [h, e.b]) }, roomId));
+    const keys = await idbReq(st.getAllKeys());
+    if (keys.length > IDB_KEEP) {                                                 // 오래된 방은 지운다
+      const all = await Promise.all(keys.map(async (k) => [k, ((await idbReq(st.get(k))) || {}).t || 0]));
+      all.sort((a, b) => b[1] - a[1]);
+      for (const [k] of all.slice(IDB_KEEP)) st.delete(k);
+    }
+  } finally { db.close(); }
+}
+function saveBlocksSoon() { clearTimeout(blk.saveT); blk.saveT = setTimeout(() => { idbSaveBlocks(room).catch(() => {}); }, 1500); }
+// 처음 열 때 이 방의 보관 덩어리 읽기 (이름이 내용과 맞는 것만). 늦으면 기다리지 않는다.
+blk.ready = (async () => {
+  try {
+    if (!zOk || typeof indexedDB === 'undefined') return;
+    const v = await Promise.race([idbLoadBlocks(room), new Promise((r) => setTimeout(() => r(null), 800))]);
+    if (v && Array.isArray(v.blocks)) for (const [h, b] of v.blocks) if (b instanceof Uint8Array && blockHash(b) === h) blk.map.set(h, { b, s: null });
+  } catch {}
+})();
+// 서버에 덩어리 목록 보내기 (요청 번호마다 그때 보낸 목록을 기억: 답(B3)은 그 목록의 번호로 덩어리를 가리킨다)
+function resyncNow() { flushOut(); if (zOk && ws && ws.readyState === 1) requestSync(ws); else send({ type: 'resync' }); }   // 서버 그림에 다시 맞추기
+function requestSync(sock) {
+  const id = blk.nextId++, h = [...blk.map.keys()];
+  blk.reqs.set(id, h);
+  try { sock.send(JSON.stringify({ type: 'sync', h, id })); } catch {}
+}
+// B3 풀기 → 선분 목록. 보관 덩어리를 쓰고, 새 덩어리는 보관에 넣는다. 틀린 데가 있으면 throw
+function applyB3(u) {
+  const n = u.length;
+  let p = 2;
+  const vu = () => { let x = 0, m = 1, b; do { if (p >= n) throw new Error('B3: 잘림'); b = u[p++]; x += (b & 127) * m; m *= 128; } while (b & 128); return x; };
+  const id = vu(), have = blk.reqs.get(id) || [], cnt = vu(), used = new Map(), order = [];
+  for (const k of [...blk.reqs.keys()]) if (k <= id) blk.reqs.delete(k);
+  for (let i = 0; i < cnt; i++) {
+    const x = vu();
+    if (x % 2 === 0) {
+      const h = have[x / 2], e = h && blk.map.get(h);
+      if (!e) throw new Error('B3: 없는 덩어리');
+      used.set(h, e); order.push(h);
+    } else {
+      const L = (x - 1) / 2;
+      if (p + 14 + L > n) throw new Error('B3: 잘림');
+      const h = String.fromCharCode(...u.subarray(p, p + 14)); p += 14;
+      const b = u.slice(p, p + L); p += L;
+      if (blockHash(b) !== h) throw new Error('B3: 덩어리 이름이 내용과 달라요');
+      used.set(h, { b, s: null }); order.push(h);
+    }
+  }
+  if (p !== n) throw new Error('B3: 남는 데이터');
+  const out = [];
+  for (const h of order) { const e = used.get(h); if (!e.s) e.s = decodeSegs(e.b); for (const s of e.s) out.push(s); }
+  blk.map = used;
+  saveBlocksSoon();
+  return out;
+}
 // 받은 메시지는 순서대로 처리한다: 압축된 그림을 푸는 동안 뒤에 온 메시지는 기다렸다가 그 다음에 (그림보다 먼저 처리되면 안 된다)
 const rxQ = [];
 let rxBusy = false;
@@ -2841,8 +2993,14 @@ async function pumpRx() {
     const [sock, d] = rxQ.shift();
     if (sock !== ws) continue;                                                     // 끊긴 연결에서 온 것은 버린다
     if (typeof d === 'string') { onMessage(d); continue; }
-    let data = null;
-    try { data = unpackHistory(await inflateBytes(d)); } catch {}
+    let data = null, u = null;
+    try { u = await inflateBytes(d); } catch {}
+    if (u && u.length >= 2 && u[0] === 66 && u[1] === 51) {                       // 덩어리 맞추기 (B3)
+      try { data = applyB3(u); } catch { data = null; blk.map.clear(); if (sock === ws) { requestSync(sock); continue; } }   // 틀렸으면 보관을 비우고 전체를 다시 받는다
+    } else {
+      try { data = unpackHistory(u); } catch {}
+      if (Array.isArray(data)) blk.map.clear();                                    // (덩어리가 아닌 전체 그림: 보관 덩어리와 맞지 않으니 비운다)
+    }
     if (sock !== ws) continue;
     if (Array.isArray(data)) handleMsg({ type: 'history', data });
     else { zOk = false; rxQ.length = 0; try { sock.close(); } catch {} }           // 풀지 못하면 압축 없이 다시 접속한다
@@ -2853,15 +3011,16 @@ function connect() {
   clearTimeout(retryT);
   if (ended || (ws && (ws.readyState === 0 || ws.readyState === 1))) return;      // 중복 소켓 금지
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const sock = new WebSocket(`${proto}://${location.host}/?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=2' : ''}`);
+  outQ = []; if (outT) { clearTimeout(outT); outT = 0; }
+  const sock = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=3' : ''}`);
   sock.binaryType = 'arraybuffer';
   ws = sock;
-  sock.onopen = () => { if (sock !== ws) return; retry = 0; connected = true; lastMsgAt = now(); updateBanner(); hudSoon(); };
+  sock.onopen = () => { if (sock !== ws) return; if (zOk) requestSync(sock); retry = 0; connected = true; lastMsgAt = now(); updateBanner(); hudSoon(); };
   sock.onclose = (e) => { if (sock === ws) onDisconnected(e.code); };
   sock.onmessage = (e) => { if (sock === ws) { lastMsgAt = now(); onRx(sock, e.data); } };
 }
 function onDisconnected(code) {
-  connected = false; me = null; count = 0; online = new Set();
+  connected = false; me = null; histOk = false; count = 0; online = new Set();
   ownerId = null; admin = null; mods = new Set(); myRestr = { muted: null, spectator: false, wait: false };
   for (const o of [...cursors.keys()]) hideCursor(o);
   abortStroke(); resetUndo(); syncOwnerUI(); hudSoon();
@@ -2889,7 +3048,7 @@ function handleMsg(m) {
   switch (m.type) {
     case 'hello': me = m.me; break;
     case 'pong': break;
-    case 'history': segs = Array.isArray(m.data) ? m.data : []; resetUndo(); redrawInk(); checkCap(); rememberRoom(); break;
+    case 'history': segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom(); break;
     case 'names': names = m.names || {}; refreshLabels(); renderPeople(); if (me && names[me]) nickEl.value = names[me]; break;
     case 'name': names[m.o] = m.name; refreshLabels(); renderPeople(); if (m.o === me) nickEl.value = m.name; break;
     case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); renderPeople(); break;
@@ -2904,7 +3063,7 @@ function handleMsg(m) {
       if (m.by === me && m.q != null && pendingQ.has(m.q)) {                       // 내 예상과 서버 결과가 다르면 서버 기준으로 맞춘다
         const predicted = pendingQ.get(m.q); pendingQ.delete(m.q);
         const got = new Set(keys.map((k) => k[0] + '|' + k[1]));
-        if (predicted.size !== got.size || [...predicted].some((k) => !got.has(k))) send({ type: 'resync' });
+        if (predicted.size !== got.size || [...predicted].some((k) => !got.has(k))) resyncNow();
       }
       break;
     }
@@ -2916,7 +3075,7 @@ function handleMsg(m) {
       if (m.code === 'share' || m.code === 'cover') {                              // 서버가 내 선을 받지 않았다: 그 획은 거기서 멈추고, 화면을 서버 그림에 맞춘다
         const st = strokeSt;
         if (st && st.kind === 'pen') { commitAct(st); strokeSt = null; if (gmode === 'draw' || gmode === 'pending') gmode = 'none'; }
-        send({ type: 'resync' });
+        resyncNow();
       }
       break;
     case 'roomstate': ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); if (m.max > 0) { roomMax = m.max; checkCap(); }
@@ -2935,6 +3094,7 @@ function handleMsg(m) {
     case 'chats': chatMsgs = Array.isArray(m.list) ? m.list : []; renderChatAll(); break;
     case 'chat': if (m.m) addChat(m.m); break;
     case 'bye': {                                                                  // 강퇴·밴·잠금 등: 서버의 닫기 신호가 앞단(Cloudflare)에서 늦거나 안 와도 바로 끝낸다
+      if (m.code === 'moved') { ended = true; try { ws.close(); } catch {} location.reload(); break; }   // 서버가 새 주소로 이사함: 다시 열면 안내 페이지가 옮겨 준다
       byeInfo = m;
       if (ended || !ws) break;
       const sock = ws; ws = null; try { sock.close(); } catch {}
@@ -2975,7 +3135,7 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 resize();
-connect();
+blk.ready.then(connect);
 </script>
 </body>
 </html>
