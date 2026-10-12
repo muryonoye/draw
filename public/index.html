@@ -1283,8 +1283,8 @@ const hue = (o) => { let h = 0; for (const ch of String(o)) h = (h * 31 + ch.cha
 const colorOf = (o) => `hsl(${hue(o)} 65% 42%)`;
 const nameOf = (o) => names[o] || '알 수 없음';
 const cursors = new Map();                                   // 주인 ID -> { el, lbl, x, y, t }
-// glide: 서버가 0.1초마다 모아 보내는 커서는 그 사이를 부드럽게 옮긴다 (화면을 움직일 때는 바로)
-function layoutCursor(c, glide) { const p = toScreen(c.x, c.y); c.el.style.transition = glide ? 'transform 0.1s linear' : ''; c.el.style.transform = `translate(${p.x}px, ${p.y}px)`; }
+// glide: 서버가 모아 보내는 커서는 받은 간격(평균, 0.06~0.25초)에 맞춰 그 사이를 부드럽게 옮긴다 (화면을 움직일 때는 바로)
+function layoutCursor(c, glide) { const p = toScreen(c.x, c.y); c.el.style.transition = glide ? `transform ${Math.round(c.gap || 100)}ms linear` : ''; c.el.style.transform = `translate(${p.x}px, ${p.y}px)`; }
 function layoutCursors() { for (const c of cursors.values()) layoutCursor(c); }
 function showCursor(o, x, y, glide) {
   if (o === me || !S.showCursors) return;
@@ -1296,8 +1296,9 @@ function showCursor(o, x, y, glide) {
     el.append(dot, lbl); curLayer.appendChild(el);
     c = { el, lbl, x, y, t: 0 }; cursors.set(o, c);
   }
-  const fresh = !c.t;
-  c.x = x; c.y = y; c.t = now(); c.lbl.textContent = nameOf(o);
+  const fresh = !c.t, t = now();
+  if (!fresh) c.gap = clamp(((c.gap || 100) * 0.6 + (t - c.t) * 0.4), 60, 250);
+  c.x = x; c.y = y; c.t = t; c.lbl.textContent = nameOf(o);
   layoutCursor(c, glide && !fresh);
 }
 function hideCursor(o) { const c = cursors.get(o); if (c) { c.el.remove(); cursors.delete(o); } }
@@ -2155,7 +2156,8 @@ function doFill(p) {
   const list = fillSegs(me, sid, color, r.cell, r.rows);
   const msg = { type: 'fill', sid, color, cell: r.cell, rows: r.rows };
   addSegs(list);
-  pushAct({ t: 'draw', sid, segs: list, fill: msg });
+  const fa = { t: 'draw', sid, segs: list, fill: msg };
+  pushAct(fa); noteAct(fa);
   redrawInk();
   send(msg);
 }
@@ -2425,25 +2427,28 @@ const evT = (e) => (e && e.timeStamp) || now();
 // 보내기: 선·커서·지우개처럼 자주 보내는 메시지는 모았다가 0.08초마다 한 번에 ({type:'b', l:[…]}).
 // Cloudflare 무료 플랜은 서버가 받은 메시지 수로 하루 한도를 센다 (그리는 사람 한 명이 초당 25~45개 → 12개 이하).
 // 다른 메시지(채팅·칠하기·명령 등)는 모아 둔 것을 먼저 보내고 바로 보낸다 (순서 그대로). 커서는 마지막 위치만.
-const BATCH_TYPES = new Set(['seg', 'cur', 'curhide', 'erase', 'erasestroke']), BATCH_MS = 80, BATCH_MAX = 40;
-let outQ = [], outT = 0;
+// 커서만 움직일 때(그리지 않을 때)는 0.15초마다 (한도를 거의 반으로 아낀다. 보는 쪽은 받은 간격에 맞춰 부드럽게 옮긴다)
+const BATCH_TYPES = new Set(['seg', 'cur', 'curhide', 'erase', 'erasestroke']), BATCH_MS = 80, CUR_BATCH_MS = 150, BATCH_MAX = 40;
+let outQ = [], outT = 0, outAt = 0, outDraw = false;
 function flushOut() {
   if (outT) { clearTimeout(outT); outT = 0; }
   if (!outQ.length) return;
-  const l = outQ; outQ = [];
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify(l.length === 1 ? l[0] : { type: 'b', l }));
+  const l = outQ; outQ = []; outDraw = false;
+  if (ws && ws.readyState === 1) { ws.send(JSON.stringify(l.length === 1 ? l[0] : { type: 'b', l })); lastSentAt = now(); }
 }
 function send(o) {
   if (!ws || ws.readyState !== 1) return;
   if (BATCH_TYPES.has(o.type)) {
+    if (!outQ.length) outAt = now();
     if (o.type === 'cur' && outQ.length && outQ[outQ.length - 1].type === 'cur') outQ[outQ.length - 1] = o;
     else outQ.push(o);
-    if (outQ.length >= BATCH_MAX) flushOut();
-    else if (!outT) outT = setTimeout(flushOut, BATCH_MS);
+    if (outQ.length >= BATCH_MAX) { flushOut(); return; }
+    if (o.type !== 'cur' && o.type !== 'curhide' && !outDraw) { outDraw = true; if (outT) { clearTimeout(outT); outT = 0; } }   // (그리기가 끼면 0.08초에 맞춘다)
+    if (!outT) outT = setTimeout(flushOut, Math.max(0, outAt + (outDraw ? BATCH_MS : CUR_BATCH_MS) - now()));
     return;
   }
   flushOut();
-  ws.send(JSON.stringify(o));
+  ws.send(JSON.stringify(o)); lastSentAt = now();
 }
 // 내 커서 위치는 0.05초에 한 번만 보낸다. 그 사이 움직임은 마지막 위치만 잠시 뒤 보낸다 (멈춘 자리가 다른 사람 화면에 정확히 남게)
 let curPend = null, curTimer = 0;
@@ -2647,6 +2652,7 @@ function startStroke(rec) {
   if (st.press) w.p = st.pp;
   if (kind === 'pen' && ruler.on && S.rulerKind === 'mirror') { st.mirror = { ox: ruler.x, oy: ruler.y, ux: Math.cos(ruler.a), uy: Math.sin(ruler.a) }; st.msid = newSid(); }   // 대칭자: 거울 선은 다른 획
   st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, sid2: st.msid || null, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
+  if (kind === 'pen') noteAct(st.act);
   if (touch) {
     gmode = 'pending'; st.pts.push(w);
     if (kind === 'pen') previewSeg(st, w, w);
@@ -3231,6 +3237,36 @@ const plain = (s) => { const p = { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1, color
 function syncUndoUi() {
   $('tUndo').disabled = !undoSt.length || myRestr.spectator; $('tRedo').disabled = !redoSt.length || myRestr.spectator;
 }
+// 끊긴 사이에 그린 것 다시 보내기 (위 설명)
+const RESEND_MS = 120000, RESEND_MAX = 3000;
+let myActs = [], lostActs = null;
+function noteAct(a) { a.t0 = now(); myActs.push(a); if (myActs.length > 80) myActs.shift(); }
+function lostSince(t) {                                       // 연결이 끊길 때: 서버가 못 받았을 수 있는 내 획들 (내 화면에 남은 조각만)
+  const live = new Set(segs), out = [];
+  for (const a of myActs) {
+    if (a.t0 < t || now() - a.t0 > RESEND_MS) continue;
+    const ss = a.segs.filter((s) => live.has(s));
+    if (ss.length) out.push({ a, segs: ss });
+  }
+  return out;
+}
+function resendLost(list) {                                   // 다시 받은 그림에 없는 획만 다시 보낸다
+  if (!me || myRestr.spectator || myRestr.wait) return;
+  const have = new Set(); for (const s of segs) have.add(s.sid);
+  let n = 0, total = 0;
+  for (const { a, segs: ss } of list) {
+    if (have.has(a.sid) || (a.sid2 && have.has(a.sid2))) continue;   // (서버가 일부라도 받은 획)
+    if (total + ss.length > RESEND_MAX || segs.length + ss.length > roomMax) break;
+    const add = ss.map((s) => ({ ...plain(s), o: me }));
+    addSegs(add);
+    if (a.fill) { send(a.fill); pushAct({ t: 'draw', sid: a.sid, segs: add, fill: a.fill }); }
+    else { sendSegs('addsegs', add); pushAct({ t: 'draw', sid: a.sid, sid2: a.sid2 || null, segs: add }); }
+    n++; total += add.length;
+  }
+  if (!n) return;
+  redrawInk(); checkCap();
+  toast(`연결이 끊긴 사이에 그린 ${n}획을 다시 보냈어요`);
+}
 function resetUndo() { undoSt = []; redoSt = []; syncUndoUi(); }
 function pushAct(a) { undoSt.push(a); if (undoSt.length > UNDO_MAX) undoSt.shift(); redoSt = []; syncUndoUi(); }
 // 이전·되돌리기·올가미로 한꺼번에 넣고 빼는 선분: 서버 한도(접속마다 6000조각, 초당 500조각씩 다시 참)를 넘으면 서버가 버리므로, 모자라면 기다렸다 보낸다
@@ -3276,7 +3312,7 @@ $('tUndo').onclick = doUndo; $('tRedo').onclick = doRedo;
 /* --- 서버가 의도적으로 끊었을 때의 안내 화면 --- */
 let endTimer = 0;
 function showEnd(code) {
-  const b = byeInfo, titles = { kicked: '강퇴되었어요', banned: '이 방에서 밴되었어요', locked: '방이 잠겨 있어요', toomany: '접속이 너무 많아요' };
+  const b = byeInfo, titles = { kicked: '강퇴되었어요', banned: '이 방에서 밴되었어요', locked: '방이 잠겨 있어요', toomany: '접속이 너무 많아요', quota: '오늘은 여기까지예요' };
   $('endTitle').textContent = (b && titles[b.code]) || '연결이 종료되었어요';
   const base = b ? b.text : '서버가 연결을 종료했어요. (코드 ' + code + ')';
   $('endText').textContent = base; $('endScreen').hidden = false; $('banner').hidden = true;
@@ -3290,10 +3326,17 @@ function showEnd(code) {
     };
     upd(); endTimer = setInterval(upd, 1000);
   }
+  if (b && b.code === 'quota') {                                // 무료 하루 한도: 00:00 UTC(한국 오전 9시)에 풀린다. 15분마다 저절로 다시 시도
+    const d = new Date(), reset = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1), t0 = Date.now();
+    const upd = () => { const rem = reset - Date.now(); $('endText').textContent = base + '\n' + (rem > 0 ? '다시 열리기까지 약 ' + fmtRemain(rem) : '곧 다시 열려요') + ' (15분마다 저절로 다시 시도해요)'; };
+    upd(); endTimer = setInterval(() => { upd(); if (Date.now() - t0 > 15 * 60000 || (reset - Date.now() < 0 && Date.now() - t0 > 60000)) location.reload(); }, 1000);
+  }
 }
 
 /* ===== 서버 연결: 지수 백오프 재접속, 앱이 다시 보이거나 네트워크가 돌아오면 즉시 ===== */
-let ended = false, retry = 0, retryT = 0, lastMsgAt = 0;
+let ended = false, retry = 0, retryT = 0, lastMsgAt = 0, aliveT = 0;
+const ALIVE_IDLE_MS = 45000, ALIVE_SENT_MS = 15000;            // 이만큼 아무것도 못 받으면 연결 확인 (보낸 게 있으면 더 빨리)
+let lastSentAt = 0;
 const updateBanner = () => { $('banner').hidden = connected || ended; };
 $('endBtn').onclick = () => location.reload();
 function scheduleReconnect(immediate) {
@@ -3418,7 +3461,9 @@ function connect() {
   sock.onmessage = (e) => { if (sock === ws) { lastMsgAt = now(); onRx(sock, e.data); } };
 }
 function onDisconnected(code) {
+  if (histOk && !(code >= 4000 && code < 5000) && !lostActs) lostActs = lostSince(lastMsgAt - 2000);   // (그림을 받은 접속이 끊긴 첫 번만)
   connected = false; me = null; histOk = false; count = 0; online = new Set();
+  if (aliveT) { clearTimeout(aliveT); aliveT = 0; }
   ownerId = null; admin = null; mods = new Set(); myRestr = { muted: null, spectator: false, wait: false };
   for (const o of [...cursors.keys()]) hideCursor(o);
   abortStroke(); resetUndo(); syncOwnerUI(); hudSoon();
@@ -3428,12 +3473,16 @@ function onDisconnected(code) {
 function wake() {                                                                  // 앱이 다시 보이거나 네트워크가 돌아왔을 때
   if (ended) return;
   if (!ws || ws.readyState > 1) { retry = 0; clearTimeout(retryT); retryT = setTimeout(connect, 0); return; }
-  if (ws.readyState === 1) {                                                       // 열려 있어도 죽어 있을 수 있으니 확인 (가벼운 ping: 그림 전체를 다시 받지 않는다)
-    const sock = ws, t0 = lastMsgAt;
-    send({ type: 'ping' });
-    setTimeout(() => { if (sock === ws && lastMsgAt === t0) { ws = null; try { sock.close(); } catch {} onDisconnected(0); retry = 0; scheduleReconnect(true); } }, 4000);
-  }
+  if (ws.readyState === 1) checkAlive(4000);                                       // 열려 있어도 죽어 있을 수 있으니 확인
 }
+function checkAlive(ms) {                                                          // 가벼운 ping (그림 전체를 다시 받지 않는다). ms 안에 아무것도 못 받으면 다시 접속
+  if (aliveT || !ws || ws.readyState !== 1) return;
+  const sock = ws, t0 = lastMsgAt;
+  send({ type: 'ping' });
+  aliveT = setTimeout(() => { aliveT = 0; if (sock === ws && lastMsgAt === t0) { ws = null; try { sock.close(); } catch {} onDisconnected(0); retry = 0; scheduleReconnect(true); } }, ms);
+}
+// 조용한 연결 확인: 45초 동안 아무것도 못 받았으면 (끊긴 줄 모르고 그리는 일이 없게. Cloudflare 는 방을 깨우지 않고 답한다)
+setInterval(() => { if (!ended && histOk && ws && ws.readyState === 1 && !document.hidden && now() - lastMsgAt > (lastSentAt > lastMsgAt ? ALIVE_SENT_MS : ALIVE_IDLE_MS)) checkAlive(10000); }, 5000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
 window.addEventListener('online', wake);
 
@@ -3446,7 +3495,9 @@ function handleMsg(m) {
   switch (m.type) {
     case 'hello': me = m.me; break;
     case 'pong': break;
-    case 'history': sendClaim(); clearSel(); newsSoon(); segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom(); break;
+    case 'history': sendClaim(); clearSel(); newsSoon(); segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom();
+      if (lostActs) { const l = lostActs; lostActs = null; if (l.length) resendLost(l); }
+      break;
     case 'names': names = m.names || {}; refreshLabels(); renderPeople(); if (me && names[me]) nickEl.value = names[me]; break;
     case 'name': names[m.o] = m.name; refreshLabels(); renderPeople(); if (m.o === me) nickEl.value = m.name; break;
     case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); renderPeople(); break;
@@ -3496,7 +3547,7 @@ function handleMsg(m) {
       byeInfo = m;
       if (ended || !ws) break;
       const sock = ws; ws = null; try { sock.close(); } catch {}
-      onDisconnected({ kicked: 4001, banned: 4002, locked: 4003, toomany: 4004 }[m.code] || 4000);
+      onDisconnected({ kicked: 4001, banned: 4002, locked: 4003, toomany: 4004, quota: 4006 }[m.code] || 4000);
       break;
     }
     case 'cmderr': toast(m.text || '명령을 실행하지 못했어요', 'err'); break;

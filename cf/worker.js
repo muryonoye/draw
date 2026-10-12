@@ -14,6 +14,7 @@ function sqlStore(storage, importOld) {
   sql.exec('CREATE TABLE IF NOT EXISTS parts (pid INTEGER PRIMARY KEY, data TEXT NOT NULL)');
   const get = (k) => { const r = sql.exec('SELECT v FROM kv WHERE k = ?', k).toArray()[0]; return r ? r.v : null; };
   const put = (k, v) => { sql.exec('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v', k, v); };
+  let savedNames = null;                                          // 마지막으로 쓴 이름 목록
   const row = () => {
     const h = get('history'), m = get('meta');
     if (h === null && m === null) return null;
@@ -39,12 +40,14 @@ function sqlStore(storage, importOld) {
     },
     async loadParts() { return sql.exec('SELECT pid, data FROM parts').toArray(); },
     async saveRoom(id, { clear, put: ps, del, head, names }) {      // 한 트랜잭션: 중간에 실패하면 아무것도 바뀌지 않는다
+      const nm = head !== null && names !== savedNames;              // (이름 목록은 바뀌었을 때만 쓴다: 무료 플랜은 쓴 줄 수를 하루 10만까지 센다)
       storage.transactionSync(() => {
         if (clear) sql.exec('DELETE FROM parts');
         for (const p of ps) sql.exec('INSERT INTO parts (pid, data) VALUES (?, ?) ON CONFLICT(pid) DO UPDATE SET data = excluded.data', p.pid, p.data);
         for (const pid of del) sql.exec('DELETE FROM parts WHERE pid = ?', pid);
-        if (head !== null) { put('history', head); put('names', names); }
+        if (head !== null) { put('history', head); if (nm) put('names', names); }
       });
+      if (nm) savedNames = names;
     },
     async saveMeta(id, json) { put('meta', json); },
     async saveExtra(id, json) { put('extra', json); },
@@ -168,13 +171,33 @@ export class Room extends DurableObject {
   }
 }
 
+// 무료 하루 한도를 넘었다는 오류인지 (정확한 문구는 Cloudflare 가 정하므로 넓게 본다. 메모리·CPU 초과는 아니다)
+const isQuota = (m) => !/memory|cpu/i.test(m) && /free tier|daily|quota|exceeded allowed|limit exceeded/i.test(m);
+// 방 객체에 못 갈 때 화면에 이유를 알려 주는 접속: 'bye' 하나 보내고 닫는다 (화면은 끝 화면을 띄우고 스스로 다시 시도한다)
+function byeSocket(code, text) {
+  const [client, server] = Object.values(new WebSocketPair());
+  server.accept();
+  server.send(JSON.stringify({ type: 'bye', code, text }));
+  server.close(4006, code);
+  return new Response(null, { status: 101, webSocket: client });
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === '/ws') {                        // 실시간 접속 → 그 방의 객체로
       if (req.headers.get('Upgrade') !== 'websocket') return new Response('websocket only', { status: 426 });
       const raw = url.searchParams.get('room') || 'lobby', id = core.ROOM_RE.test(raw) ? raw : 'lobby';
-      return env.ROOM.get(env.ROOM.idFromName(id)).fetch(req);
+      try {
+        const f = env.LOCAL_DEV === '1' && url.searchParams.get('__fail');   // (시험 전용: 방 객체가 거절한 것처럼)
+        if (f) throw new Error(f === 'quota' ? 'Exceeded allowed volume of requests in Durable Objects free tier.' : 'Durable Object is overloaded.');
+        return await env.ROOM.get(env.ROOM.idFromName(id)).fetch(req);
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        console.error('방 객체에 연결하지 못했어요:', msg);
+        if (isQuota(msg)) return byeSocket('quota', '오늘 쓸 수 있는 무료 사용량을 다 썼어요 (Cloudflare 무료 플랜의 하루 한도). 한국 시간 오전 9시에 다시 열려요. 저장된 그림은 그대로 있어요.');
+        return new Response('room unavailable', { status: 503 });   // (잠깐 문제: 화면이 알아서 다시 접속한다)
+      }
     }
     if ((url.pathname === '/__test/seed' || url.pathname === '/__test/dump') && env.LOCAL_DEV === '1') {
       const raw = url.searchParams.get('room') || '', id = core.ROOM_RE.test(raw) ? raw : null;
