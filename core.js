@@ -887,8 +887,11 @@ function getRoom(id) {
 
 function broadcast(room, sender, obj) {
   const data = JSON.stringify(obj);
-  for (const c of room.clients) if (c !== sender) sendRaw(c, data);
+  for (const c of room.clients) if (c !== sender || c.echoOn) sendRaw(c, data);   // (그림을 다시 받는 중인 화면에는 자기 것도 돌려준다: 아래 echoOn)
 }
+// echoOn: 서버가 이 화면에 보낼 그림을 붙잡은 뒤부터, 화면이 그 그림을 받았다고(synced) 알릴 때까지. 그사이 이 화면이 보낸 그리기는 받은 그림에 없으므로
+// 돌려줘야 화면이 받은 그림 다음에 다시 적용한다 (안 그러면 내 화면에서만 사라진다)
+function echoFrom(ws, id) { if (!ws.echoOk) return; ws.echoOn = true; ws.echoId = id; }
 // 압축한 그림을 보내는 중인 사람(ws.hold)에게 갈 메시지는 모아 뒀다가 그림 다음에 순서대로 보낸다
 function sendRaw(ws, data) { if (ws.readyState !== 1) return; if (ws.hold) ws.hold.push(data); else ws.send(data); }
 // 그림 전체 보내기: 압축을 받을 수 있는 화면(z=1)에는 압축본을 바이너리로, 아니면(옛 브라우저·작은 그림) JSON 으로
@@ -935,10 +938,11 @@ async function buildSync(cap, have, id) {
 }
 // cap 을 붙잡을 때 ws.hold 를 시작했다: 만들어서 보내고, 모아 둔 메시지를 보낸다
 function finishSync(ws, have, id, cap) {
+  echoFrom(ws, id);
   P.track(buildSync(cap, have, id).then((r) => {
     if (ws.readyState !== 1) return;
     if (r) { ws.send(r.buf, { compress: false }); syncStats.n++; syncStats.reused += r.reused; syncStats.sent += r.sent; return; }
-    ws.send(JSON.stringify({ type: 'history', data: cap.flatMap((c) => c.a) }));   // D2 로 담을 수 없는 덩어리가 있는 방: 예전 방식 (화면은 보관한 덩어리를 버린다)
+    ws.send(JSON.stringify({ type: 'history', data: cap.flatMap((c) => c.a), id }));   // D2 로 담을 수 없는 덩어리가 있는 방: 예전 방식 (화면은 보관한 덩어리를 버린다)
   }, (e) => { console.error('덩어리 맞추기 실패:', e && e.message); try { P.term(ws); } catch {} })
     .then(() => { const q = ws.hold; ws.hold = null; if (q && ws.readyState === 1) for (const d of q) ws.send(d); if (ws.syncNext) { const n = ws.syncNext; ws.syncNext = null; onSyncMsg(ws, ws.room, n.h, n.id); } }));
 }
@@ -964,6 +968,7 @@ function onSyncMsg(ws, room, h, id) {
 }
 function sendHistory(ws, room) {
   if (ws.readyState !== 1 || ws.hold) return;            // (이미 보내는 중이면 그게 최신 상태를 알려 준다)
+  echoFrom(ws, 0);
   if (!ws.zOk || room.hn < Z_MIN || room.zFail) { send(ws, { type: 'history', data: histArr(room) }); return; }
   const z2 = ws.zOk >= 2;                                            // z=2·3: 'D2' 도 풀 수 있는 화면 / z=1: 옛 화면 (JSON 압축만)
   if (z2 && room.zc && room.zc.ver === room.ver) { ws.send(room.zc.buf, { compress: false }); return; }
@@ -1002,10 +1007,19 @@ function announce(room) {
   broadcastAll(room, { type: 'presence', owners });
   broadcastAll(room, { type: 'count', n: owners.length });
 }
+const RESYNC_CODES = new Set(['cover', 'share', 'full', 'rate', 'spectator']);
+const tooFast = (ws) => notice(ws, 'rate', '너무 빠르게 그리고 있어요. 화면을 서버 그림에 맞출게요.');   // (조용히 버리면 그 선이 내 화면에만 남는다)   // 이 알림을 받으면 화면이 서버 그림에 다시 맞춘다 (빠지면 거절된 선이 그 화면에만 남는다)
 function notice(ws, code, text) {
   const now = Date.now();
-  if (now - (ws.lastNotice || 0) < 3000 || ws.readyState !== 1) return;
-  ws.lastNotice = now;
+  if (ws.readyState !== 1) return;
+  if (RESYNC_CODES.has(code)) {                                   // 3초 안에 또 와도 보낸다 (한꺼번에 20개, 0.5초에 하나씩 참)
+    ws.nTok = Math.min(20, (ws.nTok === undefined ? 20 : ws.nTok) + (now - (ws.nAt || now)) / 500); ws.nAt = now;
+    if (ws.nTok < 1) return;
+    ws.nTok -= 1;
+  } else {                                                          // 그 밖의 안내는 3초에 하나 (보기만 하는 사람이 그릴 때마다 뜨지 않게)
+    if (now - (ws.lastNotice || 0) < 3000) return;
+    ws.lastNotice = now;
+  }
   ws.send(JSON.stringify({ type: 'notice', code, text }));
 }
 
@@ -1492,7 +1506,9 @@ function coverHits(room, owner, s, capS, capP, seen) {          // s 가 덮는 
   }
   return { keys, pieces };
 }
-function coverBlocked(ws, room, owner, s) {
+const COVER_MSG = '다른 사람 그림을 한꺼번에 너무 많이 덮고 있어요. 그 선은 그려지지 않았어요. 잠시 뒤에 다시 그려 주세요.';
+// loud: 이미 막힌 획이어도 알린다 (되돌리기·다시 보내기로 한꺼번에 온 것: 화면이 서버 그림에 다시 맞추게. 그리는 중인 획은 처음 막힐 때 한 번만)
+function coverBlocked(ws, room, owner, s, loud = false) {
   if (room.meta.noCover || isStaff(room, owner)) return false;
   const now = Date.now();
   // 획마다 따로 기억한다 (대칭자처럼 두 획의 선분이 번갈아 와도 각 획의 '이미 덮은 것'·'막힘'이 이어지게. 최근 8획까지)
@@ -1503,7 +1519,7 @@ function coverBlocked(ws, room, owner, s) {
     covs.set(s.sid, c);
     if (covs.size > 8) covs.delete(covs.keys().next().value);
   } else {                                                            // 같은 획: 붓 굵기의 절반 넘게 움직였을 때만, 지난번 본 곳부터 여기까지를 한꺼번에 본다 (서버 계산을 줄이려고)
-    if (c.no) return true;                                          // 이 획은 이미 막혔다: 나머지도 받지 않는다
+    if (c.no) { if (loud) notice(ws, 'cover', COVER_MSG); return true; }   // 이 획은 이미 막혔다: 나머지도 받지 않는다
     if (Math.hypot(s.x1 - c.x, s.y1 - c.y) < s.size / 2) return false;
     q = { x0: c.x, y0: c.y, x1: s.x1, y1: s.y1, size: s.size, color: s.color };
   }
@@ -1516,7 +1532,7 @@ function coverBlocked(ws, room, owner, s) {
   for (const k of h.keys) if (!c.keys.has(k)) ns++;                // (이 획이 이미 덮은 남의 획은 다시 세지 않는다)
   if (ns > b.st || h.pieces.length > b.pc) {
     c.no = true;
-    notice(ws, 'cover', '다른 사람 그림을 한꺼번에 너무 많이 덮고 있어요. 그 선은 그려지지 않았어요. 잠시 뒤에 다시 그려 주세요.');
+    notice(ws, 'cover', COVER_MSG);
     if (now - b.said > 120000) { b.said = now; sysChat(room, `${room.names[owner] || '누군가'}님의 선이 다른 사람 그림을 너무 많이 덮어서 막았어요`); }   // 방장·부방장이 알 수 있게
     return true;
   }
@@ -1610,7 +1626,7 @@ const BATCH_MAX = 200;
 const CLIENT_ERR_MAX = 5;                                   // 화면 오류 알림: 접속마다 이만큼만 로그에
 function handleMsg(ws, room, roomId, owner, msg) {
   try {
-    if (!globalAllow(ws)) return;
+    if (!globalAllow(ws)) return DRAW_TYPES.has(msg.type) ? tooFast(ws) : undefined;
     const now = Date.now();
     if (DRAW_TYPES.has(msg.type) && isSpect(room, owner)) {   // 관전(보기만 가능)으로 바뀐 사람·허락을 기다리는 사람은 그리기를 할 수 없다
       notice(ws, 'spectator', isWaiting(room, owner) ? '방장·부방장이 허락하면 그릴 수 있어요 (지금은 보기만)' : '방장이 그리기를 제한했어요 (보기만 가능)');
@@ -1618,7 +1634,7 @@ function handleMsg(ws, room, roomId, owner, msg) {
       return;
     }
     if (msg.type === 'seg') {
-      if (!allowSeg(ws)) return;
+      if (!allowSeg(ws)) return tooFast(ws);
       const s = {
         x0: r1(msg.x0), y0: r1(msg.y0), x1: r1(msg.x1), y1: r1(msg.y1),
         color: String(msg.color).slice(0, 9),
@@ -1638,7 +1654,7 @@ function handleMsg(ws, room, roomId, owner, msg) {
       saveRoom(roomId, room, true);
     } else if (msg.type === 'erase') {
       // 지우개: 기본은 내가 그린 선만. 방장은 all 로 남의 선도 지울 수 있다. 잘린 결과를 다른 사람 화면도 같은 함수로 계산한다.
-      if (!allowSeg(ws)) return;
+      if (!allowSeg(ws)) return tooFast(ws);
       const x0 = r1(msg.x0), y0 = r1(msg.y0), x1 = r1(msg.x1), y1 = r1(msg.y1), r = r1(msg.r);
       if (![x0, y0, x1, y1, r].every(okNum)) return;
       const all = msg.all === true && isRoomOwner(room, owner);
@@ -1646,7 +1662,7 @@ function handleMsg(ws, room, roomId, owner, msg) {
       broadcast(room, ws, { type: 'erase', o: all ? null : owner, x0, y0, x1, y1, r });
     } else if (msg.type === 'erasestroke') {
       // 획 지우개: 경로에 닿은 획 전체를 지우고, 지워진 획 목록을 모두에게 알린다 (받는 쪽은 재계산하지 않는다)
-      if (!allowSeg(ws)) return;
+      if (!allowSeg(ws)) return tooFast(ws);
       const x0 = r1(msg.x0), y0 = r1(msg.y0), x1 = r1(msg.x1), y1 = r1(msg.y1), r = r1(msg.r);
       if (![x0, y0, x1, y1, r].every(okNum)) return;
       const all = msg.all === true && isRoomOwner(room, owner);
@@ -1658,13 +1674,14 @@ function handleMsg(ws, room, roomId, owner, msg) {
       } else send(ws, { type: 'strokesgone', keys: [], by: owner, q }); // 보낸 사람이 예상과 다른지 확인할 수 있게
     } else if (msg.type === 'cancelstroke') {
       // 잘못 시작된 내 획 취소 (모두의 화면과 저장본에서 지움)
-      if (!allowSeg(ws)) return;
+      if (!allowSeg(ws)) return tooFast(ws);
       if (typeof msg.sid !== 'string' || !SID_RE.test(msg.sid)) return;
       const keys = [[owner, msg.sid]];
       if (histRemoveStrokes(room, keys)) broadcastAll(room, { type: 'strokesgone', keys, by: owner, cancel: true });
     } else if (msg.type === 'addsegs') {
       // 되돌리기(redo)·지우개 이전(undo)으로 내 선분을 다시 넣는다 (최대 100개, 주인은 항상 나). 칠하기 조각(f)은 선 아래로 들어간다.
-      if (!Array.isArray(msg.segs) || !undoAllow(ws, Math.min(msg.segs.length, 100))) return;
+      if (!Array.isArray(msg.segs)) return;
+      if (!undoAllow(ws, Math.min(msg.segs.length, 100))) return notice(ws, 'rate', '이전·되돌리기를 너무 빠르게 하고 있어요. 화면을 서버 그림에 맞출게요.');   // (조용히 버리면 내 화면에만 남는다)
       const list = [];
       for (const m of msg.segs.slice(0, 100)) {
         if (!m || typeof m !== 'object') continue;
@@ -1673,7 +1690,7 @@ function handleMsg(ws, room, roomId, owner, msg) {
         if (f) s.f = 1;
         if (![s.x0, s.y0, s.x1, s.y1].every(okNum) || typeof s.sid !== 'string' || !SID_RE.test(s.sid)) continue;
         if (room.hn + list.length >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); break; }
-        if (!f && coverBlocked(ws, room, owner, s)) break;      // (되돌리기로 큰 선을 바로 넣어 막기를 피하지 못하게)
+        if (!f && coverBlocked(ws, room, owner, s, true)) break;   // (되돌리기로 큰 선을 바로 넣어 막기를 피하지 못하게)
         list.push(s);
       }
       if (!list.length || shareFull(ws, room, owner, list.length)) return;
@@ -1694,7 +1711,8 @@ function handleMsg(ws, room, roomId, owner, msg) {
       broadcast(room, ws, { type: 'fill', o: owner, sid: f.sid, color: f.color, cell: f.cell, rows: f.rows });
     } else if (msg.type === 'removesegs') {
       // 이전(undo): 내 선분 중 값이 같은 것을 정확히 지운다 (잘린 조각 되돌리기)
-      if (!Array.isArray(msg.segs) || !undoAllow(ws, Math.min(msg.segs.length, 100))) return;
+      if (!Array.isArray(msg.segs)) return;
+      if (!undoAllow(ws, Math.min(msg.segs.length, 100))) return notice(ws, 'rate', '이전·되돌리기를 너무 빠르게 하고 있어요. 화면을 서버 그림에 맞출게요.');   // (조용히 버리면 내 화면에만 남는다)
       const items = [];
       for (const m of msg.segs.slice(0, 100)) {
         if (!m || typeof m !== 'object' || typeof m.sid !== 'string' || !SID_RE.test(m.sid)) continue;
@@ -1711,6 +1729,8 @@ function handleMsg(ws, room, roomId, owner, msg) {
     } else if (msg.type === 'sync') {                     // 덩어리 맞추기 (z=3): 들어올 때, 그리고 화면이 서버 그림에 다시 맞추고 싶을 때
       if (ws.zOk !== 3) return;
       onSyncMsg(ws, room, cleanHashes(msg.h), syncId(msg.id));
+    } else if (msg.type === 'synced') {                   // 화면이 받은 그림을 적용했다: 이제 돌려주기(echo)를 그만 (마지막으로 보낸 그림의 번호일 때만)
+      if (ws.echoOn && syncId(msg.id) === ws.echoId) ws.echoOn = false;
     } else if (msg.type === 'clienterr') {                 // 화면(브라우저)에서 난 오류: 서버 로그에만 남긴다 (실제 폰에서 생기는 문제를 알아내려고, 접속마다 5번까지)
       if ((ws.errN = (ws.errN || 0) + 1) > CLIENT_ERR_MAX) return;
       const t = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, n);
@@ -1830,7 +1850,8 @@ async function connect(ws, { url, cip }) {
   const room = getRoom(roomId);                        // (방의 마지막 활동 시각도 여기서 갱신된다)
 
   // 브라우저가 보낸 비밀 키를 해시해 '주인 ID'로 쓴다. 키가 없으면 이번 접속에서만 주인.
-  ws.zOk = ({ 1: 1, 2: 2, 3: 3 })[url.searchParams.get('z')] || 0;   // 화면이 압축된 그림(바이너리)을 풀 수 있다: 1 = JSON 압축, 2 = D2 도, 3 = 덩어리 맞추기(B3)도
+  ws.zOk = ({ 1: 1, 2: 2, 3: 3 })[url.searchParams.get('z')] || 0;
+  ws.echoOk = url.searchParams.get('e') === '1';                   // 받은 그림 뒤 돌려주기(echo)를 아는 화면 (synced 를 보낸다)   // 화면이 압축된 그림(바이너리)을 풀 수 있다: 1 = JSON 압축, 2 = D2 도, 3 = 덩어리 맞추기(B3)도
   const key = url.searchParams.get('k') || '';
   const owner = /^[A-Za-z0-9_-]{16,64}$/.test(key)
     ? crypto.createHash('sha256').update(key).digest('base64url').slice(0, 10)
@@ -1869,7 +1890,7 @@ async function restore(roomId, list) {
   for (const [ws, a] of list) {
     sockets.add(ws);
     initSock(ws, a.o);
-    ws.ipt = a.ipt || ''; ws.zOk = a.z || 0; ws.room = room; ws.roomId = roomId;
+    ws.ipt = a.ipt || ''; ws.zOk = a.z || 0; ws.echoOk = a.e === 1; ws.room = room; ws.roomId = roomId;
     if (a.ap && ws.readyState === 1) { ws.approved = true; room.clients.add(ws); }
     else { sockets.delete(ws); try { ws.close(1012, 'restart'); } catch {} }   // 승인 전에 잠들었던 접속은 다시 들어오게 한다
   }

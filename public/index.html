@@ -3621,6 +3621,7 @@ function applyB3(u) {
   let p = 2;
   const vu = () => { let x = 0, m = 1, b; do { if (p >= n) throw new Error('B3: 잘림'); b = u[p++]; x += (b & 127) * m; m *= 128; } while (b & 128); return x; };
   const id = vu(), have = blk.reqs.get(id) || [], cnt = vu(), used = new Map(), order = [];
+  blk.lastId = id;
   for (const k of [...blk.reqs.keys()]) if (k <= id) blk.reqs.delete(k);
   for (let i = 0; i < cnt; i++) {
     const x = vu();
@@ -3660,14 +3661,15 @@ async function pumpRx() {
     if (typeof d === 'string') { onMessage(d); continue; }
     let data = null, u = null;
     try { u = await inflateBytes(d); } catch {}
+    let hid = 0;                                                                     // (받은 그림의 요청 번호: 서버에 '받았어요' 할 때)
     if (u && u.length >= 2 && u[0] === 66 && u[1] === 51) {                       // 덩어리 맞추기 (B3)
-      try { data = applyB3(u); } catch { data = null; blk.map.clear(); if (sock === ws) { requestSync(sock); continue; } }   // 틀렸으면 보관을 비우고 전체를 다시 받는다
+      try { data = applyB3(u); hid = blk.lastId; } catch { data = null; blk.map.clear(); if (sock === ws) { requestSync(sock); continue; } }   // 틀렸으면 보관을 비우고 전체를 다시 받는다
     } else {
       try { data = unpackHistory(u); } catch {}
       if (Array.isArray(data)) blk.map.clear();                                    // (덩어리가 아닌 전체 그림: 보관 덩어리와 맞지 않으니 비운다)
     }
     if (sock !== ws) continue;
-    if (Array.isArray(data)) handleMsg({ type: 'history', data });
+    if (Array.isArray(data)) handleMsg({ type: 'history', data, id: hid });
     else { zOk = false; rxQ.length = 0; try { sock.close(); } catch {} }           // 풀지 못하면 압축 없이 다시 접속한다
   }
   rxBusy = false;
@@ -3678,7 +3680,7 @@ function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   outQ = []; if (outT) { clearTimeout(outT); outT = 0; }
   segQ = []; clearTimeout(segQT); segQT = 0; undoTok = UNDO_BURST; undoAt = now();   // (새 접속: 서버 한도도 새로)
-  const sock = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=3' : ''}`);
+  const sock = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=3' : ''}&e=1`);
   sock.binaryType = 'arraybuffer';
   ws = sock;
   sock.onopen = () => { if (sock !== ws) return; if (zOk) requestSync(sock); retry = 0; connected = true; lastMsgAt = now(); updateBanner(); hudSoon(); };
@@ -3721,6 +3723,12 @@ function handleMsg(m) {
     case 'hello': me = m.me; flushErrs(); break;
     case 'pong': break;
     case 'history': sendClaim(); clearSel(); newsSoon(); segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom();
+      for (const q of segQ) {                                                      // 아직 안 보낸 이전·되돌리기·글자 조각: 받은 그림 위에 다시 (서버도 곧 받는다)
+        const l = q.segs.map((s) => ({ ...s, o: me }));
+        if (q.type === 'addsegs') addSegs(l); else { const r = removeExactSegs(segs, l); if (r) segs = r; }
+      }
+      if (segQ.length) redrawInk();
+      send({ type: 'synced', id: Number.isInteger(m.id) ? m.id : 0 });          // 받았어요 (모아 둔 선을 먼저 보낸다): 그 뒤로 보낸 내 그리기는 서버가 돌려주지 않는다
       if (lostActs) { const l = lostActs; lostActs = null; if (l.length) resendLost(l); }
       break;
     case 'names': names = m.names || {}; refreshLabels(); renderPeople(); if (me && names[me]) nickEl.value = names[me]; break;
@@ -3746,7 +3754,7 @@ function handleMsg(m) {
     case 'curhide': hideCursor(m.o); break;
     case 'notice':
       toast(m.text || '알림', 'warn');
-      if (m.code === 'share' || m.code === 'cover') {                              // 서버가 내 선을 받지 않았다: 그 획은 거기서 멈추고, 화면을 서버 그림에 맞춘다
+      if (m.code === 'share' || m.code === 'cover' || m.code === 'rate' || m.code === 'full' || m.code === 'spectator') {                              // 서버가 내 선을 받지 않았다: 그 획은 거기서 멈추고, 화면을 서버 그림에 맞춘다
         const st = strokeSt;
         if (st && st.kind === 'pen') { commitAct(st); strokeSt = null; if (gmode === 'draw' || gmode === 'pending') gmode = 'none'; }
         resyncNow();
@@ -3800,7 +3808,7 @@ nickEl.value = myNick;
 const CLIENT_VER = '3단계 (2026-10-12 22차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 let roomTitle = '';                                             // 방 이름 (방장·부방장이 정함, 없으면 방 코드)
-const BASE_TITLE = document.title;
+const BASE_TITLE = '같이 그리기';                                 // (Cloudflare 는 첫 화면 제목에 방 이름을 미리 넣어 보낸다)
 function syncRoomLabel() {
   const t = roomTitle ? Array.from(roomTitle) : null;
   $('roomLabel').textContent = t ? (t.length > 12 ? t.slice(0, 12).join('') + '…' : roomTitle) : room.length > 10 ? room.slice(0, 10) + '…' : room;

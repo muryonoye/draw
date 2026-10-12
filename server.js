@@ -90,7 +90,10 @@ process.on('uncaughtException', (e) => { console.error('uncaughtException:', e);
 // ---- 이사 (MOVED_TO 가 있으면): 이 주소로 오는 사람을 새 주소로 보낸다 (Cloudflare 로 옮긴 뒤 Render 에 남겨 두는 안내) ----
 // 브라우저에 저장된 '나'(비밀 키)·닉네임·설정·최근 방·자 위치를 주소 뒤 #mig= 로 함께 넘긴다 (# 뒤는 서버로 가지 않는다). 새 화면이 받아서 저장한다.
 // 그림 저장·접속은 하지 않는다 (WebSocket 은 바로 닫음) → 전송량은 이 작은 페이지뿐.
-const MOVED_TO = String(process.env.MOVED_TO || '').replace(/\/+$/, '');
+// Render 위(Render 가 RENDER 환경변수를 넣는다)에서 MOVED_TO 를 따로 안 넣었으면 MOVED_DEFAULT 로 (Cloudflare 로 옮긴 뒤: Render 가 다시 켜져도
+// 대시보드를 안 만지고 옛 주소가 새 주소로 보내게. 안 그러면 Render 가 예전처럼 따로 그림을 받는 서버로 살아나 그림이 갈라진다). 비어 있으면 이사 안 함
+const MOVED_DEFAULT = '';
+const MOVED_TO = String(process.env.MOVED_TO || (process.env.RENDER ? MOVED_DEFAULT : '')).replace(/\/+$/, '');
 if (MOVED_TO) {
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   const page = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">

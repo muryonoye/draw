@@ -81,7 +81,7 @@ core.setPlatform({
   // 강퇴·밴: 다른 사람의 메시지를 처리하는 중에 닫으면 닫기 인사가 상대에게 안 가는 경우가 있다 (쉬는 소켓 방식). 화면은 'bye' 를 받으면 스스로 끊으므로 방에서만 바로 뺀다
   afterBye: (ws) => core.closed(ws),
   // 접속 정보를 소켓에 적어 둔다 (방 객체가 메모리에서 내려갔다 깨어나도 누가 어떤 접속인지 알 수 있게, 최대 2KB)
-  attach: (ws) => { try { ws.serializeAttachment({ o: ws.owner, ipt: ws.ipt || '', z: ws.zOk || 0, ap: ws.approved ? 1 : 0 }); } catch {} },
+  attach: (ws) => { try { ws.serializeAttachment({ o: ws.owner, ipt: ws.ipt || '', z: ws.zOk || 0, ap: ws.approved ? 1 : 0, e: ws.echoOk ? 1 : 0 }); } catch {} },
 });
 
 export class Room extends DurableObject {
@@ -107,6 +107,11 @@ export class Room extends DurableObject {
 
   async fetch(req) {
     const url = new URL(req.url);
+    if (url.pathname === '/title') {                    // 링크 미리보기용 방 이름 (저장소에서 읽기만: 방을 불러오거나 아무것도 쓰지 않는다)
+      let t = '';
+      try { t = JSON.parse(this.store.get('meta') || '{}').title || ''; } catch {}
+      return new Response(String(t).slice(0, 60), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    }
     const raw = url.searchParams.get('room') || 'lobby', roomId = core.ROOM_RE.test(raw) ? raw : 'lobby';
     if (!this.id) { this.id = roomId; this.store.put('roomId', roomId); stores.set(roomId, this.store); live.set(roomId, new WeakRef(this)); }
     if (roomId !== this.id) return new Response('wrong room', { status: 400 });
@@ -210,7 +215,18 @@ export default {
     const res = await env.ASSETS.fetch(req);             // 화면(index.html·og.png): Cloudflare 가 압축·캐시
     // 첫 화면: 링크 미리보기 그림 주소(og:image)를 이 주소로 (미리보기는 절대 주소여야 한다. index.html 에는 Render 주소가 적혀 있다)
     if (url.pathname === '/' && (res.headers.get('Content-Type') || '').includes('text/html')) {
-      return new HTMLRewriter().on('meta[property="og:image"]', { element(e) { e.setAttribute('content', url.origin + '/og.png'); } }).transform(res);
+      const rw = new HTMLRewriter().on('meta[property="og:image"]', { element(e) { e.setAttribute('content', url.origin + '/og.png'); } });
+      const raw = url.searchParams.get('room') || '', id = core.ROOM_RE.test(raw) && !url.searchParams.get('new') ? raw : null;
+      let title = '';
+      if (id) {                                         // 방 이름이 있으면 미리보기 제목·탭 제목에 (늦으면 기다리지 않는다)
+        const ask = env.ROOM.get(env.ROOM.idFromName(id)).fetch(new Request(url.origin + '/title?room=' + id)).then((r) => r.text()).catch(() => '');
+        title = await Promise.race([ask, new Promise((r) => setTimeout(() => r(''), 1500))]);
+      }
+      if (title) {
+        const full = title + ' · 같이 그리기';
+        rw.on('meta[property="og:title"]', { element(e) { e.setAttribute('content', full); } }).on('title', { element(e) { e.setInnerContent(full); } });
+      }
+      return rw.transform(res);
     }
     return res;
   },
