@@ -152,7 +152,7 @@
   #side .body { flex: 1; padding: 16px; color: var(--muted); display: grid; place-items: center; text-align: center; }
 
   /* 모달 / 토스트 / 종료 화면 */
-  #modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(0,0,0,.55); padding: 16px; }
+  #modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(0,0,0,.55); padding: 16px 16px calc(16px + var(--kb, 0px)); overflow-y: auto; }   /* (휴대폰 글자판이 올라오면 그 위 가운데로) */
   #modal .card { width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 18px; }
   #modal h3 { margin: 0 0 8px; font-size: 16px; }
   #modal p { margin: 0 0 16px; color: var(--muted); white-space: pre-line; }
@@ -521,7 +521,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span><b>U</b><span>자·도형 켜기·끄기 (도형을 끌 때 Shift: 15°씩·정사각형·정원)</span><b>M</b><span>올가미 (내 그림 골라 옮기기·크기)</span><b>Ctrl+D</b><span>고른 것 복제</span><b>Delete</b><span>고른 것 지우기</span><b>Esc</b><span>고르기 끝</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-13 41차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-13 51차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -3805,7 +3805,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-12 22차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-13 51차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 let roomTitle = '';                                             // 방 이름 (방장·부방장이 정함, 없으면 방 코드)
 const BASE_TITLE = '같이 그리기';                                 // (Cloudflare 는 첫 화면 제목에 방 이름을 미리 넣어 보낸다)

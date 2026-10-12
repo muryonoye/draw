@@ -1595,7 +1595,7 @@ function globalAllow(ws) {
 }
 
 // 어느 파일이 올라갔는지 바로 확인하는 용도 (화면의 설정 맨 아래에 '서버 버전'으로 보인다). db: none(저장소 없음) | connecting | ok | error
-const versionInfo = () => ({ stage: 3, date: '2026-10-13', rev: 41, db: dbState, dbKB: Math.round(dbOut / 1024), sync: syncStats });
+const versionInfo = () => ({ stage: 3, date: '2026-10-13', rev: 51, db: dbState, dbKB: Math.round(dbOut / 1024), sync: syncStats });
 
 // 들어온 원본 메시지의 크기·종류를 먼저 거른다. 칠하기('fill')만 16KB 를 넘을 수 있고, 그 외의 큰 메시지는 읽지도 않고 버린다.
 // 칠하기는 JSON 을 읽기 전에 속도 제한부터 확인한다 (무거운 메시지로 서버를 괴롭히지 못하게).
