@@ -377,6 +377,7 @@
   <div class="sheetgrab"></div><h3>색상</h3>
   <div class="swatches" id="swatches"></div>
   <div class="row" style="margin-top:12px"><label for="colorCustom" class="hint" style="margin:0;flex:1">직접 고르기</label><input type="color" id="colorCustom" value="#000000" style="width:56px;height:36px;border:0;background:none;padding:0"></div>
+  <div class="field" style="margin-top:12px"><label for="alphaRange">펜 투명도 <b id="alphaVal">100%</b> (칠하기는 늘 진하게)</label><input type="range" id="alphaRange" min="10" max="100" step="5" value="100" aria-label="펜 투명도"></div>
 </section>
 
 <section id="popSize" class="pop" hidden aria-label="크기">
@@ -555,7 +556,7 @@ const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').mat
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', eraseAll: false };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -569,10 +570,14 @@ function loadSettings() {
   if (!['auto', 'zoom', 'pan'].includes(out.wheel)) out.wheel = 'auto';
   if (!['line', 'circle', 'radial', 'ellipse', 'mirror'].includes(out.rulerKind)) out.rulerKind = 'line';
   if (!/^#[0-9a-fA-F]{6}$/.test(out.color)) out.color = DEFAULTS.color;
+  out.alpha = Number.isFinite(out.alpha) ? Math.min(1, Math.max(0.1, Math.round(out.alpha * 20) / 20)) : 1;
   return out;
 }
 let S = loadSettings();
 const saveSettings = () => lsSet('draw:settings', JSON.stringify(S));
+// 펜 색: 투명도가 있으면 '#rrggbbaa' (칠하기는 S.color 그대로 = 불투명)
+const penColor = () => (S.alpha >= 1 ? S.color : S.color + Math.round(S.alpha * 255).toString(16).padStart(2, '0'));
+const isClear = (c) => typeof c === 'string' && c.length === 9;                         // 반투명 선 (투명도 100% 는 7글자로 보낸다)
 
 // ---- 지우개·칠하기: 서버와 화면이 똑같은 함수를 써야 모두의 그림이 같아진다 (server.js와 index.html에 같은 내용) ----
 // @@SHARED_BEGIN
@@ -791,6 +796,9 @@ const OLD_ORIGIN = 'https://muryonoye-board.onrender.com';
     for (const k of Object.keys(j)) if (/^draw:[A-Za-z0-9:_-]{1,80}$/.test(k) && typeof j[k] === 'string' && j[k].length < 20000) lsSet(k, j[k]);
   } catch {}
 })();
+// 방장 되찾기: 주소 끝 #claim=코드 로 들어오면 접속 뒤 한 번 보낸다 (주소에서는 바로 지운다)
+let claimCode = (() => { const m = /^#claim=([^&]{1,200})$/.exec(location.hash); if (!m) return null; try { history.replaceState(null, '', location.pathname + location.search); } catch {} try { return decodeURIComponent(m[1]); } catch { return null; } })();
+function sendClaim() { if (claimCode && ws && ws.readyState === 1) { send({ type: 'claim', code: claimCode }); claimCode = null; } }
 function getKey() {
   let k = lsGet('draw:key');
   if (!k) { k = makeKey(); lsSet('draw:key', k); }
@@ -915,18 +923,18 @@ function segIndex() {
 function drawSegs(xa, xb, ya, yb, g = ctx, k = scale) {    // 월드 상자에 닿는 선을 목록 순서대로 g 에 그린다 (g 는 보기 변환이 된 상태, k = 화면 픽셀 / 월드)
   g.lineCap = 'round'; g.lineJoin = 'round';
   const ix = segIndex(), box = ix.box, tol = drawSkipPx / k;
-  let open = false, rc = null, rs = -1, lx = NaN, ly = NaN, px = NaN, py = NaN, pend = false;
+  let open = false, rc = null, rs = -1, rsid = null, lx = NaN, ly = NaN, px = NaN, py = NaN, pend = false;
   const flush = () => { if (pend) { g.lineTo(lx, ly); pend = false; } };   // 건너뛰던 마지막 점까지는 꼭 그린다
   for (let b = 0; b < ix.n; b++) {
     if (box[b * 4 + 1] < xa || box[b * 4] > xb || box[b * 4 + 3] < ya || box[b * 4 + 2] > yb) continue;
     for (let i = b * SEG_BLOCK, e = Math.min(segs.length, i + SEG_BLOCK); i < e; i++) {
       const s = segs[i], hs = s.size / 2;
       if (Math.max(s.x0, s.x1) + hs < xa || Math.min(s.x0, s.x1) - hs > xb || Math.max(s.y0, s.y1) + hs < ya || Math.min(s.y0, s.y1) - hs > yb) continue;
-      if (!open || s.color !== rc || s.size !== rs) {      // 같은 색·굵기가 이어지면 한 path 로 묶어 한 번에 그린다
+      if (!open || s.color !== rc || s.size !== rs || (s.sid !== rsid && isClear(s.color))) {   // 같은 색·굵기가 이어지면 한 path 로 묶어 한 번에 그린다 (반투명은 획마다: 다른 획과 겹친 곳은 진하게)
         flush();
         if (open) g.stroke();
         g.beginPath(); g.strokeStyle = s.color; g.lineWidth = Math.max(s.size, (s.f ? FILL_MIN_PX : 0.6) / k);
-        rc = s.color; rs = s.size; open = true; lx = NaN;
+        rc = s.color; rs = s.size; rsid = s.sid; open = true; lx = NaN;
       }
       if (s.x0 !== lx || s.y0 !== ly) { flush(); g.moveTo(s.x0, s.y0); g.lineTo(s.x1, s.y1); px = s.x1; py = s.y1; }   // 새 줄의 첫 선분은 늘 그린다 (점도 보이게)
       else if (Math.abs(s.x1 - px) + Math.abs(s.y1 - py) < tol) pend = true;   // 이어지는 선분이 화면에서 아주 짧으면(축소했을 때) 건너뛰고 다음 점으로 바로 잇는다
@@ -993,6 +1001,7 @@ function paintPreview() {
 }
 function redrawInk() { if (!rafInk) rafInk = requestAnimationFrame(() => { rafInk = 0; paintInkExact(); }); }
 function incSeg(s) {                                       // 새 선분 하나만 덧그리기 (전체를 다시 그리지 않는다)
+  if (isClear(s.color)) { redrawSegsArea([s]); return; }     // 반투명: 덧그리면 이음새가 진해진다 → 그 자리만 다시 그린다 (한 획 한 path)
   ensureAligned(); ctxView();
   ctx.lineCap = 'round'; ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, 0.6 / scale);
   ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(s.x1, s.y1); ctx.stroke();
@@ -1426,11 +1435,11 @@ function syncSizeUI() {
   $('sizeHint').textContent = `${a}~${b} 범위예요. 슬라이더는 작은 값에서 더 섬세하게 움직여요.`;
   const px = n * scale, d = clamp(px, 2, 96), dot = $('sizePrevDot');
   dot.style.width = dot.style.height = d + 'px';
-  dot.style.background = t === 'eraser' ? 'transparent' : S.color;
+  dot.style.background = t === 'eraser' ? 'transparent' : S.color; dot.style.opacity = t === 'eraser' ? 1 : S.alpha;
   dot.style.border = t === 'eraser' ? '2px dashed #666' : 'none';
   dot.style.boxShadow = t === 'eraser' ? 'none' : '0 0 0 1px #ccc';
   $('sizePrevTxt').textContent = `지금 배율에서 화면 지름 약 ${Math.round(px)}px` + (px > 96 ? ' (미리보기는 줄여서 보여줘요)' : '');
-  $('colorSw').style.background = S.color;
+  $('colorSw').style.background = swatchBg();
 }
 $('sizeRange').addEventListener('input', () => { const [a, b] = SIZE_RANGE[sizeTarget()]; setSize(sizeFromSlider(+$('sizeRange').value, a, b)); });
 $('sizeNum').addEventListener('change', () => { const v = parseFloat($('sizeNum').value); if (Number.isFinite(v)) setSize(v); else syncSizeUI(); });
@@ -1450,6 +1459,14 @@ function setColor(c, keepTool) {
   syncSizeUI();
 }
 $('colorCustom').addEventListener('input', () => setColor($('colorCustom').value));
+function syncAlphaUI() {
+  const v = Math.round(S.alpha * 100);
+  $('alphaRange').value = v; $('alphaVal').textContent = v + '%';
+  $('colorSw').style.background = swatchBg();
+}
+// 도구 모음 색 동그라미: 투명도가 있으면 반은 원래 색, 반은 체크무늬 위의 반투명 색
+function swatchBg() { return S.alpha >= 1 ? S.color : 'linear-gradient(135deg, ' + S.color + ' 50%, ' + penColor() + ' 50%), repeating-conic-gradient(#c8c8c8 0 25%, #fff 0 50%) 50% / 8px 8px'; }
+$('alphaRange').addEventListener('input', () => { S.alpha = Math.min(1, Math.max(0.1, +$('alphaRange').value / 100)); saveSettings(); syncAlphaUI(); syncSizeUI(); });
 
 function eraserHint() {
   const base = S.eraserMode === 'stroke' ? '획 지우개: 닿은 선 한 획 전체가 지워져요' : '부분 지우개: 닿은 부분만 지워져요';
@@ -2282,7 +2299,7 @@ function startStroke(rec) {
   const w = toWorld(rec);
   const guide = kind === 'pen' ? rulerGuide(w) : null;         // 자가 켜져 있으면 이 획이 따라갈 선·원
   if (guide) { const q = guidePoint(guide, w); if (q) { w.x = q.x; w.y = q.y; } }
-  const st = strokeSt = { guide, id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: S.color, size: S.penSize,
+  const st = strokeSt = { guide, id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: penColor(), size: S.penSize,
     r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, skip: [], sx: rec.x, sy: rec.y, moved: 0, born: now(), confirmedAt: 0, timer: 0, act: null,
     press: kind === 'pen' && rec.type === 'pen' && S.pressure, pp: clamp(rec.p || 0.5, 0, 1),   // 필압은 펜(애플펜슬·태블릿 펜)일 때만
     tau: kind === 'pen' ? SMOOTH_MS[S.smooth] || 0 : 0, ex: rec.x, ey: rec.y, et: rec.t0 };     // 손떨림 보정은 펜 도구일 때
@@ -3048,7 +3065,7 @@ function handleMsg(m) {
   switch (m.type) {
     case 'hello': me = m.me; break;
     case 'pong': break;
-    case 'history': segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom(); break;
+    case 'history': sendClaim(); segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom(); break;
     case 'names': names = m.names || {}; refreshLabels(); renderPeople(); if (me && names[me]) nickEl.value = names[me]; break;
     case 'name': names[m.o] = m.name; refreshLabels(); renderPeople(); if (m.o === me) nickEl.value = m.name; break;
     case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); renderPeople(); break;
@@ -3108,7 +3125,7 @@ function handleMsg(m) {
     case 'fillno': {                                                               // 서버가 내 칠하기를 받지 않았다: 내 화면에서도 되돌린다
       const sid = typeof m.sid === 'string' ? m.sid : null;
       if (sid) { segs = segs.filter((s) => !(s.o === me && s.sid === sid)); undoSt = undoSt.filter((a) => a.sid !== sid); redoSt = redoSt.filter((a) => a.sid !== sid); syncUndoUi(); redrawInk(); }
-      const why = { rate: '너무 빠르게 칠하고 있어요. 잠시 뒤에 다시 해 주세요', bad: '이 칠하기는 저장하지 못했어요', full: '', spectator: '', share: '' }[m.reason];
+      const why = { rate: '너무 빠르게 칠하고 있어요. 잠시 뒤에 다시 해 주세요', bad: '이 칠하기는 저장하지 못했어요', full: '', spectator: '', share: '', cover: '' }[m.reason];   // (cover: 서버 안내가 따로 온다)
       if (why !== '') toast(why || '칠하기가 저장되지 않았어요', 'warn');
       break;
     }
@@ -3130,7 +3147,7 @@ $('setSmooth').value = String(S.smooth);
 $('setSmooth').onchange = () => { S.smooth = clampInt(+$('setSmooth').value, 0, 3); saveSettings(); };
 $('setWheel').value = S.wheel;
 $('setWheel').onchange = () => { S.wheel = $('setWheel').value; saveSettings(); };
-setColor(S.color); syncEraserUI(); syncRulerUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
+setColor(S.color); syncAlphaUI(); syncEraserUI(); syncRulerUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);

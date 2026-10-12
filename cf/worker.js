@@ -67,6 +67,9 @@ async function readOld(dbUrl, id) {
 
 // 같은 프로그램(isolate) 안에 방 객체가 여럿 있을 수 있어서 저장소는 방 id 로 찾는다
 const stores = new Map();
+// 방 id → 그 방 객체(WeakRef). 방 객체가 메모리에서 내려가 사라지면 그 방의 그림·저장소도 공용 목록에서 지운다 (같은 프로그램에 방이 쌓여 메모리 128MB 를 넘지 않게)
+const live = new Map();
+function pruneGone() { for (const [id, w] of live) if (!w.deref()) { live.delete(id); stores.delete(id); core.dropRoom(id); } }
 core.setPlatform({
   hasStore: true,
   storeFor: (id) => stores.get(id) || null,
@@ -84,6 +87,8 @@ export class Room extends DurableObject {
     this.store = sqlStore(ctx.storage, env.DATABASE_URL ? (id) => readOld(env.DATABASE_URL, id) : null);
     this.id = this.store.get('roomId');               // 이 객체가 맡은 방 (처음 접속 때 적어 둔다)
     this.saveT = null;
+    pruneGone();
+    if (this.id) live.set(this.id, new WeakRef(this));
     // 화면이 다시 보일 때 보내는 확인 메시지는 방 객체를 깨우지 않고 바로 답한다
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'));
     if (this.id) {
@@ -100,7 +105,7 @@ export class Room extends DurableObject {
   async fetch(req) {
     const url = new URL(req.url);
     const raw = url.searchParams.get('room') || 'lobby', roomId = core.ROOM_RE.test(raw) ? raw : 'lobby';
-    if (!this.id) { this.id = roomId; this.store.put('roomId', roomId); stores.set(roomId, this.store); }
+    if (!this.id) { this.id = roomId; this.store.put('roomId', roomId); stores.set(roomId, this.store); live.set(roomId, new WeakRef(this)); }
     if (roomId !== this.id) return new Response('wrong room', { status: 400 });
     if (url.pathname === '/__test/seed') {             // 시험 전용 (LOCAL_DEV): 예전 저장소에 있던 방처럼 미리 넣어 두기
       if (this.env.LOCAL_DEV !== '1') return new Response('no', { status: 404 });

@@ -35,6 +35,8 @@ const CONN_PER_IP = +process.env.CONN_PER_IP || 40;            // 같은 IP 에�
 // 친구 방 기록으로 잰 보통 그리기: 획 하나가 남의 그림을 덮는 양은 99% 가 2획·24조각 이하.
 const COVER_BURST = +process.env.COVER_BURST || 30, COVER_PER_MIN = +process.env.COVER_PER_MIN || 15;
 const COVER_PIECES = +process.env.COVER_PIECES || 400, COVER_PIECES_PER_MIN = +process.env.COVER_PIECES_PER_MIN || 200;
+// 칠하기가 남의 (색이 다른) 칠하기 조각을 덮을 수 있는 양: 한꺼번에 1000 조각, 1분에 500 씩. (친구 방 기록: 칠하기 101번 중 남의 칠하기를 덮은 건 0번)
+const FILL_COVER = +process.env.FILL_COVER || 1000, FILL_COVER_PER_MIN = +process.env.FILL_COVER_PER_MIN || 500;
 const SAVE_MS = +process.env.SAVE_MS || 5000;
 const META_GAP_MS = +process.env.META_GAP_MS || 60000;   // 입장 기록만 바뀐 방 설정은 1분에 한 번만 저장 (밴·잠금 같은 설정은 바로 저장)
 const CUR_FLUSH_MS = 100;                                // 커서 위치는 방마다 모아서 0.1초에 한 번 보낸다
@@ -860,7 +862,7 @@ function getRoom(id) {
     room = { id, clients: new Set(), hb: [], hn: 0, ver: 0, flat: null, zc: null, zp: null, snapMs: 0, lastSave: 0,
       names: {}, meta: normalizeMeta(null), dirty: false, metaDirty: false, noSave: false,
       loaded: false, loadFailed: false, corrupt: false, recovering: false, lastActive: Date.now(), q: null,
-      chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map(), cover: new Map() };
+      chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map(), cover: new Map(), fcover: new Map() };
     const r = room;
     r.ready = loadRoom(id).then((d) => {
       const h = cleanHistory(d.history);
@@ -949,7 +951,7 @@ function startSync(ws, room) {
   const go = (p) => { clearTimeout(ws.syncT); ws.syncGo = null; finishSync(ws, p.h, p.id, cap); };
   if (ws.pendingSync) { const p = ws.pendingSync; ws.pendingSync = null; go(p); return; }
   ws.syncGo = go;
-  ws.syncT = setTimeout(() => { if (ws.syncGo) ws.syncGo({ h: [], id: 0 }); }, SYNC_WAIT_MS);   // 목록이 안 오면 전체를 보낸다
+  ws.syncT = setTimeout(() => { if (ws.syncGo && ws.readyState === 1) ws.syncGo({ h: [], id: 0 }); }, SYNC_WAIT_MS);   // 목록이 안 오면 전체를 보낸다 (그사이 끊겼으면 그만)
 }
 function onSyncMsg(ws, room, h, id) {
   if (ws.syncGo) { ws.syncGo({ h, id }); return; }        // 들어올 때 기다리던 목록
@@ -1378,6 +1380,23 @@ function handleCmd(ws, room, roomId, msg) {
     cmdErr(ws, '알 수 없는 명령이에요');
   }
 }
+// 방장 되찾기: 이사하면서 예전 브라우저의 '나'를 못 넘긴 방장이 쓴다. 코드는 서버 비밀값 OWNER_CLAIM (8글자 이상일 때만 켜짐). 틀리면 1분에 3번까지.
+function claimOwner(ws, room, msg) {
+  const code = String(process.env.OWNER_CLAIM || '');
+  const now = Date.now();
+  ws.claimTries = (ws.claimTries || []).filter((t) => t > now - 60000);
+  if (code.length < 8 || room.noSave || room.id === 'lobby' || isGuest(ws.owner)) return cmdErr(ws, '방장 되찾기를 쓸 수 없어요');
+  if (ws.claimTries.length >= 3) return cmdErr(ws, '잠시 뒤에 다시 해 주세요');
+  if (typeof msg.code !== 'string' || msg.code !== code) { ws.claimTries.push(now); return cmdErr(ws, '방장 되찾기 코드가 맞지 않아요'); }
+  if (room.meta.owner === ws.owner) return;
+  room.meta.owner = ws.owner; delete room.meta.mods[ws.owner]; delete room.meta.bans[ws.owner]; delete room.meta.spectators[ws.owner];
+  persistMeta(room);
+  broadcastAll(room, roomStateMsg(room));
+  for (const o of new Set([...room.clients].map((c) => c.owner))) sendMe(room, o);
+  sendAdmin(room);
+  sysChat(room, `${room.names[ws.owner] || '누군가'}님이 방장을 되찾았어요`);
+  console.log(`방 ${room.id}: 방장 되찾기 코드로 방장이 바뀜`);
+}
 function undoAllow(ws, n) {                           // 이전/되돌리기로 한꺼번에 넣고 빼는 선분: 초당 500개, 한꺼번에는 6000개까지 (큰 칠하기를 지운 뒤 되돌려도 막히지 않게)
   const now = Date.now();
   ws.undoTok = Math.min(6000, ws.undoTok + (now - ws.undoAt) * 0.5); ws.undoAt = now;
@@ -1500,6 +1519,49 @@ function coverBlocked(ws, room, owner, s) {
   c.x = s.x1; c.y = s.y1;
   return false;
 }
+// 남의 칠하기 덮기 막기: 새 칠하기 줄이 다른 사람의 (색이 다른) 칠하기 조각에 닿는 수를 센다. 칠하기는 늘 선 아래라 선은 덮을 수 없다.
+// 줄 j 의 가운데 y = (j + 0.5) x 칸, 굵기 = 칸 x 2. 조각마다 겹칠 수 있는 줄 번호만 찾아 본다.
+function fillCoverBlocked(ws, room, owner, list, cell) {
+  if (room.meta.noCover || isStaff(room, owner) || !list.length) return false;
+  const color = list[0].color, rows = new Map();
+  let xa = Infinity, xb = -Infinity, ya = Infinity, yb = -Infinity;
+  for (const r of list) {
+    const j = Math.round(r.y0 / cell - 0.5), m = r.size / 2;
+    (rows.get(j) || rows.set(j, []).get(j)).push([Math.min(r.x0, r.x1) - m, Math.max(r.x0, r.x1) + m]);
+    xa = Math.min(xa, r.x0 - m, r.x1 - m); xb = Math.max(xb, r.x0 + m, r.x1 + m); ya = Math.min(ya, r.y0 - m); yb = Math.max(yb, r.y0 + m);
+  }
+  const now = Date.now();
+  let b = room.fcover.get(owner);
+  if (!b) room.fcover.set(owner, (b = { pc: FILL_COVER, at: now, said: 0 }));
+  b.pc = Math.min(FILL_COVER, b.pc + (now - b.at) / 60000 * FILL_COVER_PER_MIN); b.at = now;
+  let n = 0;
+  for (const blk of room.hb) {
+    if (blk.x1 < xa || blk.x0 > xb || blk.y1 < ya || blk.y0 > yb) continue;
+    const sb = subBoxes(blk), box = sb.box, a = blk.a;
+    for (let k = 0; k < sb.n; k++) {
+      const q = k * 5;
+      if (box[q + 1] < xa || box[q] > xb || box[q + 3] < ya || box[q + 2] > yb) continue;
+      for (let i = k * SUB, e = Math.min(a.length, i + SUB); i < e; i++) {
+        const t = a[i];
+        if (!t.f || t.o === owner || t.color === color) continue;
+        const ht = t.size / 2, tx0 = Math.min(t.x0, t.x1) - ht, tx1 = Math.max(t.x0, t.x1) + ht, ty = (t.y0 + t.y1) / 2;
+        if (tx1 < xa || tx0 > xb || ty + ht < ya || ty - ht > yb) continue;
+        let hit = false;
+        for (let j = Math.ceil((ty - ht - cell) / cell - 0.5), j1 = Math.floor((ty + ht + cell) / cell - 0.5); j <= j1 && !hit; j++) {
+          const sp = rows.get(j);
+          if (sp) for (const [x0, x1] of sp) if (x0 < tx1 && x1 > tx0) { hit = true; break; }
+        }
+        if (hit && ++n > b.pc) {
+          notice(ws, 'coverfill', '다른 사람이 칠한 곳을 한꺼번에 너무 많이 덮고 있어요. 이 칠하기는 저장되지 않았어요. 잠시 뒤에 다시 해 주세요.');
+          if (now - b.said > 120000) { b.said = now; sysChat(room, `${room.names[owner] || '누군가'}님의 칠하기가 다른 사람 그림을 너무 많이 덮어서 막았어요`); }
+          return true;
+        }
+      }
+    }
+  }
+  b.pc -= n;
+  return false;
+}
 function globalAllow(ws) {
   const now = Date.now();
   ws.gTok = Math.min(1000, ws.gTok + (now - ws.gAt) * 0.8);
@@ -1618,7 +1680,9 @@ function handleMsg(ws, room, roomId, owner, msg) {
       if (!f) return no('bad');
       if (room.hn + f.rows.length > MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return no('full'); }
       if (shareFull(ws, room, owner, f.rows.length)) return no('share');
-      histInsert(room, fillSegs(owner, f.sid, f.color, f.cell, f.rows));
+      const fsegs = fillSegs(owner, f.sid, f.color, f.cell, f.rows);
+      if (fillCoverBlocked(ws, room, owner, fsegs, f.cell)) return no('cover');
+      histInsert(room, fsegs);
       broadcast(room, ws, { type: 'fill', o: owner, sid: f.sid, color: f.color, cell: f.cell, rows: f.rows });
     } else if (msg.type === 'removesegs') {
       // 이전(undo): 내 선분 중 값이 같은 것을 정확히 지운다 (잘린 조각 되돌리기)
@@ -1668,6 +1732,8 @@ function handleMsg(ws, room, roomId, owner, msg) {
       pushChat(room, { o: owner, name: room.names[owner] || '익명', text });   // 시각과 닉네임은 서버가 붙인다 (그 시점의 이름으로 저장)
     } else if (msg.type === 'cmd') {
       handleCmd(ws, room, roomId, msg);
+    } else if (msg.type === 'claim') {                   // 방장 되찾기 (서버 비밀값 OWNER_CLAIM 과 같은 코드)
+      claimOwner(ws, room, msg);
     }
   } catch (e) {
     console.error('메시지 처리 오류:', e.message);
