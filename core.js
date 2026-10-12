@@ -1022,7 +1022,7 @@ function allowSeg(ws) {
 // ---- 방 설정(meta): 방장, 밴, 채팅 금지, 관전, 잠금 + 채팅 (2단계) ----
 const OWNER_RE = /^[A-Za-z0-9_-]{1,32}$/;
 const send = (ws, obj) => { if (ws.readyState === 1) sendRaw(ws, JSON.stringify(obj)); };
-const isGuest = (o) => String(o).startsWith('g');                       // 키 없는 접속은 방장이 될 수 없다
+const isGuest = (o) => /^g[0-9a-f]{10}$/.test(String(o));              // 키 없는 접속('g' + 16진수 10글자)은 방장이 될 수 없다 (키로 만든 ID 는 10글자라 'g' 로 시작해도 손님이 아니다)
 const isRoomOwner = (room, o) => !room.noSave && !!room.meta.owner && room.meta.owner === o;
 const hasOwner = (room, o) => { for (const c of room.clients) if (c.owner === o) return true; return false; };
 

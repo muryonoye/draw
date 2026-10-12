@@ -256,6 +256,15 @@
     display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; background: var(--panel); color: var(--text); border: 1px solid var(--accent);
     border-radius: var(--r-lg); box-shadow: var(--shadow); word-break: keep-all; }
   #hintBox .btn { flex: none; min-height: 36px; }
+  #replayBar { position: absolute; z-index: 17; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--safe-b)); width: min(560px, calc(100% - 24px));
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: var(--r-lg); box-shadow: var(--shadow); }
+  #replayBar .btn { flex: none; min-width: 40px; min-height: 36px; padding: 0 10px; }
+  #replayBar input[type=range] { flex: 1; min-width: 60px; }
+  #rpTxt { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  body.replaying #tools { visibility: hidden; }
+  #selBar { position: absolute; z-index: 16; display: flex; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+  #selBar .btn { min-height: 34px; padding: 0 10px; font-size: 13px; white-space: nowrap; }
   #hintBox .xbtn { flex: none; width: 36px; height: 36px; border: 0; border-radius: var(--r); background: transparent; color: var(--muted); display: grid; place-items: center; }
   @media (max-width: 720px) { #hintBox { bottom: calc(68px + var(--safe-b)); font-size: 13px; } }   /* 폰: 아래 도구 모음 위에 */
 
@@ -280,6 +289,7 @@
   .seg3 .opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); text-align: center; font-size: 13px; }
   .seg3 .opt.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
   .seg3 .opt small { color: var(--muted); font-size: 11px; }
+  #mBody { white-space: pre-line; }
 </style>
 </head>
 <body>
@@ -309,6 +319,7 @@
     <symbol id="i-bucket" viewBox="0 0 24 24"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></symbol>
     <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M3 15.5 15.5 3l5.5 5.5L8.5 21z"/><path d="m7.5 11 2 2M10.5 8l2 2M13.5 5l2 2M4.5 14l2 2"/></symbol>
     <symbol id="i-ruler-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-lasso" viewBox="0 0 24 24"><path d="M8.2 16.6C5 15.7 3 13.8 3 11.5 3 7.9 7 5 12 5s9 2.9 9 6.5S17 18 12 18c-.9 0-1.8-.1-2.6-.3"/><path d="M8.6 15.4c-1.5.4-2.5 1.3-2.5 2.4 0 1.5 1.7 2.7 3.8 2.7"/></symbol>
     <symbol id="i-ruler-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9.5" ry="5" transform="rotate(-28 12 12)"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></symbol>
     <symbol id="i-ruler-mirror" viewBox="0 0 24 24"><path d="M12 2.5v3M12 9v3M12 15.5v3M12 21v.5"/><path d="M9 6.5 4 12l5 5.5M15 6.5l5 5.5-5 5.5"/></symbol>
     <symbol id="i-ruler-radial" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 8V2M12 16v6M8 12H2M16 12h6M9.2 9.2 5 5M14.8 14.8 19 19M14.8 9.2 19 5M9.2 14.8 5 19"/></symbol>
@@ -331,6 +342,7 @@
     <canvas id="c"></canvas>
     <canvas id="hl"></canvas>
     <canvas id="rl"></canvas>
+    <canvas id="sl"></canvas>
   </div>
   <div id="cursors"></div>
   <div id="tip" hidden><span class="dot"></span><b></b><i></i></div>
@@ -344,6 +356,20 @@
     <span id="hudPersistSep" class="sepv" hidden></span><button id="hudPersist" class="linkbtn warnbtn" hidden title="그림이 저장되지 않고 있어요 (눌러서 자세히)" aria-label="저장 꺼짐">⚠ 저장 꺼짐</button>
   </div>
   <div id="banner" hidden><span class="spin"></span><span>재연결 중…</span></div>
+  <div id="selBar" hidden role="group" aria-label="고른 그림">
+    <button id="selDup" class="btn" type="button" title="복제 (Ctrl+D)">복제</button>
+    <button id="selFlipX" class="btn" type="button" title="좌우 뒤집기" aria-label="좌우 뒤집기">↔</button>
+    <button id="selFlipY" class="btn" type="button" title="상하 뒤집기" aria-label="상하 뒤집기">↕</button>
+    <button id="selDel" class="btn" type="button" title="지우기 (Delete)">지우기</button>
+    <button id="selDone" class="btn primary" type="button" title="완료 (Esc)">완료</button>
+  </div>
+  <div id="replayBar" hidden role="group" aria-label="그리는 과정 다시 보기">
+    <button id="rpPlay" class="btn primary" type="button" aria-label="재생·멈춤">⏸</button>
+    <input type="range" id="rpRange" min="0" max="1000" value="0" aria-label="진행">
+    <span id="rpTxt"></span>
+    <button id="rpSpeed" class="btn" type="button" aria-label="빠르기">1×</button>
+    <button id="rpClose" class="btn" type="button" aria-label="다시 보기 닫기" title="닫기 (Esc)">✕</button>
+  </div>
   <div id="hintBox" hidden role="status"><span id="hintText"></span><button id="hintBtn" class="btn primary" type="button"></button><button id="hintClose" class="xbtn" type="button" aria-label="안내 닫기" title="닫기"><svg class="ic"><use href="#i-x"/></svg></button></div>
 
   <nav id="tools" aria-label="도구">
@@ -354,7 +380,10 @@
     </div>
     <button id="tFill" class="tool" aria-label="채우기 (F)" title="채우기 (F)" aria-pressed="false"><svg class="ic"><use href="#i-bucket"/></svg></button>
     <button id="tDrop" class="tool" aria-label="스포이드 (I)" title="스포이드 (I)" aria-pressed="false"><svg class="ic"><use href="#i-dropper"/></svg></button>
-    <button id="tHand" class="tool" aria-label="화면 이동 (H)" title="화면 이동 (H)" aria-pressed="false"><svg class="ic"><use href="#i-hand"/></svg></button>
+    <div class="toolwrap">
+      <button id="tHand" class="tool" aria-label="화면 이동 (H)" title="화면 이동 (H)" aria-pressed="false"><svg class="ic"><use id="handUse" href="#i-hand"/></svg><span class="sub" id="handSub"></span></button>
+      <button id="tHandMode" class="caret" aria-label="화면 이동·올가미 선택" title="화면 이동·올가미 선택" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-chevron"/></svg></button>
+    </div>
     <div class="toolwrap">
       <button id="tRuler" class="tool" aria-label="자 켜기·끄기" title="자 (켜면 펜 선이 자를 따라가요)" aria-pressed="false"><svg class="ic"><use id="rulerUse" href="#i-ruler"/></svg><span class="sub" id="rulerSub">자</span></button>
       <button id="tRulerMode" class="caret" aria-label="자 종류 선택" title="자 종류 선택" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-chevron"/></svg></button>
@@ -388,6 +417,15 @@
   <div class="hint" id="sizeHint"></div>
 </section>
 
+<section id="popHand" class="pop" hidden aria-label="화면 이동·올가미">
+  <div class="sheetgrab"></div><h3>화면 이동 · 올가미</h3>
+  <div class="seg2">
+    <button class="opt" data-hm="pan" type="button"><svg class="ic"><use href="#i-hand"/></svg><b>화면 이동</b><small>끌어서 화면 옮기기 (H)</small></button>
+    <button class="opt" data-hm="lasso" type="button"><svg class="ic"><use href="#i-lasso"/></svg><b>올가미</b><small>내 그림 골라 옮기기 (M)</small></button>
+  </div>
+  <div class="hint">올가미: 내 그림을 둘러싸면 그 획들이 골라져요. 안쪽을 끌면 옮기고, 모서리 점을 끌면 크기가 바뀌어요. Delete: 지우기 · Esc: 고르기 끝 · 이전(Ctrl+Z): 되돌리기. 다른 사람 그림은 고를 수 없어요.</div>
+</section>
+
 <section id="popEraser" class="pop" hidden aria-label="지우개 모드">
   <div class="sheetgrab"></div><h3>지우개 모드</h3>
   <div class="seg2">
@@ -416,6 +454,7 @@
   <div class="sheetgrab"></div><h3>보기</h3>
   <button id="fitAll" class="btn primary block" style="margin-bottom:10px"><svg class="ic"><use href="#i-view"/></svg>전체 그림 한눈에 보기</button>
   <button id="exportPng" class="btn block" style="margin-bottom:10px">그림을 이미지(PNG)로 저장</button>
+  <button id="replayBtn" class="btn block" style="margin-bottom:10px">그리는 과정 다시 보기</button>
   <div class="row">
     <button id="zOut" class="btn" aria-label="축소" title="축소"><svg class="ic"><use href="#i-minus"/></svg></button>
     <button id="z100" class="btn" style="flex:1" aria-label="배율 100%">100%</button>
@@ -556,7 +595,7 @@ const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').mat
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false, handMode: 'pan' };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -566,6 +605,7 @@ function loadSettings() {
   out.penSize = clampInt(out.penSize, 1, PEN_MAX);
   out.eraserD = clampInt(out.eraserD, 2, ERASER_R_MAX * 2);
   if (out.eraserMode !== 'part' && out.eraserMode !== 'stroke') out.eraserMode = 'part';
+  if (out.handMode !== 'pan' && out.handMode !== 'lasso') out.handMode = 'pan';
   out.smooth = clampInt(out.smooth, 0, 3);
   if (!['auto', 'zoom', 'pan'].includes(out.wheel)) out.wheel = 'auto';
   if (!['line', 'circle', 'radial', 'ellipse', 'mirror'].includes(out.rulerKind)) out.rulerKind = 'line';
@@ -799,6 +839,7 @@ const OLD_ORIGIN = 'https://muryonoye-board.onrender.com';
 // 방장 되찾기: 주소 끝 #claim=코드 로 들어오면 접속 뒤 한 번 보낸다 (주소에서는 바로 지운다)
 let claimCode = (() => { const m = /^#claim=([^&]{1,200})$/.exec(location.hash); if (!m) return null; try { history.replaceState(null, '', location.pathname + location.search); } catch {} try { return decodeURIComponent(m[1]); } catch { return null; } })();
 function sendClaim() { if (claimCode && ws && ws.readyState === 1) { send({ type: 'claim', code: claimCode }); claimCode = null; } }
+const returning = lsGet('draw:key') !== null;                  // 전에 이 기기에서 써 본 사람 (새로 생긴 기능 안내용)
 function getKey() {
   let k = lsGet('draw:key');
   if (!k) { k = makeKey(); lsSet('draw:key', k); }
@@ -824,6 +865,9 @@ function goRoom(id) { location.href = '/?room=' + encodeURIComponent(id); }
 /* ===== 상태 ===== */
 const stage = $('stage'), board = $('board'), inkCv = $('c'), gridCv = $('grid'), hlCv = $('hl');
 const ctx = inkCv.getContext('2d'), gctx = gridCv.getContext('2d'), hctx = hlCv.getContext('2d');
+const slCv = $('sl'), sctx = slCv.getContext('2d');                  // 올가미: 둘러싸는 선·고른 것 테두리·옮기는 모습
+let lasso = null, sel = null, selDrag = null, selHide = null, rafSel = 0;
+const hiddenO = new Set();                                      // 내 화면에서만 숨긴 사람들의 그림 (주인 ID)
 const tip = $('tip'), ring = $('ring'), curLayer = $('cursors'), nickEl = $('nick');
 let tool = 'pen', spaceDown = false, shiftDown = false;
 let cam = { x: 0, y: 0 }, scale = 1, cssW = 1, cssH = 1, dpr = 1;
@@ -922,13 +966,17 @@ function segIndex() {
 }
 function drawSegs(xa, xb, ya, yb, g = ctx, k = scale) {    // 월드 상자에 닿는 선을 목록 순서대로 g 에 그린다 (g 는 보기 변환이 된 상태, k = 화면 픽셀 / 월드)
   g.lineCap = 'round'; g.lineJoin = 'round';
-  const ix = segIndex(), box = ix.box, tol = drawSkipPx / k;
+  const src = rp ? rp.list : segs, lim = rp ? rp.n : src.length;   // (그리는 과정 다시 보기 중이면 그 목록의 앞 n 개만)
+  const ix = rp ? rp.ix : segIndex(), box = ix.box, tol = drawSkipPx / k;
   let open = false, rc = null, rs = -1, rsid = null, lx = NaN, ly = NaN, px = NaN, py = NaN, pend = false;
   const flush = () => { if (pend) { g.lineTo(lx, ly); pend = false; } };   // 건너뛰던 마지막 점까지는 꼭 그린다
   for (let b = 0; b < ix.n; b++) {
     if (box[b * 4 + 1] < xa || box[b * 4] > xb || box[b * 4 + 3] < ya || box[b * 4 + 2] > yb) continue;
-    for (let i = b * SEG_BLOCK, e = Math.min(segs.length, i + SEG_BLOCK); i < e; i++) {
-      const s = segs[i], hs = s.size / 2;
+    if (b * SEG_BLOCK >= lim) break;
+    for (let i = b * SEG_BLOCK, e = Math.min(lim, i + SEG_BLOCK); i < e; i++) {
+      const s = src[i], hs = s.size / 2;
+      if (selHide && selHide.has(s)) continue;              // (올가미로 옮기는 중인 선은 옮겨진 모습으로 따로 그린다)
+      if (hiddenO.size && hiddenO.has(s.o)) continue;       // (내 화면에서 숨긴 사람)
       if (Math.max(s.x0, s.x1) + hs < xa || Math.min(s.x0, s.x1) - hs > xb || Math.max(s.y0, s.y1) + hs < ya || Math.min(s.y0, s.y1) - hs > yb) continue;
       if (!open || s.color !== rc || s.size !== rs || (s.sid !== rsid && isClear(s.color))) {   // 같은 색·굵기가 이어지면 한 path 로 묶어 한 번에 그린다 (반투명은 획마다: 다른 획과 겹친 곳은 진하게)
         flush();
@@ -1001,6 +1049,8 @@ function paintPreview() {
 }
 function redrawInk() { if (!rafInk) rafInk = requestAnimationFrame(() => { rafInk = 0; paintInkExact(); }); }
 function incSeg(s) {                                       // 새 선분 하나만 덧그리기 (전체를 다시 그리지 않는다)
+  if (rp) return;                                          // (다시 보기 중: 새 선은 닫으면 보인다)
+  if (hiddenO.size && hiddenO.has(s.o)) return;
   if (isClear(s.color)) { redrawSegsArea([s]); return; }     // 반투명: 덧그리면 이음새가 진해진다 → 그 자리만 다시 그린다 (한 획 한 path)
   ensureAligned(); ctxView();
   ctx.lineCap = 'round'; ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, 0.6 / scale);
@@ -1106,6 +1156,7 @@ function viewChanged(immediate) {
   if (!rafGrid) rafGrid = requestAnimationFrame(() => { rafGrid = 0; paintGrid(); });
   hudSoon(); layoutCursors();
   if (ruler.on) rulerSoon();
+  if (sel || lasso) selSoon();
   if (hl && hl.all) paintHighlight();                           // ('그린 곳 보기' 강조는 화면을 옮겨도 따라간다)
   if (lastMouse && !ring.hidden) updateRing(lastMouse);        // 휠·키로 확대·축소하면 커서 원도 바로 같이
   clearTimeout(exactT);
@@ -1117,7 +1168,7 @@ function resize() {
   const first = !resize.done;
   const c = centerWorld();                                  // 회전·리사이즈 때 화면 중앙의 월드 좌표를 유지
   cssW = w; cssH = h; dpr = window.devicePixelRatio || 1;
-  for (const cv of [inkCv, gridCv, hlCv, rlCv]) { cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr)); }
+  for (const cv of [inkCv, gridCv, hlCv, rlCv, slCv]) { cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr)); }
   if (first) { resize.done = true; cam.x = -w / 2; cam.y = -h / 2; }
   else { cam.x = c.x - w / 2 / scale; cam.y = c.y - h / 2 / scale; }
   paintGrid(); paintInkExact(); paintHighlight(); paintRuler(); hudSoon(); layoutCursors();
@@ -1161,7 +1212,21 @@ function flyView(ts, wx, wy) {                              // 배율 ts 로 바
 // 전체 그림 한눈에 보기: 모든 선이 도구 모음·상태 알약에 가리지 않고 화면에 들어오게 축소 (작은 그림은 100% 까지만)
 function fitAll() {
   if (!segs.length) { resetView(); toast('아직 그림이 없어요'); return; }
-  fitSegs(segs, 1);
+  const core = coreSegs(segs);
+  fitSegs(core, 1);
+  if (core.length < segs.length) toast(`멀리 떨어진 작은 그림 ${(segs.length - core.length).toLocaleString()}조각은 빼고 맞췄어요`);
+}
+// 대부분의 그림이 모인 곳: 선분 가운데 점의 x·y 가 양쪽 끝 0.5% 안쪽인 선분들 (200개 이하면 전부). 많으면 2만 개를 골라 범위를 잰다.
+function coreSegs(list) {
+  if (list.length <= 200) return list;
+  const step = Math.max(1, Math.floor(list.length / 20000)), xs = [], ys = [];
+  for (let i = 0; i < list.length; i += step) { const s = list[i]; xs.push((s.x0 + s.x1) / 2); ys.push((s.y0 + s.y1) / 2); }
+  xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
+  const q = (a, p) => a[Math.min(a.length - 1, Math.max(0, Math.round((a.length - 1) * p)))];
+  const xa = q(xs, 0.005), xb = q(xs, 0.995), ya = q(ys, 0.005), yb = q(ys, 0.995);
+  const wx = Math.max(xb - xa, 1) * 0.5, wy = Math.max(yb - ya, 1) * 0.5;     // (가장자리 그림은 넉넉히 넣고, 정말 멀리 떨어진 것만 뺀다)
+  const out = list.filter((s) => { const x = (s.x0 + s.x1) / 2, y = (s.y0 + s.y1) / 2; return x >= xa - wx && x <= xb + wx && y >= ya - wy && y <= yb + wy; });
+  return out.length ? out : list;
 }
 function fitSegs(list, maxS) {                               // 이 선들이 모두 보이게 (배율은 maxS 까지만)
   // 범위는 화면 방향으로 잰다: 돌린 화면이면 월드 좌표를 같은 각도로 돌린 좌표(가로·세로가 화면과 같다)에서 잰다
@@ -1253,6 +1318,7 @@ function hitTest(w, marginPx) {
     if (w.x < box[b * 4] - tol || w.x > box[b * 4 + 1] + tol || w.y < box[b * 4 + 2] - tol || w.y > box[b * 4 + 3] + tol) continue;
     for (let i = Math.min(segs.length, (b + 1) * SEG_BLOCK) - 1; i >= b * SEG_BLOCK; i--) {
       const s = segs[i], r = s.size / 2 + tol;
+      if (hiddenO.size && hiddenO.has(s.o)) continue;
       if (w.x < Math.min(s.x0, s.x1) - r || w.x > Math.max(s.x0, s.x1) + r || w.y < Math.min(s.y0, s.y1) - r || w.y > Math.max(s.y0, s.y1) + r) continue;
       if (distToSeg(w, s) <= r) return s;
     }
@@ -1342,6 +1408,23 @@ function formModal({ title, body, ok = '확인', cancel = '취소', danger = fal
     const first = box.querySelector('input,select');
     (first || (danger ? $('mCancel') : $('mOk'))).focus();
   });
+}
+// 새로 생긴 기능 안내: 화면 판(NEWS_VER)이 바뀐 뒤 처음 그림을 받으면 한 번 (전에 써 본 사람에게만, 이 기기에 기억)
+const NEWS_VER = 1;
+const NEWS = ['올가미: 손 버튼 ⌄ → 올가미 (M 키). 내 그림을 둘러싸서 옮기기·크기·복제·뒤집기·지우기',
+  '펜 투명도: 색상 창 아래 슬라이더',
+  '그리는 과정 다시 보기: 보기 메뉴',
+  '자: 타원자·대칭자가 생겼어요. U 키로 켜고 끄기',
+  '다시 들어올 때 바뀐 부분만 받아서 훨씬 빨라졌어요'];
+let newsDone = false;
+function newsSoon() {
+  if (newsDone) return;
+  newsDone = true;
+  const seen = +(lsGet('draw:news') || 0);
+  if (seen >= NEWS_VER) return;
+  lsSet('draw:news', String(NEWS_VER));
+  if (!returning) return;                                      // (처음 온 사람은 이미 새 화면이다)
+  setTimeout(() => { if (!modalResolve && $('modal').hidden) formModal({ title: '새로 생긴 기능', body: NEWS.map((t) => '• ' + t).join('\n'), ok: '좋아요', cancel: '닫기' }); }, 900);
 }
 function closeModal(v) { $('modal').hidden = true; const r = modalResolve; modalResolve = null; modalCtl = null; if (r) r(v); }
 const confirmModal = (o) => formModal(o).then((v) => v !== null);
@@ -1489,7 +1572,9 @@ function setTool(t) {
   if (t === 'drop' && tool !== 'drop') dropFrom = tool;
   if (t === 'rotate' && tool !== 'rotate') rotFrom = tool;
   tool = t;
-  for (const [b, n] of [[$('tPen'), 'pen'], [$('tEraser'), 'eraser'], [$('tFill'), 'fill'], [$('tDrop'), 'drop'], [$('tHand'), 'hand']]) { b.classList.toggle('active', n === t); b.setAttribute('aria-pressed', String(n === t)); }
+  if (t !== 'select') clearSel();
+  for (const [b, n] of [[$('tPen'), 'pen'], [$('tEraser'), 'eraser'], [$('tFill'), 'fill'], [$('tDrop'), 'drop'], [$('tHand'), 'hand']]) { const on = n === t || (n === 'hand' && t === 'select'); b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
+  syncHandUI();
   syncCursor();
   ring.hidden = true; hideTip(); hideDropPrev(); syncSizeUI();
 }
@@ -1502,7 +1587,15 @@ $('tFill').onclick = () => selectFill();
 $('tDrop').onclick = () => selectDrop();
 $('tEraser').onclick = () => { if (tool === 'eraser') openPop('popEraser', $('tEraserMode')); else selectEraser(); };
 $('tEraserMode').onclick = () => openPop('popEraser', $('tEraserMode'));
-$('tHand').onclick = () => setTool('hand');
+$('tHand').onclick = () => { if (tool === 'hand' || tool === 'select') openPop('popHand', $('tHandMode')); else setTool(S.handMode === 'lasso' ? 'select' : 'hand'); };
+$('tHandMode').onclick = () => { syncHandUI(); openPop('popHand', $('tHandMode')); };
+for (const b of document.querySelectorAll('#popHand .opt')) b.onclick = () => { S.handMode = b.dataset.hm; saveSettings(); setTool(S.handMode === 'lasso' ? 'select' : 'hand'); closePop(); if (S.handMode === 'lasso') toast('올가미: 내 그림을 둘러싸서 고르세요'); };
+function syncHandUI() {
+  const lasso = S.handMode === 'lasso';
+  $('handUse').setAttribute('href', lasso ? '#i-lasso' : '#i-hand'); $('handSub').textContent = lasso ? '선택' : '';
+  $('tHand').title = $('tHand').ariaLabel = lasso ? '올가미 (M): 내 그림 골라 옮기기' : '화면 이동 (H)';
+  for (const b of document.querySelectorAll('#popHand .opt')) b.classList.toggle('on', b.dataset.hm === S.handMode);
+}
 $('tColor').onclick = () => openPop('popColor', $('tColor'));
 $('tSize').onclick = () => { syncSizeUI(); openPop('popSize', $('tSize')); };
 $('tView').onclick = () => openPop('popView', $('tView'));
@@ -1629,6 +1722,253 @@ async function exportPng() {
   }, 'image/png');
 }
 $('exportPng').onclick = exportPng;
+
+/* ===== 올가미: 내 그림을 둘러싸 고르고 옮기기·크기 바꾸기 ===== */
+// 고르기: 올가미 안에 가운데 점이 있는 선분이 절반 넘는 내 획은 그 획 전체. 칠하기도 획(한 번 칠한 것)마다.
+// 옮기기·크기: 끄는 동안은 원래 선을 숨기고 옮겨진 모습을 위 캔버스(#sl)에 그린다. 손을 떼면 원래 선을 빼고(removesegs) 옮긴 선을 넣는다(addsegs). 이전 한 번 = 원래 자리.
+const SEL_MAX = 3000, SEL_HIT_MOUSE = 12, SEL_HIT_TOUCH = 24;
+const selSoon = () => { if (!rafSel) rafSel = requestAnimationFrame(paintSel); };
+function selBoxOf(list) {
+  let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
+  for (const s of list) { const h = s.size / 2; xa = Math.min(xa, s.x0 - h, s.x1 - h); xb = Math.max(xb, s.x0 + h, s.x1 + h); ya = Math.min(ya, s.y0 - h, s.y1 - h); yb = Math.max(yb, s.y0 + h, s.y1 + h); }
+  return { xa, ya, xb, yb };
+}
+function inPoly(x, y, pts) {
+  let c = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const a = pts[i], b = pts[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c; }
+  return c;
+}
+function clearSel() { if (!sel && !lasso && !selDrag) return; sel = null; lasso = null; if (selDrag || selHide) { selDrag = null; selHide = null; redrawInk(); } selSoon(); }
+// 고른 것의 옮기기 변환: 기준점 (ox, oy) 를 중심으로 k 배 + (dx, dy)
+const selT = (t, x, y) => ({ x: t.ox + (x - t.ox) * (t.kx === undefined ? t.k : t.kx) + t.dx, y: t.oy + (y - t.oy) * (t.ky === undefined ? t.k : t.ky) + t.dy });
+function selCorners() {                                        // 고른 것 테두리 네 모서리 (화면, 옮기는 중이면 옮겨진 자리)
+  const b = sel.box, t = selDrag ? selDrag.t : { ox: 0, oy: 0, k: 1, dx: 0, dy: 0 };
+  return [[b.xa, b.ya], [b.xb, b.ya], [b.xb, b.yb], [b.xa, b.yb]].map(([x, y]) => { const w = selT(t, x, y); return toScreen(w.x, w.y); });
+}
+function selDown(p, touch) {
+  if (sel) {
+    const cs = selCorners(), hit = touch ? SEL_HIT_TOUCH : SEL_HIT_MOUSE;
+    let ci = -1, bd = hit;
+    cs.forEach((c, i) => { const d = Math.hypot(p.x - c.x, p.y - c.y); if (d <= bd) { bd = d; ci = i; } });
+    if (ci >= 0 || inPoly(p.x, p.y, cs)) {
+      const b = sel.box, cw = [[b.xa, b.ya], [b.xb, b.ya], [b.xb, b.yb], [b.xa, b.yb]];
+      selDrag = { mode: ci >= 0 ? 'scale' : 'move', w0: toWorld(p), t: { ox: 0, oy: 0, k: 1, dx: 0, dy: 0 } };
+      if (ci >= 0) { const a = cw[(ci + 2) % 4], c = cw[ci]; selDrag.t.ox = a[0]; selDrag.t.oy = a[1]; selDrag.d0 = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1; }   // 맞은편 모서리를 기준으로
+      selHide = sel.set; redrawInk(); gmode = 'selmove'; selSoon();
+      return;
+    }
+    clearSel();
+  }
+  lasso = { pts: [toWorld(p)], sp: p };
+  gmode = 'lasso'; selSoon();
+}
+function lassoMove(p) {
+  if (!lasso) return;
+  if (Math.hypot(p.x - lasso.sp.x, p.y - lasso.sp.y) < 3) return;
+  lasso.sp = p; lasso.pts.push(toWorld(p)); selSoon();
+}
+function lassoEnd(ok) {
+  const l = lasso; lasso = null;
+  if (!ok || !l || l.pts.length < 3) { selSoon(); return; }
+  const pts = l.pts;
+  let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
+  for (const q of pts) { xa = Math.min(xa, q.x); xb = Math.max(xb, q.x); ya = Math.min(ya, q.y); yb = Math.max(yb, q.y); }
+  const by = new Map();
+  for (const s of segs) {
+    if (s.o !== me) continue;
+    const mx = (s.x0 + s.x1) / 2, my = (s.y0 + s.y1) / 2;
+    let e = by.get(s.sid); if (!e) by.set(s.sid, e = { n: 0, all: [] });
+    e.all.push(s);
+    if (mx >= xa && mx <= xb && my >= ya && my <= yb && inPoly(mx, my, pts)) e.n++;
+  }
+  const list = [];
+  for (const e of by.values()) if (e.n * 2 > e.all.length) for (const s of e.all) list.push(s);
+  if (!list.length) { toast('내 그림을 둘러싸 주세요 (다른 사람 그림은 고를 수 없어요)'); selSoon(); return; }
+  if (list.length > SEL_MAX) { toast('한 번에 ' + SEL_MAX.toLocaleString() + '조각까지만 고를 수 있어요 (지금 ' + list.length.toLocaleString() + '조각). 조금 작게 둘러싸 주세요', 'warn'); selSoon(); return; }
+  sel = { list, set: new Set(list), box: selBoxOf(list) };
+  selSoon();
+}
+function selMove(p) {
+  const d = selDrag; if (!d) return;
+  const w = toWorld(p);
+  if (d.mode === 'move') { d.t.dx = w.x - d.w0.x; d.t.dy = w.y - d.w0.y; }
+  else d.t.k = clamp(Math.hypot(w.x - d.t.ox, w.y - d.t.oy) / d.d0, 0.05, 20);
+  selSoon();
+}
+function selEnd(ok) {
+  const d = selDrag; selDrag = null; selHide = null;
+  if (!d || !sel) { redrawInk(); selSoon(); return; }
+  const t = d.t;
+  if (!ok || (Math.abs(t.dx) + Math.abs(t.dy) < 0.05 && Math.abs(t.k - 1) < 1e-3)) { redrawInk(); selSoon(); return; }
+  selApply(t);
+}
+function selApply(t) {                                         // 고른 것에 변환을 적용해 보낸다 (원래 선 빼고, 바뀐 선 넣기: 이전 한 번 = 원래대로)
+  const live = new Set(segs), removed = sel.list.filter((s) => live.has(s));   // (그사이 방장이 지운 조각은 빼고)
+  const added = removed.map((s) => {
+    const a = selT(t, s.x0, s.y0), b = selT(t, s.x1, s.y1);
+    const n = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: s.color, size: clamp(Math.round(s.size * Math.abs(t.k) * 10) / 10, s.f ? 0.1 : 1, PEN_MAX), o: me, sid: s.sid };
+    if (s.f) n.f = 1;
+    return n;
+  }).filter((n) => [n.x0, n.y0, n.x1, n.y1].every((v) => Math.abs(v) <= MAX_COORD));
+  const r = removeExactSegs(segs, removed); if (r) segs = r;
+  addSegs(added);
+  sendSegs('removesegs', removed); sendSegs('addsegs', added);
+  pushAct({ t: 'erase', removed: removed.slice(), added: added.slice() });   // (이전 = 원래 자리로: 지우개 이전과 같은 방식)
+  sel = added.length ? { list: added, set: new Set(added), box: selBoxOf(added) } : null;
+  redrawInk(); selSoon(); checkCap();
+}
+function dupSel() {                                            // 복제: 새 획 이름으로 조금 옆에 (이전 한 번 = 복제한 것 지우기)
+  if (!sel || selDrag) return;
+  const live = new Set(segs), src = sel.list.filter((s) => live.has(s));
+  if (!src.length) return;
+  if (segs.length + src.length > roomMax) { toast(FULL_MSG, 'warn'); return; }
+  const sids = new Map(), off = 24 / scale;
+  const added = src.map((s) => { if (!sids.has(s.sid)) sids.set(s.sid, newSid()); const n = { x0: r1(s.x0 + off), y0: r1(s.y0 + off), x1: r1(s.x1 + off), y1: r1(s.y1 + off), color: s.color, size: s.size, o: me, sid: sids.get(s.sid) }; if (s.f) n.f = 1; return n; });
+  addSegs(added); sendSegs('addsegs', added);
+  pushAct({ t: 'erase', removed: [], added: added.slice() });
+  sel = { list: added, set: new Set(added), box: selBoxOf(added) };
+  redrawInk(); selSoon(); checkCap();
+}
+function flipSel(horiz) {                                      // 고른 것의 가운데를 축으로 뒤집기
+  if (!sel || selDrag) return;
+  const b = sel.box, t = { ox: (b.xa + b.xb) / 2, oy: (b.ya + b.yb) / 2, k: 1, kx: horiz ? -1 : 1, ky: horiz ? 1 : -1, dx: 0, dy: 0 };
+  selApply(t);
+}
+$('selDup').onclick = dupSel;
+$('selFlipX').onclick = () => flipSel(true);
+$('selFlipY').onclick = () => flipSel(false);
+$('selDel').onclick = () => deleteSel();
+$('selDone').onclick = () => clearSel();
+function deleteSel() {
+  if (!sel || selDrag) return;
+  const live = new Set(segs), removed = sel.list.filter((s) => live.has(s));
+  const r = removeExactSegs(segs, removed); if (r) segs = r;
+  sendSegs('removesegs', removed);
+  pushAct({ t: 'erase', removed: removed.slice(), added: [] });
+  sel = null; redrawInk(); selSoon();
+  toast(removed.length.toLocaleString() + '조각을 지웠어요 (이전으로 되돌릴 수 있어요)');
+}
+function paintSel() {
+  rafSel = 0;
+  sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.clearRect(0, 0, slCv.width, slCv.height);
+  if (!lasso && !sel) { $('selBar').hidden = true; return; }
+  if (sel && selDrag) {                                       // 옮겨진 모습
+    const m = viewMat(curView()), t = selDrag.t;
+    sctx.setTransform(m[0] * dpr, m[1] * dpr, m[2] * dpr, m[3] * dpr, m[4] * dpr, m[5] * dpr);
+    sctx.lineCap = 'round'; sctx.lineJoin = 'round';
+    for (const s of sel.list) {
+      const a = selT(t, s.x0, s.y0), b = selT(t, s.x1, s.y1);
+      sctx.strokeStyle = s.color; sctx.lineWidth = Math.max(s.size * t.k, 0.6 / scale);
+      sctx.beginPath(); sctx.moveTo(a.x, a.y); sctx.lineTo(b.x, b.y); sctx.stroke();
+    }
+  }
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const twice = (path) => { sctx.setLineDash([]); sctx.strokeStyle = 'rgba(255,255,255,.9)'; sctx.lineWidth = 3; path(); sctx.stroke(); sctx.setLineDash([6, 5]); sctx.strokeStyle = RULER_COLOR; sctx.lineWidth = 1.5; path(); sctx.stroke(); sctx.setLineDash([]); };
+  if (lasso && lasso.pts.length > 1) {
+    const ps = lasso.pts.map((q) => toScreen(q.x, q.y));
+    sctx.fillStyle = 'rgba(31,143,255,.08)';
+    sctx.beginPath(); ps.forEach((q, i) => (i ? sctx.lineTo(q.x, q.y) : sctx.moveTo(q.x, q.y))); sctx.closePath(); sctx.fill();
+    twice(() => { sctx.beginPath(); ps.forEach((q, i) => (i ? sctx.lineTo(q.x, q.y) : sctx.moveTo(q.x, q.y))); });
+  }
+  const bar = $('selBar');
+  if (sel && !selDrag && !lasso) {                              // 고른 것 아래(안 보이면 위)에 버튼 줄
+    const cs = selCorners(), ys = cs.map((q) => q.y), xs = cs.map((q) => q.x);
+    bar.hidden = false;
+    const bw = bar.offsetWidth, bh = bar.offsetHeight, cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    let y = Math.max(...ys) + 12; if (y + bh > cssH - 8) y = Math.min(...ys) - bh - 12;
+    bar.style.left = clamp(cx - bw / 2, 8, Math.max(8, cssW - bw - 8)) + 'px'; bar.style.top = clamp(y, 56, Math.max(56, cssH - bh - 8)) + 'px';
+  } else bar.hidden = true;
+  if (sel) {
+    const cs = selCorners();
+    twice(() => { sctx.beginPath(); cs.forEach((q, i) => (i ? sctx.lineTo(q.x, q.y) : sctx.moveTo(q.x, q.y))); sctx.closePath(); });
+    for (const q of cs) { sctx.beginPath(); sctx.arc(q.x, q.y, 6, 0, Math.PI * 2); sctx.fillStyle = '#fff'; sctx.fill(); sctx.lineWidth = 2; sctx.strokeStyle = RULER_COLOR; sctx.stroke(); }
+  }
+}
+
+/* ===== 그리는 과정 다시 보기 (타임랩스) ===== */
+// 지금 그림을 목록 순서(= 대체로 그린 순서)대로 다시 그린다. 칠하기는 늘 선 아래(목록 앞쪽)라 먼저 나온다. 지운 것은 나오지 않는다.
+// 보는 동안 다른 사람이 새로 그린 것은 닫으면 보인다. 끌면 화면 이동, 확대·축소는 그대로.
+const RP_SECONDS = 20, RP_SPEEDS = [1, 2, 4, 8];
+let rp = null, rpRaf = 0, rpLast = 0;
+function blockIndex(arr) {                                     // segIndex 와 같은 덩어리 범위 (이 목록 전용, 한 번만)
+  const n = Math.ceil(arr.length / SEG_BLOCK), box = new Float64Array(n * 4);
+  for (let b = 0; b < n; b++) {
+    let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
+    for (let i = b * SEG_BLOCK, e = Math.min(arr.length, i + SEG_BLOCK); i < e; i++) {
+      const s = arr[i], h = s.size / 2;
+      xa = Math.min(xa, s.x0 - h, s.x1 - h); xb = Math.max(xb, s.x0 + h, s.x1 + h); ya = Math.min(ya, s.y0 - h, s.y1 - h); yb = Math.max(yb, s.y0 + h, s.y1 + h);
+    }
+    box[b * 4] = xa; box[b * 4 + 1] = xb; box[b * 4 + 2] = ya; box[b * 4 + 3] = yb;
+  }
+  return { arr, len: arr.length, n, box };
+}
+function startReplay() {
+  closePop(); clearSel();
+  if (!segs.length) { toast('아직 그림이 없어요'); return; }
+  abortStroke();
+  rp = { list: segs.slice(), n: 0, f: 0, speed: 1, playing: true };
+  rp.ix = blockIndex(rp.list);
+  $('replayBar').hidden = false; document.body.classList.add('replaying');
+  redrawInk(); syncReplayUI();                                 // (지금 보던 화면 그대로: 끌어서 옮기고 확대·축소할 수 있다)
+  rpLast = 0; cancelAnimationFrame(rpRaf); rpRaf = requestAnimationFrame(rpTick);
+}
+function rpTick(t) {
+  rpRaf = 0;
+  if (!rp || !rp.playing) { rpLast = 0; return; }
+  const dt = rpLast ? Math.min(100, t - rpLast) : 0;
+  rpLast = t;
+  rp.f = Math.min(rp.list.length, rp.f + rp.list.length / (RP_SECONDS * 1000) * dt * rp.speed);
+  const n = Math.floor(rp.f);
+  if (n > rp.n) {
+    const a = rp.n; rp.n = n;
+    if (aligned() && !exactT && !rafInk) { ctxView(); drawRange(rp.list, a, n); }   // 새로 나올 선만 위에 덧그린다 (목록 순서 = 칠하는 순서)
+    else redrawInk();
+    syncReplayUI();
+  }
+  if (rp.n >= rp.list.length) { rp.playing = false; syncReplayUI(); rpLast = 0; return; }
+  rpRaf = requestAnimationFrame(rpTick);
+}
+function drawRange(list, a, b) {                               // list[a..b) 를 그 순서대로 (drawSegs 처럼 같은 색·굵기·반투명 획끼리 한 path)
+  const g = ctx; g.lineCap = 'round'; g.lineJoin = 'round';
+  let open = false, rc = null, rs = -1, rsid = null, lx = NaN, ly = NaN;
+  for (let i = a; i < b; i++) {
+    const s = list[i];
+    if (hiddenO.size && hiddenO.has(s.o)) continue;
+    if (!open || s.color !== rc || s.size !== rs || (s.sid !== rsid && isClear(s.color))) {
+      if (open) g.stroke();
+      g.beginPath(); g.strokeStyle = s.color; g.lineWidth = Math.max(s.size, (s.f ? FILL_MIN_PX : 0.6) / scale);
+      rc = s.color; rs = s.size; rsid = s.sid; open = true; lx = NaN;
+    }
+    if (s.x0 !== lx || s.y0 !== ly) g.moveTo(s.x0, s.y0);
+    g.lineTo(s.x1, s.y1); lx = s.x1; ly = s.y1;
+  }
+  if (open) g.stroke();
+}
+function rpPlay(on) {
+  if (!rp) return;
+  if (on && rp.n >= rp.list.length) { rp.f = 0; rp.n = 0; redrawInk(); }   // 끝에서 누르면 처음부터
+  rp.playing = on; syncReplayUI();
+  if (on && !rpRaf) { rpLast = 0; rpRaf = requestAnimationFrame(rpTick); }
+}
+function rpSeek(frac) { if (!rp) return; rp.n = Math.round(Math.min(1, Math.max(0, frac)) * rp.list.length); rp.f = rp.n; redrawInk(); syncReplayUI(); }
+function stopReplay() {
+  if (!rp) return;
+  rp = null; cancelAnimationFrame(rpRaf); rpRaf = 0;
+  $('replayBar').hidden = true; document.body.classList.remove('replaying');
+  redrawInk();
+}
+function syncReplayUI() {
+  if (!rp) return;
+  $('rpPlay').textContent = rp.playing ? '⏸' : '▶';
+  $('rpSpeed').textContent = rp.speed + '×';
+  if (document.activeElement !== $('rpRange')) $('rpRange').value = Math.round(rp.n / rp.list.length * 1000);
+  $('rpTxt').textContent = Math.round(rp.n / rp.list.length * 100) + '%';
+}
+$('replayBtn').onclick = startReplay;
+$('rpPlay').onclick = () => rpPlay(!(rp && rp.playing));
+$('rpSpeed').onclick = () => { if (!rp) return; rp.speed = RP_SPEEDS[(RP_SPEEDS.indexOf(rp.speed) + 1) % RP_SPEEDS.length]; syncReplayUI(); };
+$('rpClose').onclick = stopReplay;
+$('rpRange').addEventListener('input', () => { if (rp) { rp.playing = false; rpSeek(+$('rpRange').value / 1000); } });
 $('hudZoom').onclick = fitAll;
 $('hudRot').onclick = () => animRot(0);
 $('goOrigin').onclick = () => { $('goErr').textContent = ''; flyTo(0, 0); };
@@ -2108,6 +2448,7 @@ function send(o) {
 // 내 커서 위치는 0.05초에 한 번만 보낸다. 그 사이 움직임은 마지막 위치만 잠시 뒤 보낸다 (멈춘 자리가 다른 사람 화면에 정확히 남게)
 let curPend = null, curTimer = 0;
 function sendCursor(w) {
+  if (count <= 1) return;                                      // (방에 나 혼자면 볼 사람이 없다: Cloudflare 무료 한도를 아낀다)
   const t = now();
   if (t - lastCurSent < 50) {
     curPend = w;
@@ -2318,6 +2659,8 @@ function startStroke(rec) {
 }
 function enterPinch() {                                        // 손가락이 2개 이상: 그리기 중단, 핀치 줌 + 두 손가락 이동
   if (rulerDrag) { rulerDrag = null; saveRuler(); }
+  if (lasso) { lasso = null; selSoon(); }                      // (둘러싸던 올가미·옮기던 것은 취소)
+  if (selDrag) { selDrag = null; selHide = null; redrawInk(); selSoon(); }
   const st = strokeSt;
   if (st) {
     // 획을 시작한 지 얼마 안 돼 두 번째 손가락이 닿았다 = 확대·이동하려던 것 (손가락이 조금 먼저 닿아 그어진 선). 움직인 거리와 상관없이 방금 획을 없던 일로.
@@ -2333,7 +2676,7 @@ function enterPinch() {                                        // 손가락이 2
   gmode = 'pinch'; pinchPrev = pinchState(); hideTip(); hideDropPrev();
 }
 function updateRing(p) {                                       // 마우스 커서 주변에 현재 펜/지우개 크기 원
-  if (tool === 'hand' || tool === 'fill' || tool === 'drop' || tool === 'rotate' || spaceDown) { ring.hidden = true; return; }
+  if (tool === 'hand' || tool === 'fill' || tool === 'drop' || tool === 'rotate' || tool === 'select' || spaceDown) { ring.hidden = true; return; }
   const d = Math.max((tool === 'eraser' ? S.eraserD : S.penSize) * scale, 2);   // 실제로 그려질 굵기 그대로 (어느 배율에서든 확대·축소하면 같이 변한다)
   const b = d < 8 ? 1 : 1.5;                                   // 작은 원은 테두리도 가늘게 (안쪽이 막히지 않게)
   ring.style.width = ring.style.height = d + 'px';
@@ -2367,9 +2710,14 @@ board.addEventListener('pointerdown', (e) => {
     if (h) { gmode = 'ruler'; rulerDragStart(h, p); hideTip(); return; }
   }
   if (e.button !== 1 && e.button !== 2 && rotWanted(e.shiftKey)) { gmode = 'rot'; rotDrag = { a0: rotAngle(p), r0: rot, moved: false, p, tmp: tool !== 'rotate' }; return; }
-  const panWanted = e.button === 1 || tool === 'hand' || spaceDown || (rec.type === 'touch' && S.penOnly);
+  const panWanted = e.button === 1 || tool === 'hand' || spaceDown || (rec.type === 'touch' && S.penOnly) || !!rp;   // (다시 보기 중에는 끌면 화면 이동만)
   if (panWanted) { gmode = 'pan'; return; }
   if (rec.type === 'mouse' && e.button !== 0) return;
+  if (tool === 'select') {                                    // 올가미: 고른 것 안쪽·모서리를 잡으면 옮기기·크기, 아니면 새로 둘러싸기
+    if (!me || !histOk) { toast('연결 중이에요. 잠시 후 다시 해 주세요', 'warn'); return; }
+    if (myRestr.spectator) { toast('지금은 보기만 할 수 있어요', 'warn'); return; }
+    selDown(p, rec.type !== 'mouse'); return;
+  }
   if (tool === 'drop') { gmode = 'drop'; showDropPrev(rec, rec.type !== 'mouse'); return; }   // 스포이드: 누른 채 색 미리보기, 떼면 선택 (연결 전에도 쓸 수 있다)
   if (!me || !histOk) { toast('연결 중이에요. 잠시 후 다시 그려 주세요', 'warn'); return; }
   if (myRestr.spectator) { toast(myRestr.wait ? '방장·부방장이 허락하면 그릴 수 있어요 (지금은 보기만)' : '방장이 그리기를 제한했어요 (보기만 가능)', 'warn'); return; }
@@ -2385,6 +2733,7 @@ board.addEventListener('pointermove', (e) => {
     lastMouse = p;
     if ((gmode === 'none' || gmode === 'ruler') && (rulerDrag || rulerHit(p, false))) { ring.hidden = true; board.style.cursor = 'move'; rulerHover = true; }   // 자 손잡이 위
     else { if (rulerHover) { rulerHover = false; syncCursor(); } updateRing(p); }
+    if (tool === 'select' && !spaceDown && (gmode === 'none' || gmode === 'selmove') && !rulerHover) board.style.cursor = sel && (selDrag || inPoly(p.x, p.y, selCorners())) ? 'move' : 'crosshair';   // (고른 것 위: 옮기기)
     if (gmode === 'none' && (tool === 'hand' || spaceDown || (tool === 'pen' && S.penHover))) hoverTip(p); else hideTip();
     if (gmode === 'none' && tool === 'drop' && !spaceDown) showDropPrev(p, false);       // 마우스는 올려만 둬도 색이 보인다
   }
@@ -2399,6 +2748,8 @@ board.addEventListener('pointermove', (e) => {
     rotDrag.p = p; rotDragTo(e.shiftKey);
   }
   else if (gmode === 'ruler') rulerDragTo(p, e.shiftKey);
+  else if (gmode === 'lasso') lassoMove(p);
+  else if (gmode === 'selmove') selMove(p);
   else if (gmode === 'drop') showDropPrev(rec, rec.type !== 'mouse');
   else if (gmode === 'pinch') doPinch();
   else if ((gmode === 'pending' || gmode === 'draw') && strokeSt && strokeSt.id === e.pointerId) {
@@ -2425,6 +2776,8 @@ function endPtr(e) {
     rotDrag = null;
   }
   if (gmode === 'ruler' && rulerDrag) { rulerDrag = null; saveRuler(); }
+  if (gmode === 'lasso' && ptr.size === 1) lassoEnd(e.type === 'pointerup');
+  if (gmode === 'selmove' && ptr.size === 1) selEnd(e.type === 'pointerup');
   const st = strokeSt, wasPan = gmode === 'pan', solo = ptr.size === 1;
   const wasTap = gmode === 'tap' && solo, wasDrop = gmode === 'drop' && solo, multi = !!(tapG && tapG.max >= 2);
   if (st && st.id === e.pointerId) {
@@ -2474,7 +2827,7 @@ document.addEventListener('dblclick', (e) => { if (!isEditable(e.target)) e.prev
    도구: P·B·D 펜, E 지우개, F·G·W 채우기, I 스포이드, H 화면 이동, R 화면 회전. 도구 키를 누른 채 그리고 떼면 원래 도구로 돌아간다.
    누르는 동안: Space 화면 이동, Shift+Space 화면 회전, Alt 스포이드. 회전 도구(R): Shift 를 누르고 돌리면 45° 씩, Space 를 누르면 기울기는 그대로 원래 도구로. Shift+클릭: 앞 획 끝에서 직선.
    [ ] 크기 (Shift 와 같이: 3칸씩), Ctrl + / Ctrl − 확대·축소 (마우스·펜이 있는 곳 기준), Ctrl+0 전체 그림 보기, Ctrl+Alt+0 100%, Ctrl+Z 이전, Ctrl+Shift+Z·Ctrl+Y 되돌리기. */
-const TOOL_KEYS = { p: 'pen', b: 'pen', d: 'pen', e: 'eraser', f: 'fill', g: 'fill', w: 'fill', i: 'drop', h: 'hand', r: 'rotate' };
+const TOOL_KEYS = { p: 'pen', b: 'pen', d: 'pen', e: 'eraser', f: 'fill', g: 'fill', w: 'fill', i: 'drop', h: 'hand', r: 'rotate', m: 'select' };
 const KEY_ZOOM = 1.2, KEY_SIZE = 1.2;                          // 키 한 번(노브 한 칸)에 배율 / 크기가 바뀌는 비율
 // 글자 키: 영문이면 그 글자, 한글 입력 상태 등으로 다른 글자가 오면 자판 위치(e.code)로
 const keyLetter = (e) => /^[a-z]$/i.test(e.key) ? e.key.toLowerCase() : /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : '';
@@ -2500,6 +2853,9 @@ function backTo(t, prev) {                                     // 잠깐 바꾼 
   if (ptr.size) revertTo = prev; else setTool(prev);
 }
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && rp && $('modal').hidden && !openPopId) { stopReplay(); return; }
+  if (e.key === 'Escape' && (sel || lasso) && $('modal').hidden && !openPopId) { clearSel(); return; }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && sel && !isEditable(e.target) && $('modal').hidden) { e.preventDefault(); deleteSel(); return; }
   if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(null); else if (!$('imgView').hidden) hideImage(); else if (openPopId) closePop(); else closeSide(); return; }
   if (e.key === 'Shift' && !shiftDown) { shiftDown = true; syncCursor(); if (gmode === 'rot') rotDragTo(true); }   // 돌리는 중에 누르면 바로 45° 에 맞춘다
   const ed = isEditable(e.target), modal = !$('modal').hidden, ctl = e.ctrlKey || e.metaKey, k = keyLetter(e);
@@ -2508,6 +2864,7 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'Minus' || e.code === 'NumpadSubtract' || e.key === '-' || e.key === '_') { e.preventDefault(); keyZoom(1 / KEY_ZOOM); return; }
     if (e.code === 'Digit0' || e.code === 'Numpad0') { e.preventDefault(); if (e.altKey) $('z100').click(); else fitAll(); return; }
   }
+  if (ctl && !e.altKey && !modal && !ed && k === 'd' && sel) { e.preventDefault(); dupSel(); return; }   // 올가미: 복제
   if (ctl && !e.altKey && !modal && !ed) {                     // 이전 / 되돌리기
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
     if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); doRedo(); return; }
@@ -2644,7 +3001,8 @@ function renderPeople() {
     if (muted) li.appendChild(mk('span', 'tag warn', '채팅 금지'));
     if (spec) li.appendChild(mk('span', 'tag warn', '관전'));
     if (wait) li.appendChild(mk('span', 'tag warn', '허락 대기'));
-    if (staff && canTarget(o)) {                                                                        // ⋯ 메뉴는 방장·부방장에게만 그린다
+    if (hiddenO.has(o)) li.appendChild(mk('span', 'tag', '숨김'));
+    if (o !== me) {                                                                                     // ⋯ 메뉴: 모두에게 (그린 곳 보기·숨기기), 방장·부방장에게는 관리도
       const b = mk('button', 'rowmenu'); b.type = 'button'; b.setAttribute('aria-label', nameOf(o) + ' 관리'); b.title = '관리';
       b.appendChild(icon('i-dots')); b.onclick = () => openRowMenu(o, b); li.appendChild(b);
     }
@@ -2660,19 +3018,27 @@ function openRowMenu(o, anchor) {                                 // 사람 목�
   const banned = has('bans'), muted = has('mutes'), spec = has('spectators'), ent = logEntry(o), wait = !!(ent && ent.wait), on = online.has(o), n = segCount(o);
   const items = [];
   if (n) items.push([`그린 곳 보기 (${fmtN(n)} 조각)`, () => showStrokesOf(o), false]);
+  if (o !== me) items.push([hiddenO.has(o) ? '숨긴 그림 다시 보기' : '그림 숨기기 (내 화면에서만)', () => toggleHide(o), false]);
+  if (isStaff() && canTarget(o)) {                              // (아래는 방장·부방장만)
   if (on) items.push(['강퇴…', () => doKick(o), true]);
   items.push(banned ? ['밴 해제', () => sendCmd({ cmd: 'unban', target: o }), false] : ['밴…', () => doBan(o), true]);
   items.push([muted ? '채팅 금지 해제' : '채팅 금지…', () => (muted ? sendCmd({ cmd: 'unmute', target: o }) : doMute(o)), false]);
   if (wait && !spec) items.push(['그리기 허락', () => sendCmd({ cmd: 'spectate', target: o, on: false }), false]);
   else items.push([spec ? '관전 해제 (그리기 허용)' : '관전으로 전환 (보기만 가능)', () => sendCmd({ cmd: 'spectate', target: o, on: !spec }), false]);
-  if (isOwner() && !String(o).startsWith('g') && !banned) items.push([mods.has(o) ? '부방장 해제' : '부방장으로 지정…', () => doMod(o, !mods.has(o)), false]);
+  if (isOwner() && !/^g[0-9a-f]{10}$/.test(String(o)) && !banned) items.push([mods.has(o) ? '부방장 해제' : '부방장으로 지정…', () => doMod(o, !mods.has(o)), false]);
   if (isOwner() && on) items.push(['방장 위임…', () => doTransfer(o), false]);
   items.push(['이 사람의 그림 모두 지우기…', () => doClearUser(o), true]);
+  }
   for (const [label, fn, danger] of items) {
     const b = mk('button', danger ? 'danger' : '', label); b.type = 'button';
     b.onclick = () => { closePop(); fn(); }; body.appendChild(b);
   }
   openPop('popRow', anchor, true);
+}
+function toggleHide(o) {
+  if (hiddenO.has(o)) { hiddenO.delete(o); toast(whoName(o) + '님 그림을 다시 보여요'); }
+  else { hiddenO.add(o); toast(whoName(o) + '님 그림을 내 화면에서 숨겼어요 (다른 사람 화면·저장은 그대로, 새로고침하면 다시 보여요)'); }
+  redrawInk(); renderPeople(); if (typeof renderLog === 'function' && admin) renderLog();
 }
 function durFields(zeroLabel) {
   return [
@@ -2867,7 +3233,19 @@ function syncUndoUi() {
 }
 function resetUndo() { undoSt = []; redoSt = []; syncUndoUi(); }
 function pushAct(a) { undoSt.push(a); if (undoSt.length > UNDO_MAX) undoSt.shift(); redoSt = []; syncUndoUi(); }
-function sendSegs(type, list) { for (let i = 0; i < list.length; i += 100) send({ type, segs: list.slice(i, i + 100).map(plain) }); }
+// 이전·되돌리기·올가미로 한꺼번에 넣고 빼는 선분: 서버 한도(접속마다 6000조각, 초당 500조각씩 다시 참)를 넘으면 서버가 버리므로, 모자라면 기다렸다 보낸다
+const UNDO_BURST = 6000, UNDO_RATE = 0.5;
+let undoTok = UNDO_BURST, undoAt = 0, segQ = [], segQT = 0;
+function sendSegs(type, list) { for (let i = 0; i < list.length; i += 100) segQ.push({ type, segs: list.slice(i, i + 100).map(plain) }); pumpSegQ(); }
+function pumpSegQ() {
+  clearTimeout(segQT); segQT = 0;
+  while (segQ.length) {
+    const t = now(); undoTok = Math.min(UNDO_BURST, undoTok + (t - undoAt) * UNDO_RATE); undoAt = t;
+    const m = segQ[0], c = Math.max(1, m.segs.length);
+    if (undoTok < c) { segQT = setTimeout(pumpSegQ, Math.ceil((c - undoTok) / UNDO_RATE) + 30); return; }
+    undoTok -= c; segQ.shift(); send(m);
+  }
+}
 const addLocal = (list) => addSegs(list.map((s) => ({ ...s, o: me })));      // 복사본을 다시 올린다 (칠하기 조각은 선 아래로)
 function mergeDiff(act, diff) {                                                         // 지우개를 끄는 동안의 변화를 한 동작으로 모은다
   for (const s of diff.removed) { const i = act.added.indexOf(s); if (i >= 0) act.added.splice(i, 1); else act.removed.push(s); }
@@ -2878,14 +3256,16 @@ function commitAct(st) {
   if (a.t === 'draw' ? a.segs.length : (a.removed.length || a.added.length)) pushAct(a);
 }
 function doUndo() {
-  if (!me || strokeSt || myRestr.spectator) return;
+  if (!me || strokeSt || myRestr.spectator || selDrag) return;
+  clearSel();
   const a = undoSt.pop(); if (!a) return;
   if (a.t === 'draw') { segs = segs.filter((s) => !(s.o === me && (s.sid === a.sid || (a.sid2 && s.sid === a.sid2)))); send({ type: 'cancelstroke', sid: a.sid }); if (a.sid2) send({ type: 'cancelstroke', sid: a.sid2 }); }
   else { const r = removeExactSegs(segs, a.added); if (r) segs = r; addLocal(a.removed); sendSegs('removesegs', a.added); sendSegs('addsegs', a.removed); }
   redoSt.push(a); redrawInk(); syncUndoUi();
 }
 function doRedo() {
-  if (!me || strokeSt || myRestr.spectator) return;
+  if (!me || strokeSt || myRestr.spectator || selDrag) return;
+  clearSel();
   const a = redoSt.pop(); if (!a) return;
   if (a.t === 'draw') { addLocal(a.segs); if (a.fill) send(a.fill); else sendSegs('addsegs', a.segs); }          // 칠하기는 한 메시지로 다시 보낸다
   else { const r = removeExactSegs(segs, a.removed); if (r) segs = r; addLocal(a.added); sendSegs('removesegs', a.removed); sendSegs('addsegs', a.added); }
@@ -3029,6 +3409,7 @@ function connect() {
   if (ended || (ws && (ws.readyState === 0 || ws.readyState === 1))) return;      // 중복 소켓 금지
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   outQ = []; if (outT) { clearTimeout(outT); outT = 0; }
+  segQ = []; clearTimeout(segQT); segQT = 0; undoTok = UNDO_BURST; undoAt = now();   // (새 접속: 서버 한도도 새로)
   const sock = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=3' : ''}`);
   sock.binaryType = 'arraybuffer';
   ws = sock;
@@ -3065,7 +3446,7 @@ function handleMsg(m) {
   switch (m.type) {
     case 'hello': me = m.me; break;
     case 'pong': break;
-    case 'history': sendClaim(); segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom(); break;
+    case 'history': sendClaim(); clearSel(); newsSoon(); segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom(); break;
     case 'names': names = m.names || {}; refreshLabels(); renderPeople(); if (me && names[me]) nickEl.value = names[me]; break;
     case 'name': names[m.o] = m.name; refreshLabels(); renderPeople(); if (m.o === me) nickEl.value = m.name; break;
     case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); renderPeople(); break;
