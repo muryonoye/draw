@@ -20,7 +20,7 @@ const FILL_CELL_MAX = 1000;   // 칠하기 칸 크기 상한 = 화면 1px 의 �
 const MAX_STROKES_PER_ERASE = 300; // 획 지우개 한 번에 지울 수 있는 획 수
 const FILL_THICK = 2;         // 칠하기 줄 두께 = 칸 크기 x 이 값 (줄끼리 겹쳐서 이음새가 안 보이게)
 const MAX_FILL_SPANS = 3000;  // 한 번 칠하기에 들어갈 수 있는 가로줄 수
-const MAX_HISTORY = +process.env.MAX_HISTORY || 200000;   // 방 하나에 둘 수 있는 선분 수 (테스트에서만 줄인다). 메모리 약 100MB·압축 사본 약 3MB 까지
+const MAX_HISTORY = +process.env.MAX_HISTORY || 500000;   // 방 하나에 둘 수 있는 선분 수 (테스트에서만 줄인다). 꽉 차면 서버 메모리 약 110MB, 압축 사본(D2) 약 2MB, 폰(4배 느린 CPU 흉내) 메모리 약 190MB
 const PING_MS = +process.env.PING_MS || 30000;
 const SID_RE = /^[0-9a-z]{1,12}$/;
 const SID_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
@@ -186,6 +186,55 @@ function fillSegs(o, sid, color, cell, rows) {
   }
   return out;
 }
+// 그림 목록을 작게 담는 이진 형식 'D2' 풀기 (서버가 encodeSegs 로 만든다. 저장된 그림을 불러올 때 서버도 같은 함수를 쓴다).
+// [D2][문자열 수, (길이, UTF-8)…][선분 수][선분…]. 선분: 표시 1바이트 + 필요한 값들 (정수는 7비트씩 이어 쓰는 수, 좌표는 0.1 단위 정수의 차이).
+// 표시: 1 칠하기, 2 주인·획 바뀜, 4 색·굵기 바뀜, 8 앞 선분 끝에서 이어짐, 16 좌표를 실수 그대로, 32 굵기를 실수 그대로
+function decodeSegs(u) {
+  const r = d2Reader(u);
+  if (!r) return null;
+  const out = new Array(r.count);
+  for (let i = 0; i < out.length; i++) out[i] = r.next();
+  r.end();
+  return out;
+}
+// 하나씩 꺼내는 읽개 (서버는 만든 D2 를 원래 그림과 조금씩 나눠 비교할 때 쓴다: 한꺼번에 풀어 메모리를 두 배로 쓰지 않게)
+function d2Reader(u) {
+  if (!u || u.length < 2 || u[0] !== 68 || u[1] !== 50) return null;
+  const n = u.length, dv = new DataView(u.buffer, u.byteOffset, u.byteLength);
+  let p = 2;
+  const cut = () => new Error('D2: 잘린 데이터');
+  const vu = () => { let x = 0, m = 1, b; do { if (p >= n) throw cut(); b = u[p++]; x += (b & 127) * m; m *= 128; } while (b & 128); return x; };
+  const vs = () => { const z = vu(); return z % 2 ? -(z + 1) / 2 : z / 2; };
+  const f64 = () => { if (p + 8 > n) throw cut(); const v = dv.getFloat64(p, true); p += 8; return v; };
+  const td = new TextDecoder(), S = new Array(vu());
+  for (let i = 0; i < S.length; i++) { const l = vu(); if (p + l > n) throw cut(); S[i] = td.decode(u.subarray(p, p + l)); p += l; }
+  const count = vu();
+  let o = '', sid = '', color = '', size = 0, px = 0, py = 0, X = 0, Y = 0;
+  return {
+    count,
+    next() {
+      if (p >= n) throw cut();
+      const fl = u[p++];
+      if (fl & 2) { o = S[vu()]; sid = S[vu()]; }
+      if (fl & 4) { color = S[vu()]; size = fl & 32 ? f64() : vu() / 100; }
+      let x0, y0, x1, y1;
+      if (fl & 16) {
+        if (fl & 8) { x0 = px; y0 = py; } else { x0 = f64(); y0 = f64(); }
+        x1 = f64(); y1 = f64();
+      } else {
+        let X0 = X, Y0 = Y;
+        if (fl & 8) { x0 = px; y0 = py; } else { X0 = X + vs(); Y0 = Y + vs(); x0 = X0 / 10; y0 = Y0 / 10; }
+        const X1 = X0 + vs(), Y1 = Y0 + vs(); x1 = X1 / 10; y1 = Y1 / 10;
+      }
+      if (o === undefined || sid === undefined || color === undefined) throw new Error('D2: 잘못된 문자열 번호');
+      const s = { x0, y0, x1, y1, color, size, o, sid };
+      if (fl & 1) s.f = 1;
+      px = x1; py = y1; X = Math.round(x1 * 10); Y = Math.round(y1 * 10);
+      return s;
+    },
+    end() { if (p !== n) throw new Error('D2: 남는 데이터'); },
+  };
+}
 // @@SHARED_END
 
 // ---- 방 그림 보관: 선분을 덩어리(BLOCK 개 안팎)로 나눠 두고, 덩어리마다 범위(선 굵기 포함)를 기억한다 ----
@@ -337,27 +386,101 @@ function histReplace(room, arr) { histSet(room, arr); room.dirty = true; }   // 
 // 그림 10만 조각이면 JSON 이 약 11MB 인데 압축하면 약 1.5MB. (무료 서버는 한 달 전송량이 5GB 라 들어올 때마다 11MB 를 보내면 금방 바닥난다)
 // JSON 은 덩어리별로 만들면서 중간중간 쉬어서(setImmediate) 큰 방에서도 서버가 한 번에 오래 멈추지 않는다.
 const deflateP = promisify(zlib.deflate), inflateP = promisify(zlib.inflate);
+// 'D2' 만들기 (decodeSegs 의 반대). 선분을 여러 번에 나눠 넣고(add) 끝에 finish. 이 형식에 담을 수 없는 선분이 있으면 add 가 false.
+// (선분에 모르는 값이 더 붙어 있으면 그 값은 빠진다 — 쓰는 곳이 없다. 아는 값은 makeSnap 이 풀어서 하나하나 확인한다)
+function segEncoder(total) {
+  let buf = new Uint8Array(Math.max(1024, total * 8)), p = 0;
+  const idx = new Map(), strs = [];
+  const need = (k) => { if (p + k > buf.length) { const nb = new Uint8Array(Math.max(buf.length * 2, p + k)); nb.set(buf.subarray(0, p)); buf = nb; } };
+  const vu = (x) => { need(10); while (x >= 128) { buf[p++] = (x % 128) | 128; x = Math.floor(x / 128); } buf[p++] = x; };
+  const vs = (x) => vu(x < 0 ? -2 * x - 1 : 2 * x);
+  const f64 = (v) => { need(8); new DataView(buf.buffer).setFloat64(p, v, true); p += 8; };
+  const si = (s) => { let i = idx.get(s); if (i === undefined) { i = strs.length; strs.push(s); idx.set(s, i); } return i; };
+  const q10 = (v) => { const k = Math.round(v * 10); return k / 10 === v && Math.abs(k) < 4e15 ? k : null; };   // 0.1 단위로 정확히 나타낼 수 있으면 그 정수
+  let o = null, sid = null, color = null, size = NaN, px = 0, py = 0, X = 0, Y = 0, n = 0;
+  return {
+    add(list) {
+      for (const s of list) {
+        if ((s.f !== undefined && s.f !== 1) || typeof s.o !== 'string' || typeof s.sid !== 'string' || typeof s.color !== 'string' || ![s.x0, s.y0, s.x1, s.y1, s.size].every(Number.isFinite)) return false;
+        let fl = s.f === 1 ? 1 : 0;
+        const nk = s.o !== o || s.sid !== sid, nst = s.color !== color || s.size !== size;
+        const sz = Math.round(s.size * 100), rawSize = !(sz / 100 === s.size && sz >= 0 && sz < 4e15);
+        const joined = n > 0 && s.x0 === px && s.y0 === py;
+        const A = joined ? X : q10(s.x0), B = joined ? Y : q10(s.y0), C = q10(s.x1), D = q10(s.y1);
+        const raw = A === null || B === null || C === null || D === null;
+        if (nk) fl |= 2;
+        if (nst) fl |= 4 | (rawSize ? 32 : 0);
+        if (joined) fl |= 8;
+        if (raw) fl |= 16;
+        need(1); buf[p++] = fl;
+        if (nk) { vu(si(s.o)); vu(si(s.sid)); o = s.o; sid = s.sid; }
+        if (nst) { vu(si(s.color)); if (rawSize) f64(s.size); else vu(sz); color = s.color; size = s.size; }
+        if (raw) { if (!joined) { f64(s.x0); f64(s.y0); } f64(s.x1); f64(s.y1); }
+        else { if (!joined) { vs(A - X); vs(B - Y); } vs(C - A); vs(D - B); }
+        px = s.x1; py = s.y1; X = Math.round(s.x1 * 10); Y = Math.round(s.y1 * 10); n++;
+      }
+      return true;
+    },
+    finish() {
+      const body = buf.subarray(0, p), te = new TextEncoder(), head = [];
+      const hv = (x) => { while (x >= 128) { head.push((x % 128) | 128); x = Math.floor(x / 128); } head.push(x); };
+      head.push(68, 50); hv(strs.length);
+      for (const s of strs) { const b = te.encode(s); hv(b.length); for (const c of b) head.push(c); }
+      hv(n);
+      const out = new Uint8Array(head.length + body.length);
+      out.set(head, 0); out.set(body, head.length);
+      return out;
+    },
+  };
+}
+const sameSeg = (a, b) => a.x0 === b.x0 && a.y0 === b.y0 && a.x1 === b.x1 && a.y1 === b.y1 && a.color === b.color && a.size === b.size && a.o === b.o && a.sid === b.sid && a.f === b.f;
+// 그림 전체의 압축본 (room.ver 로 캐시). 'D2' 로 만들고, 풀어서 원래와 하나하나 같은지 확인한 뒤에만 쓴다 (다르면 예전 JSON 형식으로).
+// fmt: 'z2' (D2 를 zlib 압축) 또는 'z1' (JSON 을 zlib 압축). 저장소에는 fmt + ':' + base64 로 저장한다.
 function makeSnap(room) {
   if (room.zc && room.zc.ver === room.ver) return Promise.resolve(room.zc);
   if (room.zp && room.zp.ver === room.ver) return room.zp.p;
   const ver = room.ver, parts = room.hb.map((b) => b.a.slice());   // 지금 모습을 붙잡아 둔다 (선분 객체 자체는 바뀌지 않는다)
   const p = (async () => {
-    const strs = [];
     let cpu = 0, mark = Date.now();
-    for (const a of parts) {
-      if (a.length) strs.push(JSON.stringify(a).slice(1, -1));
-      if (Date.now() - mark >= 8) { cpu += Date.now() - mark; await new Promise((r) => setImmediate(r)); mark = Date.now(); }
+    const pause = async () => { if (Date.now() - mark >= 8) { cpu += Date.now() - mark; await new Promise((r) => setImmediate(r)); mark = Date.now(); } };
+    let total = 0; for (const a of parts) total += a.length;
+    const enc = segEncoder(total);
+    let ok = true;
+    for (const a of parts) { if (!enc.add(a)) { ok = false; break; } await pause(); }
+    let z = null;
+    if (ok) {
+      const bin = enc.finish();
+      let same = false;
+      try {                                                         // 하나씩 풀어 원래 선분과 비교 (덩어리마다 잠깐 쉬어 다른 방이 멈추지 않게)
+        const rd = d2Reader(bin);
+        same = !!rd && rd.count === total;
+        for (const a of parts) { if (!same) break; for (const s of a) if (!sameSeg(s, rd.next())) { same = false; break; } await pause(); }
+        if (same) rd.end();
+      } catch (e) { same = false; console.error('D2 확인 실패:', e.message); }
+      if (same) { cpu += Date.now() - mark; z = { ver, fmt: 'z2', buf: await deflateP(bin, { level: 6 }) }; mark = Date.now(); }
+      else console.error('D2 로 담은 그림이 원래와 달라요: 이 방은 예전 형식(JSON)으로 저장해요');
     }
-    const json = '[' + strs.join(',') + ']';
+    if (!z) z = await jsonSnap(parts, ver, pause);
     cpu += Date.now() - mark;
     room.snapMs = cpu;
-    const z = { ver, buf: await deflateP(json, { level: 1 }) };
     if (room.ver === ver) room.zc = z;
     return z;
   })();
   room.zp = { ver, p };
   p.then(() => { if (room.zp && room.zp.p === p) room.zp = null; }, () => { if (room.zp && room.zp.p === p) room.zp = null; });
   return p;
+}
+// 예전 형식: JSON 을 zlib 압축 (옛 화면(z=1)에 보낼 때와, D2 에 담을 수 없을 때)
+async function jsonSnap(parts, ver, pause) {
+  const strs = [];
+  for (const a of parts) { if (a.length) strs.push(JSON.stringify(a).slice(1, -1)); await pause(); }
+  return { ver, fmt: 'z1', buf: await deflateP('[' + strs.join(',') + ']', { level: 1 }) };
+}
+function makeSnapJson(room) {                                      // 옛 화면(z=1)용 JSON 압축본 (room.ver 로 따로 캐시)
+  if (room.zc && room.zc.ver === room.ver && room.zc.fmt === 'z1') return Promise.resolve(room.zc);
+  if (room.zj && room.zj.ver === room.ver) return Promise.resolve(room.zj);
+  const ver = room.ver, parts = room.hb.map((b) => b.a.slice());
+  return jsonSnap(parts, ver, async () => {}).then((z) => { if (room.ver === ver) room.zj = z; return z; });
 }
 const saveGap = (room) => Math.max(SAVE_MS, (room.snapMs || 0) * 20);   // 큰 방은 만드는 데 걸린 시간의 20배마다만 저장 (서버 시간의 5% 이하)
 
@@ -444,13 +567,13 @@ async function loadRoom(id, attempts = 3) {
   if (!ok) { setDbState('error'); return { ...empty, failed: true }; }
   if (!row) return empty;
   try {
-    // 그림은 'z1:' + base64(zlib 압축 JSON) 으로 저장한다 (예전 방은 JSON 그대로 — 둘 다 읽는다)
-    let history, zbuf = null;
-    if (typeof row.history === 'string' && row.history.startsWith('z1:')) {
-      zbuf = Buffer.from(row.history.slice(3), 'base64');
-      history = JSON.parse((await inflateP(zbuf)).toString('utf8'));
-    } else history = JSON.parse(row.history);
-    return { history, names: JSON.parse(row.names || '{}'), meta: JSON.parse(row.meta || '{}'), zbuf };
+    // 그림은 'z2:' + base64(zlib 압축 D2) 로 저장한다. 예전 방의 'z1:'(zlib 압축 JSON) 과 JSON 그대로도 읽는다.
+    let history, zbuf = null, zfmt = null;
+    const h = typeof row.history === 'string' ? row.history : '';
+    if (h.startsWith('z2:')) { zbuf = Buffer.from(h.slice(3), 'base64'); zfmt = 'z2'; history = decodeSegs(new Uint8Array(await inflateP(zbuf))); if (!history) throw new Error('D2 형식이 아니에요'); }
+    else if (h.startsWith('z1:')) { zbuf = Buffer.from(h.slice(3), 'base64'); zfmt = 'z1'; history = JSON.parse((await inflateP(zbuf)).toString('utf8')); }
+    else history = JSON.parse(row.history);
+    return { history, names: JSON.parse(row.names || '{}'), meta: JSON.parse(row.meta || '{}'), zbuf, zfmt };
   } catch (e) {
     console.error('저장된 데이터를 읽을 수 없어요 (이 방은 저장하지 않아요):', e.message);
     return { ...empty, failed: true, corrupt: true };
@@ -470,7 +593,7 @@ function saveRoom(id, room, force) {
       const z = await makeSnap(room);                 // (이 시점의 그림. 그사이 바뀐 건 dirty 가 다시 켜져 다음에 저장된다)
       await pool.query(
         'INSERT INTO rooms (id, history, names, updated_at) VALUES ($1, $2, $3, now()) ON CONFLICT (id) DO UPDATE SET history = $2, names = $3, updated_at = now()',
-        [id, 'z1:' + z.buf.toString('base64'), JSON.stringify(room.names)]
+        [id, z.fmt + ':' + z.buf.toString('base64'), JSON.stringify(room.names)]
       );
       setDbState('ok');
     } catch (e) {
@@ -636,7 +759,7 @@ function getRoom(id) {
       const legacy = assignLegacySids(h);
       histSet(r, h);
       if (legacy) r.dirty = true;
-      else if (d.zbuf && Array.isArray(d.history) && h.length === d.history.length) r.zc = { ver: r.ver, buf: d.zbuf };   // 저장돼 있던 압축본이 지금 그림과 똑같으면 그대로 보낸다
+      else if (d.zbuf && Array.isArray(d.history) && h.length === d.history.length) r.zc = { ver: r.ver, fmt: d.zfmt, buf: d.zbuf };   // 저장돼 있던 압축본이 지금 그림과 똑같으면 그대로 보낸다
       r.names = isPlainObj(d.names) ? d.names : {};
       r.loadFailed = !!d.failed; r.corrupt = !!d.corrupt;
       r.noSave = r.loadFailed;
@@ -660,9 +783,10 @@ const Z_MIN = 2000;
 function sendHistory(ws, room) {
   if (ws.readyState !== 1 || ws.hold) return;            // (이미 보내는 중이면 그게 최신 상태를 알려 준다)
   if (!ws.zOk || room.hn < Z_MIN || room.zFail) { send(ws, { type: 'history', data: histArr(room) }); return; }
-  if (room.zc && room.zc.ver === room.ver) { ws.send(room.zc.buf); return; }
+  const z2 = ws.zOk === 2;                                           // z=2: 'D2' 도 풀 수 있는 화면 / z=1: 옛 화면 (JSON 압축만)
+  if (z2 && room.zc && room.zc.ver === room.ver) { ws.send(room.zc.buf); return; }
   ws.hold = [];
-  makeSnap(room).then((z) => { if (ws.readyState === 1) ws.send(z.buf); }, (e) => {
+  (z2 ? makeSnap(room) : makeSnapJson(room)).then((z) => { if (ws.readyState === 1) ws.send(z.buf); }, (e) => {
     console.error('그림 압축 실패:', e && e.message); room.zFail = true; ws.hold = null; try { ws.terminate(); } catch {}   // 다시 접속하면 JSON 으로 받는다
   }).then(() => { const q = ws.hold; ws.hold = null; if (q && ws.readyState === 1) for (const d of q) ws.send(d); });
 }
@@ -1402,7 +1526,7 @@ wss.on('connection', async (ws, req) => {
   const room = getRoom(roomId);                        // (방의 마지막 활동 시각도 여기서 갱신된다)
 
   // 브라우저가 보낸 비밀 키를 해시해 '주인 ID'로 쓴다. 키가 없으면 이번 접속에서만 주인.
-  ws.zOk = url.searchParams.get('z') === '1';          // 화면이 압축된 그림(바이너리)을 풀 수 있다
+  ws.zOk = ({ 1: 1, 2: 2 })[url.searchParams.get('z')] || 0;   // 화면이 압축된 그림(바이너리)을 풀 수 있다: 1 = JSON 압축, 2 = D2 도
   const key = url.searchParams.get('k') || '';
   const owner = /^[A-Za-z0-9_-]{16,64}$/.test(key)
     ? crypto.createHash('sha256').update(key).digest('base64url').slice(0, 10)

@@ -457,7 +457,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 20차-2)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-12 21차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -705,6 +705,55 @@ function fillSegs(o, sid, color, cell, rows) {
   }
   return out;
 }
+// 그림 목록을 작게 담는 이진 형식 'D2' 풀기 (서버가 encodeSegs 로 만든다. 저장된 그림을 불러올 때 서버도 같은 함수를 쓴다).
+// [D2][문자열 수, (길이, UTF-8)…][선분 수][선분…]. 선분: 표시 1바이트 + 필요한 값들 (정수는 7비트씩 이어 쓰는 수, 좌표는 0.1 단위 정수의 차이).
+// 표시: 1 칠하기, 2 주인·획 바뀜, 4 색·굵기 바뀜, 8 앞 선분 끝에서 이어짐, 16 좌표를 실수 그대로, 32 굵기를 실수 그대로
+function decodeSegs(u) {
+  const r = d2Reader(u);
+  if (!r) return null;
+  const out = new Array(r.count);
+  for (let i = 0; i < out.length; i++) out[i] = r.next();
+  r.end();
+  return out;
+}
+// 하나씩 꺼내는 읽개 (서버는 만든 D2 를 원래 그림과 조금씩 나눠 비교할 때 쓴다: 한꺼번에 풀어 메모리를 두 배로 쓰지 않게)
+function d2Reader(u) {
+  if (!u || u.length < 2 || u[0] !== 68 || u[1] !== 50) return null;
+  const n = u.length, dv = new DataView(u.buffer, u.byteOffset, u.byteLength);
+  let p = 2;
+  const cut = () => new Error('D2: 잘린 데이터');
+  const vu = () => { let x = 0, m = 1, b; do { if (p >= n) throw cut(); b = u[p++]; x += (b & 127) * m; m *= 128; } while (b & 128); return x; };
+  const vs = () => { const z = vu(); return z % 2 ? -(z + 1) / 2 : z / 2; };
+  const f64 = () => { if (p + 8 > n) throw cut(); const v = dv.getFloat64(p, true); p += 8; return v; };
+  const td = new TextDecoder(), S = new Array(vu());
+  for (let i = 0; i < S.length; i++) { const l = vu(); if (p + l > n) throw cut(); S[i] = td.decode(u.subarray(p, p + l)); p += l; }
+  const count = vu();
+  let o = '', sid = '', color = '', size = 0, px = 0, py = 0, X = 0, Y = 0;
+  return {
+    count,
+    next() {
+      if (p >= n) throw cut();
+      const fl = u[p++];
+      if (fl & 2) { o = S[vu()]; sid = S[vu()]; }
+      if (fl & 4) { color = S[vu()]; size = fl & 32 ? f64() : vu() / 100; }
+      let x0, y0, x1, y1;
+      if (fl & 16) {
+        if (fl & 8) { x0 = px; y0 = py; } else { x0 = f64(); y0 = f64(); }
+        x1 = f64(); y1 = f64();
+      } else {
+        let X0 = X, Y0 = Y;
+        if (fl & 8) { x0 = px; y0 = py; } else { X0 = X + vs(); Y0 = Y + vs(); x0 = X0 / 10; y0 = Y0 / 10; }
+        const X1 = X0 + vs(), Y1 = Y0 + vs(); x1 = X1 / 10; y1 = Y1 / 10;
+      }
+      if (o === undefined || sid === undefined || color === undefined) throw new Error('D2: 잘못된 문자열 번호');
+      const s = { x0, y0, x1, y1, color, size, o, sid };
+      if (fl & 1) s.f = 1;
+      px = x1; py = y1; X = Math.round(x1 * 10); Y = Math.round(y1 * 10);
+      return s;
+    },
+    end() { if (p !== n) throw new Error('D2: 남는 데이터'); },
+  };
+}
 // @@SHARED_END
 
 /* ===== 방 / 내 키 / 닉네임 ===== */
@@ -809,11 +858,21 @@ function paintInkExact() {
 // 선 목록을 덩어리(SEG_BLOCK 개씩)로 나눈 범위 (화면 밖 덩어리는 통째로 건너뛴다). 목록이 바뀌면(다른 배열이 되거나 길이가 바뀌면) 다시 만든다.
 const SEG_BLOCK = 256;
 let drawSkipPx = 0.6;                                      // (테스트에서 0 으로 바꿔 건너뛰지 않은 그림과 비교한다)
-let segIdx = null;
+let segIdx = null, segKeep = null;                        // segKeep: 지우개가 만든 새 목록 { arr, base: 그때의 segIdx, at }: 그 목록의 at 번호 앞은 예전과 같다
+function addSegs(items) { insertSegs(segs, items); if (items.some((s) => s.f)) segIdx = null; }   // 칠하기 조각은 목록 중간에 들어가서 덩어리 범위를 처음부터 다시 잰다
 function segIndex() {
   if (segIdx && segIdx.arr === segs && segIdx.len === segs.length) return segIdx;
   const n = Math.ceil(segs.length / SEG_BLOCK), box = new Float64Array(n * 4);
-  for (let b = 0; b < n; b++) {
+  // 다시 만들 필요가 없는 앞쪽 덩어리: 같은 목록에 뒤로 붙기만 했으면 마지막 덩어리 앞까지, 지우개로 새 목록이 됐으면 바뀐 곳 앞까지
+  let from = 0;
+  if (segIdx) {
+    if (segIdx.arr === segs && segs.length > segIdx.len) from = Math.floor(segIdx.len / SEG_BLOCK);   // 뒤에 붙기만 했다 (중간에 넣는 곳은 segIdx 를 지운다)
+    else if (segKeep && segKeep.arr === segs && segKeep.base === segIdx) from = Math.floor(segKeep.at / SEG_BLOCK);
+    from = Math.min(from, Math.floor(segIdx.len / SEG_BLOCK), n);
+    box.set(segIdx.box.subarray(0, from * 4));
+  }
+  segKeep = null;
+  for (let b = from; b < n; b++) {
     let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
     for (let i = b * SEG_BLOCK, e = Math.min(segs.length, i + SEG_BLOCK); i < e; i++) {
       const s = segs[i], h = s.size / 2;
@@ -1152,11 +1211,14 @@ function distToSeg(p, s) {
 }
 // 판정 거리 = 선 굵기/2 + 화면 기준 여유(px, 줌과 무관하게 일정). 가장 위에 그려진 선을 돌려준다.
 function hitTest(w, marginPx) {
-  const tol = marginPx / scale;
-  for (let i = segs.length - 1; i >= 0; i--) {
-    const s = segs[i], r = s.size / 2 + tol;
-    if (w.x < Math.min(s.x0, s.x1) - r || w.x > Math.max(s.x0, s.x1) + r || w.y < Math.min(s.y0, s.y1) - r || w.y > Math.max(s.y0, s.y1) + r) continue;
-    if (distToSeg(w, s) <= r) return s;
+  const tol = marginPx / scale, ix = segIndex(), box = ix.box;
+  for (let b = ix.n - 1; b >= 0; b--) {                    // 덩어리 범위(굵기 포함) 밖이면 통째로 건너뛴다 (큰 방에서 마우스를 움직일 때마다 전체를 보지 않게)
+    if (w.x < box[b * 4] - tol || w.x > box[b * 4 + 1] + tol || w.y < box[b * 4 + 2] - tol || w.y > box[b * 4 + 3] + tol) continue;
+    for (let i = Math.min(segs.length, (b + 1) * SEG_BLOCK) - 1; i >= b * SEG_BLOCK; i--) {
+      const s = segs[i], r = s.size / 2 + tol;
+      if (w.x < Math.min(s.x0, s.x1) - r || w.x > Math.max(s.x0, s.x1) + r || w.y < Math.min(s.y0, s.y1) - r || w.y > Math.max(s.y0, s.y1) + r) continue;
+      if (distToSeg(w, s) <= r) return s;
+    }
   }
   return null;
 }
@@ -1707,7 +1769,7 @@ function doFill(p) {
   const sid = newSid(), color = S.color;
   const list = fillSegs(me, sid, color, r.cell, r.rows);
   const msg = { type: 'fill', sid, color, cell: r.cell, rows: r.rows };
-  insertSegs(segs, list);
+  addSegs(list);
   pushAct({ t: 'draw', sid, segs: list, fill: msg });
   redrawInk();
   send(msg);
@@ -1985,15 +2047,50 @@ function eraseArea(x0, y0, x1, y1, r, removed) {
   const e = Math.min(Math.max(r, 1), ERASER_R_MAX) + m + 2 / scale;
   redrawArea(Math.min(x0, x1) - e, Math.min(y0, y1) - e, Math.max(x0, x1) + e, Math.max(y0, y1) + e);
 }
+// 지우개가 닿을 수 있는 덩어리(segIndex)에만 공용 함수를 쓴다: 결과는 목록 전체에 쓴 것과 똑같고(서버 histErase·histHit 와 같은 방식), 큰 방에서 훨씬 빠르다.
+function blocksNear(x0, y0, x1, y1, r) {
+  const ix = segIndex(), box = ix.box, rr = Math.min(Math.max(r, 1), ERASER_R_MAX), out = [];
+  const xa = Math.min(x0, x1) - rr, xb = Math.max(x0, x1) + rr, ya = Math.min(y0, y1) - rr, yb = Math.max(y0, y1) + rr;
+  for (let b = 0; b < ix.n; b++) if (!(box[b * 4 + 1] < xa || box[b * 4] > xb || box[b * 4 + 3] < ya || box[b * 4 + 2] > yb)) out.push(b);
+  return out;
+}
+function eraseSegs(owner, x0, y0, x1, y1, r, diff) {           // eraseCapsule(segs, …) 과 같은 결과 (바뀌면 새 목록, 아니면 null)
+  const parts = [];
+  let last = 0, first = -1;
+  for (const b of blocksNear(x0, y0, x1, y1, r)) {
+    const i0 = b * SEG_BLOCK, i1 = Math.min(segs.length, i0 + SEG_BLOCK);
+    const res = eraseCapsule(segs.slice(i0, i1), owner, x0, y0, x1, y1, r, diff);
+    if (!res) continue;
+    if (first < 0) first = i0;
+    parts.push(segs.slice(last, i0), res); last = i1;
+  }
+  if (first < 0) return null;
+  parts.push(segs.slice(last));
+  const out = [].concat(...parts);
+  segKeep = { arr: out, base: segIdx, at: first };              // (이 목록을 쓰면 덩어리 범위는 바뀐 곳부터만 다시 잰다)
+  return out;
+}
+function hitSegs(owner, x0, y0, x1, y1, r, max) {               // hitStrokes(segs, …) 와 같은 결과
+  const keys = new Map();
+  for (const b of blocksNear(x0, y0, x1, y1, r)) {
+    for (const k of hitStrokes(segs.slice(b * SEG_BLOCK, Math.min(segs.length, (b + 1) * SEG_BLOCK)), owner, x0, y0, x1, y1, r, max)) {
+      const key = k[0] + '|' + k[1];
+      if (keys.has(key)) continue;
+      if (keys.size >= max) return [...keys.values()];
+      keys.set(key, k);
+    }
+  }
+  return [...keys.values()];
+}
 function erasePart(st, a, b) {
   const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
   const diff = { removed: [], added: [] };
-  const res = eraseCapsule(segs, sc, x0, y0, x1, y1, r, diff);
+  const res = eraseSegs(sc, x0, y0, x1, y1, r, diff);
   if (res) { segs = res; if (st.act) mergeDiff(st.act, diff); eraseArea(x0, y0, x1, y1, r, diff.removed); send({ type: 'erase', x0, y0, x1, y1, r, ...(sc === null ? { all: true } : {}) }); }
 }
 function eraseStroke(st, a, b) {
   const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
-  const keys = hitStrokes(segs, sc, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
+  const keys = hitSegs(sc, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
   if (!keys.length) return;
   const diff = { removed: [], added: [] };
   const res = removeStrokes(segs, keys, diff);
@@ -2661,7 +2758,7 @@ function syncUndoUi() {
 function resetUndo() { undoSt = []; redoSt = []; syncUndoUi(); }
 function pushAct(a) { undoSt.push(a); if (undoSt.length > UNDO_MAX) undoSt.shift(); redoSt = []; syncUndoUi(); }
 function sendSegs(type, list) { for (let i = 0; i < list.length; i += 100) send({ type, segs: list.slice(i, i + 100).map(plain) }); }
-const addLocal = (list) => insertSegs(segs, list.map((s) => ({ ...s, o: me })));      // 복사본을 다시 올린다 (칠하기 조각은 선 아래로)
+const addLocal = (list) => addSegs(list.map((s) => ({ ...s, o: me })));      // 복사본을 다시 올린다 (칠하기 조각은 선 아래로)
 function mergeDiff(act, diff) {                                                         // 지우개를 끄는 동안의 변화를 한 동작으로 모은다
   for (const s of diff.removed) { const i = act.added.indexOf(s); if (i >= 0) act.added.splice(i, 1); else act.removed.push(s); }
   for (const p of diff.added) act.added.push(p);
@@ -2718,7 +2815,9 @@ function scheduleReconnect(immediate) {
 }
 // 서버가 그림 전체를 zlib 으로 압축해 바이너리로 보낼 수 있다 (약 1/8 크기). 풀 수 있는 브라우저만 z=1 로 알린다 (옛 사파리는 JSON 으로 받는다).
 let zOk = (() => { try { new DecompressionStream('deflate'); return true; } catch { return false; } })();
-const inflateText = (buf) => new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('deflate'))).text();
+const inflateBytes = async (buf) => new Uint8Array(await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+// 받은 압축 그림 풀기: 'D2'(작은 이진 형식)이면 decodeSegs, 아니면 JSON
+const unpackHistory = (u) => (u.length >= 2 && u[0] === 68 && u[1] === 50 ? decodeSegs(u) : JSON.parse(new TextDecoder().decode(u)));
 // 받은 메시지는 순서대로 처리한다: 압축된 그림을 푸는 동안 뒤에 온 메시지는 기다렸다가 그 다음에 (그림보다 먼저 처리되면 안 된다)
 const rxQ = [];
 let rxBusy = false;
@@ -2734,7 +2833,7 @@ async function pumpRx() {
     if (sock !== ws) continue;                                                     // 끊긴 연결에서 온 것은 버린다
     if (typeof d === 'string') { onMessage(d); continue; }
     let data = null;
-    try { data = JSON.parse(await inflateText(d)); } catch {}
+    try { data = unpackHistory(await inflateBytes(d)); } catch {}
     if (sock !== ws) continue;
     if (Array.isArray(data)) handleMsg({ type: 'history', data });
     else { zOk = false; rxQ.length = 0; try { sock.close(); } catch {} }           // 풀지 못하면 압축 없이 다시 접속한다
@@ -2745,7 +2844,7 @@ function connect() {
   clearTimeout(retryT);
   if (ended || (ws && (ws.readyState === 0 || ws.readyState === 1))) return;      // 중복 소켓 금지
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const sock = new WebSocket(`${proto}://${location.host}/?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=1' : ''}`);
+  const sock = new WebSocket(`${proto}://${location.host}/?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=2' : ''}`);
   sock.binaryType = 'arraybuffer';
   ws = sock;
   sock.onopen = () => { if (sock !== ws) return; retry = 0; connected = true; lastMsgAt = now(); updateBanner(); hudSoon(); };
@@ -2788,7 +2887,7 @@ function handleMsg(m) {
     case 'count': if (!online.size) { count = m.n; hudSoon(); } break;
     case 'seg': segs.push(m); if (aligned() && !exactT) incSeg(m); else redrawInk(); break;
     case 'clear': segs = segs.filter((s) => s.o !== m.o); if (m.o === me) resetUndo(); redrawInk(); break;
-    case 'erase': { const d = { removed: [], added: [] }, res = eraseCapsule(segs, m.o, m.x0, m.y0, m.x1, m.y1, m.r, d); if (res) { segs = res; eraseArea(m.x0, m.y0, m.x1, m.y1, m.r, d.removed); } break; }
+    case 'erase': { const d = { removed: [], added: [] }, res = eraseSegs(m.o, m.x0, m.y0, m.x1, m.y1, m.r, d); if (res) { segs = res; eraseArea(m.x0, m.y0, m.x1, m.y1, m.r, d.removed); } break; }
     case 'strokesgone': {
       const keys = Array.isArray(m.keys) ? m.keys : [], d = { removed: [], added: [] };
       const res = removeStrokes(segs, keys, d);
@@ -2834,8 +2933,8 @@ function handleMsg(m) {
     }
     case 'cmderr': toast(m.text || '명령을 실행하지 못했어요', 'err'); break;
     case 'clearall': segs = []; resetUndo(); redrawInk(); break;
-    case 'segs': insertSegs(segs, Array.isArray(m.list) ? m.list : []); redrawInk(); break;
-    case 'fill': insertSegs(segs, fillSegs(m.o, m.sid, m.color, m.cell, Array.isArray(m.rows) ? m.rows : [])); redrawInk(); break;
+    case 'segs': addSegs(Array.isArray(m.list) ? m.list : []); redrawInk(); break;
+    case 'fill': addSegs(fillSegs(m.o, m.sid, m.color, m.cell, Array.isArray(m.rows) ? m.rows : [])); redrawInk(); break;
     case 'fillno': {                                                               // 서버가 내 칠하기를 받지 않았다: 내 화면에서도 되돌린다
       const sid = typeof m.sid === 'string' ? m.sid : null;
       if (sid) { segs = segs.filter((s) => !(s.o === me && s.sid === sid)); undoSt = undoSt.filter((a) => a.sid !== sid); redoSt = redoSt.filter((a) => a.sid !== sid); syncUndoUi(); redrawInk(); }
@@ -2853,7 +2952,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-12 20차-2)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-12 21차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 $('roomLabel').textContent = room.length > 10 ? room.slice(0, 10) + '…' : room;
 for (const [id, key] of Object.entries(toggles)) $(id).checked = S[key];
