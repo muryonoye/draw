@@ -58,7 +58,7 @@ function sqlStore(storage, importOld) {
 async function readOld(dbUrl, id) {
   const { Client } = await import('pg');
   const info = core.parseDbUrl(dbUrl);
-  const c = new Client({ connectionString: info.url, ssl: info.local ? false : { rejectUnauthorized: false }, connectionTimeoutMillis: 4000 });
+  const c = new Client({ connectionString: info.url, ssl: info.local ? false : { rejectUnauthorized: false }, connectionTimeoutMillis: 12000, query_timeout: 20000 });   // (Neon 무료는 쉬다가 깨어나는 데 몇 초 걸린다)
   await c.connect();
   try {
     const r = (await c.query('SELECT history, names, meta FROM rooms WHERE id = $1', [id])).rows[0];
