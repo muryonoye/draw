@@ -187,9 +187,137 @@ function byeSocket(code, text) {
   return new Response(null, { status: 101, webSocket: client });
 }
 
+// ── 계정 (구글·카카오 로그인) ──
+// 계정 = 로그인한 곳(구글·카카오의 사용자 번호)마다 비밀 키 하나. 화면은 로그인하면 그 키를 이 기기의 '나'(draw:key)로 쓴다
+// → 어느 기기에서든 같은 사람(방장 자격·그림 주인). 처음 로그인하면 그 기기의 지금 키가 계정의 키가 된다 (지금까지의 '나'가 그대로 계정이 됨).
+// 순서: /auth/start → 구글·카카오 → /auth/cb/<곳> (사용자 번호 확인 → 표 하나) → 원래 방 주소#login=표 → 화면이 /auth/finish 로 표를 내고 키를 받음.
+// 표는 한 번만·10분 안에, 로그인을 시작한 브라우저(쿠키)에서만 쓸 수 있다. 비밀값: GOOGLE_ID·GOOGLE_SECRET, KAKAO_ID(REST API 키)·KAKAO_SECRET(쓸 때만)
+const AUTH_COOKIE = 'dg_st', TICKET_MS = 10 * 60 * 1000, KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const randId = (n) => Buffer.from(crypto.getRandomValues(new Uint8Array(n))).toString('base64url');
+const form = (o) => ({ method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' }, body: new URLSearchParams(o) });
+const PROVIDERS = {
+  google: {
+    on: (env) => !!(env.GOOGLE_ID && env.GOOGLE_SECRET),
+    authUrl: (env, redirect, state) => 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({ client_id: env.GOOGLE_ID, redirect_uri: redirect, response_type: 'code', scope: 'openid', state, prompt: 'select_account' }),
+    async user(env, code, redirect) {
+      const r = await fetch('https://oauth2.googleapis.com/token', form({ code, client_id: env.GOOGLE_ID, client_secret: env.GOOGLE_SECRET, redirect_uri: redirect, grant_type: 'authorization_code' }));
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.id_token) throw new Error(`구글 토큰 ${r.status} ${j.error || ''}`);
+      // (구글에서 비밀값으로 직접 받은 토큰이라 서명 확인은 하지 않아도 된다: OpenID Connect Core 3.1.3.7)
+      const p = JSON.parse(Buffer.from(String(j.id_token).split('.')[1] || '', 'base64url').toString('utf8'));
+      if (p.aud !== env.GOOGLE_ID || !/^(https:\/\/)?accounts\.google\.com$/.test(p.iss) || !p.sub) throw new Error('구글 id_token 이 올바르지 않아요');
+      return String(p.sub);
+    },
+  },
+  kakao: {
+    on: (env) => !!env.KAKAO_ID,
+    authUrl: (env, redirect, state) => 'https://kauth.kakao.com/oauth/authorize?' + new URLSearchParams({ client_id: env.KAKAO_ID, redirect_uri: redirect, response_type: 'code', state }),
+    async user(env, code, redirect) {
+      const o = { grant_type: 'authorization_code', client_id: env.KAKAO_ID, redirect_uri: redirect, code };
+      if (env.KAKAO_SECRET) o.client_secret = env.KAKAO_SECRET;
+      const r = await fetch('https://kauth.kakao.com/oauth/token', form(o));
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.access_token) throw new Error(`카카오 토큰 ${r.status} ${j.error_code || j.error || ''}`);
+      const u = await fetch('https://kapi.kakao.com/v2/user/me', { headers: { Authorization: 'Bearer ' + j.access_token } });
+      const uj = await u.json().catch(() => ({}));
+      if (!u.ok || !uj.id) throw new Error(`카카오 사용자 ${u.status}`);
+      return String(uj.id);
+    },
+  },
+  test: {                                                // 시험 전용 (LOCAL_DEV): 진짜 로그인 없이 ?as=이름 → 그 이름이 사용자 번호
+    on: (env) => env.LOCAL_DEV === '1',
+    authUrl: (env, redirect, state, url) => redirect + '?' + new URLSearchParams(url.searchParams.get('as') === '-' ? { error: 'access_denied', state } : { code: url.searchParams.get('as') || 'tester', state }),
+    async user(env, code) { return code.slice(0, 64); },
+  },
+};
+const provOf = (name, env) => (Object.prototype.hasOwnProperty.call(PROVIDERS, name) && PROVIDERS[name].on(env) ? PROVIDERS[name] : null);
+const safeRet = (r) => (typeof r === 'string' && /^\/(\?[^#]*)?$/.test(r) && r.length <= 300 ? r : '/');   // (돌아갈 곳: 이 사이트의 첫 화면 주소만)
+function readCookie(req, name) {
+  for (const part of (req.headers.get('Cookie') || '').split(/;\s*/)) { const i = part.indexOf('='); if (i > 0 && part.slice(0, i) === name) return part.slice(i + 1); }
+  return null;
+}
+const stCookie = (url, v, age) => `${AUTH_COOKIE}=${v}; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=${age}` + (url.protocol === 'https:' ? '; Secure' : '');
+const go = (to, cookie) => new Response(null, { status: 302, headers: { Location: to, 'Cache-Control': 'no-store', ...(cookie ? { 'Set-Cookie': cookie } : {}) } });
+const acctObj = (env) => env.ACCT.get(env.ACCT.idFromName('accounts'));
+
+async function auth(req, env, url) {
+  const path = url.pathname;
+  if (path === '/auth/config') {                        // 화면: 어떤 로그인 버튼을 보일지
+    const on = {}; for (const k of Object.keys(PROVIDERS)) on[k] = PROVIDERS[k].on(env);
+    return Response.json(on, { headers: { 'Cache-Control': 'no-store' } });
+  }
+  if (path === '/auth/start') {
+    const name = url.searchParams.get('p') || '', prov = provOf(name, env);
+    if (!prov) return new Response('이 로그인은 아직 준비되지 않았어요', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    const state = randId(18), ret = safeRet(url.searchParams.get('ret'));
+    return go(prov.authUrl(env, url.origin + '/auth/cb/' + name, state, url), stCookie(url, `${name}.${state}.${Buffer.from(ret).toString('base64url')}`, 600));
+  }
+  const cb = /^\/auth\/cb\/([a-z]+)$/.exec(path);
+  if (cb) {
+    const name = cb[1], prov = provOf(name, env);
+    const [cn, st, r64] = (readCookie(req, AUTH_COOKIE) || '').split('.');
+    let ret = '/'; try { ret = safeRet(Buffer.from(r64 || '', 'base64url').toString('utf8')); } catch {}
+    if (!prov || cn !== name || !st || st !== url.searchParams.get('state')) return go(ret + '#login=fail', stCookie(url, '', 0));   // (다른 브라우저에서 왔거나 너무 오래됨)
+    const code = url.searchParams.get('code');
+    if (!code || url.searchParams.get('error')) return go(ret, stCookie(url, '', 0));   // 사용자가 취소함
+    let sub;
+    try { sub = await prov.user(env, code, url.origin + '/auth/cb/' + name); }
+    catch (e) { console.error('로그인 확인 실패:', e.message); return go(ret + '#login=fail', stCookie(url, '', 0)); }
+    const r = await acctObj(env).fetch('https://acct/ticket', { method: 'POST', body: JSON.stringify({ pid: name + ':' + sub, st }) });
+    const { ticket } = await r.json();
+    return go(ret + '#login=' + ticket);                // (쿠키는 표를 낼 때까지 그대로)
+  }
+  if (path === '/auth/finish' && req.method === 'POST') {
+    const [, st] = (readCookie(req, AUTH_COOKIE) || '').split('.');
+    let b = {}; try { b = await req.json(); } catch {}
+    const r = await acctObj(env).fetch('https://acct/finish', { method: 'POST', body: JSON.stringify({ ticket: b.ticket, key: b.key, nick: b.nick, st: st || '' }) });
+    return new Response(r.body, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Set-Cookie': stCookie(url, '', 0) } });
+  }
+  return new Response('not found', { status: 404 });
+}
+
+// 계정 저장소 (객체 하나): acct(로그인한 곳:사용자 번호 → 비밀 키·처음 닉네임), ticket(로그인 표, 10분)
+export class Accounts extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.sql.exec('CREATE TABLE IF NOT EXISTS acct (pid TEXT PRIMARY KEY, key TEXT NOT NULL, nick TEXT NOT NULL, at INTEGER NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS ticket (id TEXT PRIMARY KEY, pid TEXT NOT NULL, st TEXT NOT NULL, at INTEGER NOT NULL)');
+  }
+  async fetch(req) {
+    const path = new URL(req.url).pathname, s = this.sql, now = Date.now();
+    let b = {}; try { b = await req.json(); } catch {}
+    const bad = (error) => Response.json({ error }, { status: 400 });
+    if (path === '/ticket') {
+      s.exec('DELETE FROM ticket WHERE at < ?', now - TICKET_MS);
+      const id = randId(18);
+      s.exec('INSERT INTO ticket (id, pid, st, at) VALUES (?, ?, ?, ?)', id, String(b.pid), String(b.st), now);
+      return Response.json({ ticket: id });
+    }
+    if (path === '/finish') {
+      const id = typeof b.ticket === 'string' ? b.ticket : '';
+      const t = s.exec('SELECT pid, st, at FROM ticket WHERE id = ?', id).toArray()[0];
+      if (!t || t.at < now - TICKET_MS) return bad('ticket');
+      if (!b.st || t.st !== b.st) return bad('browser');                 // (로그인을 시작한 브라우저가 아님)
+      s.exec('DELETE FROM ticket WHERE id = ?', id);                     // (한 번만)
+      let a = s.exec('SELECT key, nick FROM acct WHERE pid = ?', t.pid).toArray()[0], created = false;
+      if (!a) {
+        if (typeof b.key !== 'string' || !KEY_RE.test(b.key)) return bad('key');
+        a = { key: b.key, nick: Array.from(String(b.nick || '')).slice(0, 12).join('') };
+        s.exec('INSERT INTO acct (pid, key, nick, at) VALUES (?, ?, ?, ?)', t.pid, a.key, a.nick, now);
+        created = true;
+        console.log('새 계정: ' + t.pid.split(':')[0]);
+      }
+      return Response.json({ key: a.key, nick: a.nick, p: t.pid.split(':')[0], created });
+    }
+    return new Response('not found', { status: 404 });
+  }
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
+    if (url.pathname.startsWith('/auth/')) return auth(req, env, url);
     if (url.pathname === '/ws') {                        // 실시간 접속 → 그 방의 객체로
       if (req.headers.get('Upgrade') !== 'websocket') return new Response('websocket only', { status: 426 });
       const raw = url.searchParams.get('room') || 'lobby', id = core.ROOM_RE.test(raw) ? raw : 'lobby';

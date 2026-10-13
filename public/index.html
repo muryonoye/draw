@@ -509,6 +509,7 @@
 <section id="popSettings" class="pop" hidden aria-label="설정">
   <div class="sheetgrab"></div><h3>설정</h3>
   <div class="field"><label for="nick">닉네임 (최대 12자)</label><input type="text" id="nick" class="inp" autocomplete="off" placeholder="닉네임"></div>
+  <div class="field" id="acctBox" hidden><label>계정</label><div id="acctBody"></div></div>
   <div class="switch"><div>그리드<small>배경 격자 표시</small></div><input type="checkbox" id="setGrid" aria-label="그리드"></div>
   <div class="switch"><div>펜으로만 그리기<small>손가락은 이동·줌 전용</small></div><input type="checkbox" id="setPenOnly" aria-label="펜으로만 그리기"></div>
   <div class="switch"><div>다른 사람 커서 표시</div><input type="checkbox" id="setCursors" aria-label="다른 사람 커서 표시"></div>
@@ -867,10 +868,31 @@ function getKey() {
   if (!k) { k = makeKey(); lsSet('draw:key', k); }
   return k;
 }
-const myKey = getKey();
+let myKey = getKey();
 const randomNick = () => ADJ[rnd(ADJ.length)] + ' ' + ANI[rnd(ANI.length)];
 let myNick = lsGet('draw:nick') || randomNick();
 lsSet('draw:nick', myNick);
+// 계정 (구글·카카오 로그인, Cloudflare 판): 로그인하면 계정의 비밀 키가 이 기기의 '나'가 된다 → 어느 기기에서든 같은 사람 (방장 자격·내 그림).
+// 처음 로그인한 계정은 이 기기의 지금 '나'를 그대로 계정으로 삼는다. 로그아웃하면 로그인 전 이 기기의 '나'(draw:key0)로 돌아간다.
+// 로그인 서버가 원래 방 주소 뒤 #login=표 로 돌려보낸다 → 접속하기 전에 표를 내고 키를 받는다.
+const PROV_NAME = { google: '구글', kakao: '카카오', test: '시험' };
+const loginReady = (() => {
+  const m = /^#login=([A-Za-z0-9_-]{1,64})$/.exec(location.hash);
+  if (!m) return Promise.resolve();
+  try { history.replaceState(null, '', location.pathname + location.search); } catch {}
+  if (m[1] === 'fail') { setTimeout(() => toast('로그인하지 못했어요. 다시 해 주세요', 'err'), 300); return Promise.resolve(); }
+  return fetch('/auth/finish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket: m[1], key: myKey, nick: myNick }) })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error('finish ' + r.status))))
+    .then((j) => {
+      if (!/^[A-Za-z0-9_-]{16,64}$/.test(j.key || '')) throw new Error('key');
+      if (j.key !== myKey) { if (!lsGet('draw:acct')) lsSet('draw:key0', myKey); lsSet('draw:key', j.key); myKey = j.key; }
+      if (j.nick) { myNick = j.nick; lsSet('draw:nick', myNick); nickEl.value = myNick; }
+      lsSet('draw:acct', j.p);
+      const who = (PROV_NAME[j.p] || j.p) + ' 계정';
+      setTimeout(() => toast(j.created ? `${who}으로 로그인했어요. 이제 다른 기기에서도 이 계정으로 로그인하면 같은 사람이에요` : `${who}으로 로그인했어요`, 'ok'), 300);
+    })
+    .catch((e) => { console.warn('로그인 실패', e.message); setTimeout(() => toast('로그인하지 못했어요. 다시 해 주세요', 'err'), 300); });
+})();
 
 function newRoomId() {
   const b = crypto.getRandomValues(new Uint8Array(10));
@@ -3845,7 +3867,42 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 resize();
-blk.ready.then(connect);
+// 설정의 계정 칸: 이 서버에 켜진 로그인만 버튼으로 (Node 판·설정 안 된 곳은 칸을 숨긴다)
+let authCfg = null;
+function renderAcct() {
+  const box = $('acctBox'), body = $('acctBody');
+  const provs = authCfg ? ['google', 'kakao'].filter((k) => authCfg[k]) : [];
+  const cur = lsGet('draw:acct');
+  box.hidden = !cur && !provs.length;
+  body.textContent = '';
+  if (cur) {
+    const row = mk('div', 'row');
+    row.append(mk('span', 'hint', `${PROV_NAME[cur] || cur} 계정으로 로그인됨`));
+    const out = mk('button', 'btn', '로그아웃'); out.type = 'button'; out.style.marginLeft = 'auto';
+    out.onclick = async () => {
+      const v = await formModal({ title: '로그아웃할까요?', body: '이 기기는 로그인하기 전의 나로 돌아가요. 다시 로그인하면 계정의 나로 돌아와요.', ok: '로그아웃' });
+      if (!v) return;
+      const k0 = lsGet('draw:key0');
+      lsSet('draw:key', k0 && /^[A-Za-z0-9_-]{16,64}$/.test(k0) ? k0 : makeKey());
+      try { localStorage.removeItem('draw:key0'); localStorage.removeItem('draw:acct'); } catch {}
+      location.reload();
+    };
+    row.appendChild(out); body.appendChild(row);
+    return;
+  }
+  const row = mk('div', 'row');
+  for (const k of provs) {
+    const b = mk('button', 'btn', `${PROV_NAME[k]}로 로그인`); b.type = 'button'; b.style.flex = '1';
+    b.onclick = () => { rememberRoom(); location.href = '/auth/start?p=' + k + '&ret=' + encodeURIComponent(location.pathname + location.search); };
+    row.appendChild(b);
+  }
+  body.appendChild(row);
+  body.appendChild(mk('small', 'hint', '로그인하면 다른 기기(폰·컴퓨터)에서도 같은 사람이에요: 방장 자격·내 그림이 따라와요. 처음 로그인하면 지금 이 기기의 내가 계정이 돼요.'));
+  if (authCfg && authCfg.google && /KAKAOTALK/i.test(navigator.userAgent)) body.appendChild(mk('small', 'hint', '카톡 안에서는 구글 로그인이 안 돼요 (구글이 막음). 카카오로 로그인하거나, 오른쪽 위 ⋯ 에서 다른 브라우저로 열어 주세요.'));
+}
+if (window.fetch) fetch('/auth/config').then((r) => (r.ok ? r.json() : null)).then((j) => { authCfg = j; renderAcct(); }).catch(() => {});
+try { renderAcct(); } catch (e) { console.warn(e); }                 // (계정 칸에 문제가 있어도 접속은 해야 한다)
+Promise.all([blk.ready, loginReady]).then(connect);
 </script>
 </body>
 </html>

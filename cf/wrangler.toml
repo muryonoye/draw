@@ -13,9 +13,17 @@ run_worker_first = ["/"]        # 방 없이 온 첫 화면만 Worker 가 새 �
 name = "ROOM"
 class_name = "Room"
 
+[[durable_objects.bindings]]
+name = "ACCT"                   # 계정 (구글·카카오 로그인): 객체 하나
+class_name = "Accounts"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Accounts"]
 
 [vars]
 MAX_HISTORY = "200000"          # 방 객체 메모리 한도 128MB 에 맞춤 (조각당 약 220바이트 → 약 45MB)
