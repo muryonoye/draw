@@ -3870,6 +3870,11 @@ if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
 resize();
 // 설정의 계정 칸: 이 서버에 켜진 로그인만 버튼으로 (Node 판·설정 안 된 곳은 칸을 숨긴다)
 let authCfg = null;
+function loginBtn(k, label) {
+  const b = mk('button', 'btn', label); b.type = 'button'; b.style.flex = '1';
+  b.onclick = () => { rememberRoom(); location.href = '/auth/start?p=' + k + '&ret=' + encodeURIComponent(location.pathname + location.search); };
+  return b;
+}
 function renderAcct() {
   const box = $('acctBox'), body = $('acctBody');
   const provs = authCfg ? ['google', 'kakao'].filter((k) => authCfg[k]) : [];
@@ -3889,14 +3894,18 @@ function renderAcct() {
       location.reload();
     };
     row.appendChild(out); body.appendChild(row);
+    // 다른 로그인도 이어 두기: 그 계정으로 처음 로그인하면 지금의 나(이 키)로 만들어져 같은 사람이 된다
+    const others = provs.filter((k) => k !== cur);
+    if (others.length) {
+      const r2 = mk('div', 'row'); r2.style.marginTop = '6px';
+      for (const k of others) r2.appendChild(loginBtn(k, `${PROV_NAME[k]} 계정도 연결`));
+      body.appendChild(r2);
+      body.appendChild(mk('small', 'hint', `${others.map((k) => PROV_NAME[k]).join('·')}로 처음 로그인하는 거면 지금의 나와 같은 사람으로 이어져요 (그 뒤엔 어느 쪽으로 로그인해도 같음)`));
+    }
     return;
   }
   const row = mk('div', 'row');
-  for (const k of provs) {
-    const b = mk('button', 'btn', `${PROV_NAME[k]}로 로그인`); b.type = 'button'; b.style.flex = '1';
-    b.onclick = () => { rememberRoom(); location.href = '/auth/start?p=' + k + '&ret=' + encodeURIComponent(location.pathname + location.search); };
-    row.appendChild(b);
-  }
+  for (const k of provs) row.appendChild(loginBtn(k, `${PROV_NAME[k]}로 로그인`));
   body.appendChild(row);
   body.appendChild(mk('small', 'hint', '로그인하면 다른 기기(폰·컴퓨터)에서도 같은 사람이에요: 방장 자격·내 그림이 따라와요. 처음 로그인하면 지금 이 기기의 내가 계정이 돼요.'));
   if (authCfg && authCfg.google && /KAKAOTALK/i.test(navigator.userAgent)) body.appendChild(mk('small', 'hint', '카톡 안에서는 구글 로그인이 안 돼요 (구글이 막음). 카카오로 로그인하거나, 오른쪽 위 ⋯ 에서 다른 브라우저로 열어 주세요.'));
