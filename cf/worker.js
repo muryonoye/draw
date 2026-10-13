@@ -267,6 +267,10 @@ async function auth(req, env, url) {
     const { ticket } = await r.json();
     return go(ret + '#login=' + ticket);                // (쿠키는 표를 낼 때까지 그대로)
   }
+  if (path === '/auth/linked' && req.method === 'POST') {    // 이 키에 이어진 로그인 (설정의 계정 칸 표시용. 키를 아는 본인만 물을 수 있다)
+    const r = await acctObj(env).fetch('https://acct/linked', { method: 'POST', body: await req.text() });
+    return new Response(r.body, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  }
   if (path === '/auth/finish' && req.method === 'POST') {
     const [, st] = (readCookie(req, AUTH_COOKIE) || '').split('.');
     let b = {}; try { b = await req.json(); } catch {}
@@ -308,10 +312,12 @@ export class Accounts extends DurableObject {
         created = true;
         console.log('새 계정: ' + t.pid.split(':')[0]);
       }
-      return Response.json({ key: a.key, nick: a.nick, p: t.pid.split(':')[0], created });
+      return Response.json({ key: a.key, nick: a.nick, p: t.pid.split(':')[0], created, linked: this.linked(a.key) });
     }
+    if (path === '/linked') return Response.json({ linked: typeof b.key === 'string' && KEY_RE.test(b.key) ? this.linked(b.key) : [] });
     return new Response('not found', { status: 404 });
   }
+  linked(key) { return [...new Set(this.sql.exec('SELECT pid FROM acct WHERE key = ?', key).toArray().map((r) => r.pid.split(':')[0]))]; }   // 이 키(같은 사람)에 이어진 로그인들
 }
 
 export default {

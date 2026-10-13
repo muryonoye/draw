@@ -891,7 +891,7 @@ const loginReady = (() => {
       if (!/^[A-Za-z0-9_-]{16,64}$/.test(j.key || '')) throw new Error('key');
       if (j.key !== myKey) { if (!lsGet('draw:acct')) lsSet('draw:key0', myKey); lsSet('draw:key', j.key); myKey = j.key; }
       if (j.nick) { myNick = j.nick; lsSet('draw:nick', myNick); nickEl.value = myNick; }
-      lsSet('draw:acct', j.p);
+      lsSet('draw:acct', (Array.isArray(j.linked) && j.linked.length ? j.linked : [j.p]).join(','));   // (이 사람에게 이어진 로그인들: 구글·카카오)
       try { renderAcct(); } catch {}                              // (설정의 계정 칸: 서버 설정을 먼저 받아 '로그인' 버튼을 그렸을 수 있다)
       const who = (PROV_NAME[j.p] || j.p) + ' 계정';
       setTimeout(() => toast(j.created ? `${who}으로 로그인했어요. 이제 다른 기기에서도 이 계정으로 로그인하면 같은 사람이에요` : `${who}으로 로그인했어요`, 'ok'), 300);
@@ -3884,12 +3884,12 @@ function loginBtn(k, label) {
 function renderAcct() {
   const box = $('acctBox'), body = $('acctBody');
   const provs = authCfg ? ['google', 'kakao'].filter((k) => authCfg[k]) : [];
-  const cur = lsGet('draw:acct');
+  const cur = lsGet('draw:acct'), curs = cur ? cur.split(',') : [];
   box.hidden = !cur && !provs.length;
   body.textContent = '';
   if (cur) {
     const row = mk('div', 'row');
-    row.append(mk('span', 'hint', `${PROV_NAME[cur] || cur} 계정으로 로그인됨`));
+    row.append(mk('span', 'hint', `${curs.map((k) => PROV_NAME[k] || k).join('·')} 계정으로 로그인됨`));
     const out = mk('button', 'btn', '로그아웃'); out.type = 'button'; out.style.marginLeft = 'auto';
     out.onclick = async () => {
       const v = await formModal({ title: '로그아웃할까요?', body: '이 기기는 로그인하기 전의 나로 돌아가요. 다시 로그인하면 계정의 나로 돌아와요.', ok: '로그아웃' });
@@ -3901,7 +3901,7 @@ function renderAcct() {
     };
     row.appendChild(out); body.appendChild(row);
     // 다른 로그인도 이어 두기: 그 계정으로 처음 로그인하면 지금의 나(이 키)로 만들어져 같은 사람이 된다
-    const others = provs.filter((k) => k !== cur);
+    const others = provs.filter((k) => !curs.includes(k));
     if (others.length) {
       const r2 = mk('div', 'row'); r2.style.marginTop = '6px';
       for (const k of others) r2.appendChild(loginBtn(k, `${PROV_NAME[k]} 계정도 연결`));
@@ -3917,6 +3917,9 @@ function renderAcct() {
   if (authCfg && authCfg.google && /KAKAOTALK/i.test(navigator.userAgent)) body.appendChild(mk('small', 'hint', '카톡 안에서는 구글 로그인이 안 돼요 (구글이 막음). 카카오로 로그인하거나, 오른쪽 위 ⋯ 에서 다른 브라우저로 열어 주세요.'));
 }
 if (window.fetch) fetch('/auth/config').then((r) => (r.ok ? r.json() : null)).then((j) => { authCfg = j; renderAcct(); }).catch(() => {});
+// 로그인한 기기: 이 사람에게 이어진 로그인(다른 기기에서 연결한 것도)을 다시 물어 계정 칸을 맞춘다
+if (window.fetch && lsGet('draw:acct')) loginReady.then(() => fetch('/auth/linked', { method: 'POST', body: JSON.stringify({ key: myKey }) }))
+  .then((r) => (r && r.ok ? r.json() : null)).then((j) => { if (j && Array.isArray(j.linked) && j.linked.length && lsGet('draw:acct')) { lsSet('draw:acct', j.linked.join(',')); renderAcct(); } }).catch(() => {});
 try { renderAcct(); } catch (e) { console.warn(e); }                 // (계정 칸에 문제가 있어도 접속은 해야 한다)
 Promise.all([blk.ready, loginReady]).then(connect);
 </script>
