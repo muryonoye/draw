@@ -888,6 +888,7 @@ const loginReady = (() => {
       if (j.key !== myKey) { if (!lsGet('draw:acct')) lsSet('draw:key0', myKey); lsSet('draw:key', j.key); myKey = j.key; }
       if (j.nick) { myNick = j.nick; lsSet('draw:nick', myNick); nickEl.value = myNick; }
       lsSet('draw:acct', j.p);
+      try { renderAcct(); } catch {}                              // (설정의 계정 칸: 서버 설정을 먼저 받아 '로그인' 버튼을 그렸을 수 있다)
       const who = (PROV_NAME[j.p] || j.p) + ' 계정';
       setTimeout(() => toast(j.created ? `${who}으로 로그인했어요. 이제 다른 기기에서도 이 계정으로 로그인하면 같은 사람이에요` : `${who}으로 로그인했어요`, 'ok'), 300);
     })
