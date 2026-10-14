@@ -385,6 +385,11 @@
   @media (max-width: 720px) {
     #tools { border: 0; border-top: 2.5px solid var(--line); border-radius: 16px 16px 0 0; box-shadow: 0 -2px 0 rgba(29,29,27,.08), 0 -6px 16px rgba(40,34,20,.10); padding: 9px 4px calc(6px + var(--safe-b)); gap: 0; }
     .toolsep { width: 0; height: 28px; margin: 8px 0; border-left-width: 2px; }
+    #tools { padding-left: 8px; padding-right: 6px; }
+    .caret { width: 15px; height: 15px; right: -1px; top: -3px; border-width: 1.5px; }   /* (폰: ⌄ 를 작게 모서리에 — 아이콘을 가리지 않게) */
+    .caret svg.ic { width: 10px; height: 10px; }
+    .tool.active { animation-name: wigs; }
+    @keyframes wigs { 0% { transform: rotate(-2deg); } 33% { transform: translateY(-1px) rotate(-1deg); } 66% { transform: rotate(-2.6deg); } }
     #brand { display: none; }
     #btnShare { padding: 0 14px; font-size: 18px; }
     #btnShare .long { display: none; }
