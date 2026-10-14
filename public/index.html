@@ -398,7 +398,7 @@
 
   /* 창·메뉴·알림: 오려 붙인 종이 */
   .pop, #side, #modal .card, #imgView .card, #hintBox, #replayBar, #selBar { background: var(--panel); color: var(--text); border: 2.5px solid var(--line); border-radius: var(--paper-r); box-shadow: var(--shadow); }
-  #side { top: calc(68px + var(--safe-t)); }
+  @media (min-width: 721px) { #side { top: calc(68px + var(--safe-t)); } }   /* (폰은 예전처럼 아래에서 올라오는 창) */
   .pop h3, #modal h3, #imgView h3 { font: 700 21px/1.2 var(--ui); }
   .hint, .field > label, .switch small, .kbd, .empty, .asec h4, .arow small, .lrow small { color: var(--muted); }
   .hint { font-size: 13px; line-height: 1.5; } .switch small { font: 400 13px/1.45 var(--read); margin-top: 2px; } .kbd { font-size: 13px; } .field > label { font: 700 16px/1.3 var(--ui); }
