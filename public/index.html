@@ -7,7 +7,7 @@
 <meta name="color-scheme" content="only light">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Nanum+Pen+Script&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Gowun+Dodum&family=Nanum+Pen+Script&display=swap">
 <title>같이 그리기</title>
 <!-- 카톡·디스코드 등에 링크를 보내면 뜨는 미리보기. 이미지 주소는 절대 주소여야 한다.
      og:url 은 일부러 넣지 않는다: 넣으면 미리보기를 눌렀을 때 그 주소(방 없는 기본 주소 → 사람마다 새 방)로 갈 수 있다. -->
@@ -313,10 +313,11 @@
     --hand: 255px 15px 225px 15px / 15px 225px 15px 255px; --hand2: 15px 225px 15px 255px / 255px 15px 225px 15px;
     --paper-r: 18px 7px 20px 6px / 6px 20px 7px 18px;
     --ui: "Gaegu", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; --pen: "Nanum Pen Script", "Gaegu", cursive;
+    --read: "Gowun Dodum", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;   /* 작은 글씨·긴 글: 또렷한 둥근 글꼴 */
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) { #stage { background: var(--bg); } }
-  html, body { background: var(--bg); color: var(--text); font: 17px/1.35 var(--ui); }
+  html, body { background: var(--bg); color: var(--text); font: 15px/1.45 var(--read); }
   input, textarea { color: var(--text); }
   select { color: var(--text); background-color: var(--panel); }
   option, optgroup { color: var(--text); background-color: var(--panel); }
@@ -332,6 +333,10 @@
   #top > .spacer { pointer-events: none; }
   #brand { min-height: 46px; padding: 0 16px 0 10px; background: var(--panel); border: 2.5px solid var(--line); border-radius: var(--hand); box-shadow: var(--shadow); transform: rotate(-1.5deg); font-weight: 400; }
   #brand span { font: 32px/1 var(--pen); letter-spacing: 0; }
+  .chip, #hud, .toast, .tag, .prow .nm, .lrow .nm b, .arow .nm, .menu button, .switch > div, .seg2 .opt, .seg3 .opt, #rowMenuTitle, .chead b, .cmsg.sys { font-family: var(--ui); }
+  .switch > div { font-size: 18px; font-weight: 700; }
+  .prow .nm, .menu button { font-size: 18px; font-weight: 700; }
+  .lrow .nm b { font-size: 18px; }
   .chip { min-height: 46px; padding: 0 14px; background: var(--panel); border: 2.5px solid var(--line); border-radius: var(--hand2); box-shadow: var(--shadow); font-weight: 700; font-size: 18px; }
   #btnRoom { transform: rotate(1.2deg); }
   #top .ibtn { background: var(--panel); border: 2.5px solid var(--line); border-radius: var(--hand); box-shadow: var(--shadow); }
@@ -391,7 +396,10 @@
   #side { top: calc(68px + var(--safe-t)); }
   .pop h3, #modal h3, #imgView h3 { font: 700 21px/1.2 var(--ui); }
   .hint, .field > label, .switch small, .kbd, .empty, .asec h4, .arow small, .lrow small { color: var(--muted); }
-  .hint { font-size: 15px; } .switch small { font-size: 14.5px; } .kbd { font-size: 15px; } .field > label { font-size: 15px; } .tag { font-size: 14px; }
+  .hint { font-size: 13px; line-height: 1.5; } .switch small { font: 400 13px/1.45 var(--read); margin-top: 2px; } .kbd { font-size: 13px; } .field > label { font: 700 16px/1.3 var(--ui); }
+  .lrow small, .arow small { font-size: 12.5px; line-height: 1.55; } .empty { font-size: 13px; }
+  .ctext { font: 15px/1.45 var(--read); } .cmsg.sys { font-size: 15px; }
+  .tag { font-size: 14px; }
   .pop .swatches { gap: 6px; }
   #side .tabs { border-bottom: 2px dashed rgba(29,29,27,.3); }
   #side .tabs button.tabbtn { font: 700 18px/1 var(--ui); color: var(--muted); }
@@ -401,7 +409,7 @@
   .btn.primary { background: var(--text); border-color: var(--text); color: var(--panel); }
   .btn.primary:hover { background: #3a3832; }
   .btn.danger { background: var(--danger); border-color: var(--text); color: #fff; }
-  .inp { background: var(--panel); border: 2px solid var(--line); border-radius: var(--hand2); font-size: 17px; font-family: var(--ui); }
+  .inp { background: var(--panel); border: 2px solid var(--line); border-radius: var(--hand2); font-size: 16px; font-family: var(--read); }
   input[type=range] { accent-color: var(--text); }
   .switch input { background: var(--panel); border: 2px solid var(--line); }
   .switch input::after { top: 3px; left: 3px; width: 16px; height: 16px; background: var(--text); }
@@ -436,13 +444,14 @@
   .toast.warn { border-color: var(--warn); } .toast.err { border-color: var(--danger); } .toast.ok { border-color: var(--line); }
   #endScreen { background: rgba(244,242,236,.97); color: var(--text); }
   #endScreen h2 { font: 700 28px/1.2 var(--ui); }
-  #tip { background: var(--panel); color: var(--text); border: 2px solid var(--line); border-radius: var(--hand); font-size: 15px; }
+  #tip { background: var(--panel); color: var(--text); border: 2px solid var(--line); border-radius: var(--hand); font: 700 16px/1.3 var(--ui); }
   #tip i { color: var(--muted); font-size: 13px; }
   #dropPrev { background: var(--panel); color: var(--text); border: 2px solid var(--line); font-size: 14px; }
   #ring { border-color: #1d1d1b; box-shadow: 0 0 0 1.5px #fdfdfa; }
   .cur .dot { border-color: #fdfdfa; box-shadow: 0 0 0 1.5px #1d1d1b; }
   .cur .lbl { font: 700 14px/1.3 var(--ui); border: 2px solid #1d1d1b; border-radius: var(--hand); padding: 0 8px; }
-  #rpTxt { color: var(--muted); font-size: 14px; }
+  #rpTxt { color: var(--muted); font-size: 13px; }
+  #modal p, #endScreen p { font: 15px/1.55 var(--read); }
 </style>
 </head>
 <body>
