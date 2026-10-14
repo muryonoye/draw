@@ -135,7 +135,7 @@ export class Room extends DurableObject {
     const dev = this.env.LOCAL_DEV === '1';
     const ip = (dev ? req.headers.get('X-Test-IP') : req.headers.get('CF-Connecting-IP')) || '';
     const local = !ip;
-    core.connect(server, { url, cip: { ip, local } }).finally(() => this.later());
+    core.connect(server, { url, cip: { ip, local } }).finally(() => { this.later(); this.report(); });   // (들어올 때도 크기를 알림: 10분에 한 번까지)
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -171,9 +171,86 @@ export class Room extends DurableObject {
     this.saveT = setTimeout(async () => {
       this.saveT = null;
       try { await core.maintainRoom(this.id, room, false); } catch (e) { console.error('저장 점검 오류:', e.message); }
+      this.report();
       this.later();
     }, core.SAVE_MS);
   }
+
+  // 저장 크기 알리기 (들어올 때·저장한 뒤, 10분에 한 번까지. 그림 양이 크게 바뀌었으면 그 안이라도): 계정 전체 저장 공간(무료 5GB)을 얼마나 쓰는지 /stats 에서 보려고
+  report() {
+    const t = Date.now();
+    if (!this.env.STATS) return;
+    let segs = 0;
+    const h = /^p1:(\d+):/.exec(this.store.get('history') || '');
+    if (h) segs = +h[1];
+    const last = this.reportedSegs ?? -1, big = Math.abs(segs - last) >= Math.max(500, last * 0.1) || (last <= 0 && segs > 0);
+    if (this.reportedAt && t - this.reportedAt < STATS_EVERY_MS && !big) return;
+    this.reportedAt = t; this.reportedSegs = segs;
+    let bytes = 0;
+    try { bytes = this.ctx.storage.sql.databaseSize; } catch {}
+    let title = '';
+    try { title = String(JSON.parse(this.store.get('meta') || '{}').title || '').slice(0, 30); } catch {}
+    this.ctx.waitUntil(statsObj(this.env).fetch('https://stats/report', { method: 'POST', body: JSON.stringify({ id: this.id, bytes, segs, title, at: t }) }).catch(() => {}));
+  }
+}
+
+// ── 저장 공간 사용량 (Stats 객체 하나: 방마다 마지막으로 알린 저장 크기·조각 수·때) ──
+const STATS_EVERY_MS = 10 * 60 * 1000, FREE_STORAGE = 5 * 1024 ** 3;   // (Cloudflare 무료: Durable Objects 저장 계정 전체 5GB)
+const statsObj = (env) => env.STATS.get(env.STATS.idFromName('stats'));
+export class Stats extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.sql.exec('CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, bytes INTEGER NOT NULL, segs INTEGER NOT NULL, title TEXT NOT NULL, at INTEGER NOT NULL)');
+  }
+  async fetch(req) {
+    const path = new URL(req.url).pathname, s = this.sql;
+    let b = {}; try { b = await req.json(); } catch {}
+    if (path === '/report') {
+      if (typeof b.id !== 'string' || !core.ROOM_RE.test(b.id)) return new Response('bad', { status: 400 });
+      s.exec('INSERT INTO rooms (id, bytes, segs, title, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET bytes = excluded.bytes, segs = excluded.segs, title = excluded.title, at = excluded.at',
+        b.id, Math.max(0, +b.bytes || 0), Math.max(0, +b.segs || 0), String(b.title || '').slice(0, 30), +b.at || Date.now());
+      return new Response('ok');
+    }
+    if (path === '/summary') {
+      const now = Date.now(), day = 86400000;
+      const one = (q, ...a) => s.exec(q, ...a).toArray()[0] || {};
+      const all = one('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS bytes, COALESCE(SUM(segs), 0) AS segs FROM rooms');
+      const old = one('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS bytes FROM rooms WHERE at < ?', now - 30 * day);
+      const empty = one('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS bytes FROM rooms WHERE segs = 0');
+      const top = s.exec('SELECT id, bytes, segs, title, at FROM rooms ORDER BY bytes DESC LIMIT 20').toArray();
+      return Response.json({ rooms: all.n, bytes: all.bytes, segs: all.segs, free: FREE_STORAGE, old30: old, empty, top, at: now });
+    }
+    return new Response('not found', { status: 404 });
+  }
+}
+const STATS_PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>저장 공간 · 같이 그리기</title>
+<style>body{margin:0;background:#f4f2ec;color:#1d1d1b;font:16px/1.5 system-ui,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}main{max-width:760px;margin:0 auto;padding:28px 16px}
+h1{font-size:24px;margin:0 0 12px}.card{background:#fdfdfa;border:2px solid #1d1d1b;border-radius:14px;padding:16px;margin:12px 0}input,button{font:inherit;padding:8px 12px;border:2px solid #1d1d1b;border-radius:10px;background:#fdfdfa}
+button{background:#1d1d1b;color:#fdfdfa;cursor:pointer}.bar{height:16px;border:2px solid #1d1d1b;border-radius:9px;overflow:hidden;background:#fdfdfa}.bar i{display:block;height:100%;background:#1d1d1b}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;padding:6px 4px;border-bottom:1px dashed #b8b2a4}td.n{text-align:right;font-variant-numeric:tabular-nums}.mute{color:#6a6457;font-size:14px}.err{color:#c8372d}</style></head>
+<body><main><h1>저장 공간</h1><p class="mute">방장 되찾기 코드(OWNER_CLAIM)를 넣으면 보여요. 방은 그림을 저장할 때 10분에 한 번까지 크기를 알려요 (그 뒤로 안 연 방은 마지막 크기).</p>
+<form id="f" class="card"><label>코드 <input id="k" type="password" autocomplete="current-password" required></label> <button>보기</button> <span id="e" class="err"></span></form><div id="out"></div></main>
+<script>
+const $ = (id) => document.getElementById(id), mb = (b) => (b / 1048576).toFixed(b < 10485760 ? 2 : 0) + 'MB', esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+$('f').onsubmit = async (ev) => { ev.preventDefault(); $('e').textContent = '';
+  const r = await fetch('/__stats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: $('k').value }) });
+  if (!r.ok) { $('e').textContent = r.status === 403 ? '코드가 맞지 않아요' : '못 불러왔어요 (' + r.status + ')'; return; }
+  const j = await r.json(), pct = Math.min(100, j.bytes / j.free * 100);
+  $('out').innerHTML = '<div class="card"><b>' + mb(j.bytes) + '</b> / 5GB (' + pct.toFixed(2) + '%) · 방 ' + j.rooms + '개 · 그림 ' + j.segs.toLocaleString() + '조각<div class="bar" style="margin-top:8px"><i style="width:' + pct + '%"></i></div>'
+    + '<p class="mute">30일 넘게 안 그린 방: ' + j.old30.n + '개 (' + mb(j.old30.bytes) + ') · 그림 없는 방: ' + j.empty.n + '개 (' + mb(j.empty.bytes) + ')</p></div>'
+    + '<div class="card"><b>큰 방 20개</b><table><tr><th>방</th><th>이름</th><th class="n">크기</th><th class="n">조각</th><th>마지막</th></tr>'
+    + j.top.map((x) => '<tr><td><a href="/?room=' + esc(x.id) + '">' + esc(x.id) + '</a></td><td>' + esc(x.title) + '</td><td class="n">' + mb(x.bytes) + '</td><td class="n">' + x.segs.toLocaleString() + '</td><td>' + new Date(x.at).toLocaleDateString('ko-KR') + '</td></tr>').join('') + '</table></div>';
+};
+</script></body></html>`;
+async function stats(req, env, url) {
+  if (url.pathname === '/stats') return new Response(STATS_PAGE, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+  if (req.method !== 'POST' || !env.STATS) return new Response('not found', { status: 404 });
+  let b = {}; try { b = await req.json(); } catch {}
+  const code = String(env.OWNER_CLAIM || '');
+  if (code.length < 8 || typeof b.key !== 'string' || b.key !== code) return new Response('no', { status: 403 });
+  const r = await statsObj(env).fetch('https://stats/summary');
+  return new Response(r.body, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }
 
 // 무료 하루 한도를 넘었다는 오류인지 (정확한 문구는 Cloudflare 가 정하므로 넓게 본다. 메모리·CPU 초과는 아니다)
@@ -324,6 +401,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname.startsWith('/auth/')) return auth(req, env, url);
+    if (url.pathname === '/stats' || url.pathname === '/__stats') return stats(req, env, url);
     if (url.pathname === '/ws') {                        // 실시간 접속 → 그 방의 객체로
       if (req.headers.get('Upgrade') !== 'websocket') return new Response('websocket only', { status: 426 });
       const raw = url.searchParams.get('room') || 'lobby', id = core.ROOM_RE.test(raw) ? raw : 'lobby';

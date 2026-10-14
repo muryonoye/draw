@@ -21,9 +21,17 @@ class_name = "Accounts"
 tag = "v1"
 new_sqlite_classes = ["Room"]
 
+[[durable_objects.bindings]]
+name = "STATS"                  # 저장 공간 사용량 (방마다 마지막 저장 크기): /stats
+class_name = "Stats"
+
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Accounts"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Stats"]
 
 [vars]
 MAX_HISTORY = "200000"          # 방 객체 메모리 한도 128MB 에 맞춤 (조각당 약 220바이트 → 약 45MB)
