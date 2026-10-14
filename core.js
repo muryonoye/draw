@@ -522,7 +522,7 @@ let dbState = 'none';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // clientCloses: 강퇴·밴 때 서버가 닫지 않고 화면이 'bye' 를 받아 닫게 한다 (Cloudflare 의 쉬는 소켓은 다른 접속의 메시지를 처리하는 중에 닫으면
 //   닫기 인사가 상대에게 가지 않고, 그 뒤 화면이 닫으려 해도 끝나지 않는다 — 로컬 workerd 에서 확인). afterBye(ws): bye 를 보낸 직후
-let P = { hasStore: false, storeFor: () => null, init: async () => {}, term: (ws) => ws.close(), attach: () => {}, track: () => {}, afterBye: () => {}, clientCloses: false };
+let P = { hasStore: false, storeFor: () => null, init: async () => {}, term: (ws) => ws.close(), attach: () => {}, track: () => {}, afterBye: () => {}, clientCloses: false, onPerf: () => {} };
 let dbReady = Promise.resolve();
 function setPlatform(p) {
   P = { ...P, ...p };
@@ -1735,6 +1735,14 @@ function handleMsg(ws, room, roomId, owner, msg) {
       if ((ws.errN = (ws.errN || 0) + 1) > CLIENT_ERR_MAX) return;
       const t = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, n);
       console.log(`화면 오류 [방 ${roomId}] ${t(msg.ua, 160)} | ${t(msg.where, 80)} | ${t(msg.text, 400)}`);
+    } else if (msg.type === 'perf') {                      // 화면이 버벅였다는 알림 (그리는 동안 프레임 시간): 기기·그림 양과 같이 남긴다 (접속마다 3번까지)
+      if ((ws.perfN = (ws.perfN || 0) + 1) > 3) return;
+      const num = (v, lo, hi) => (Number.isFinite(+v) ? Math.min(hi, Math.max(lo, Math.round(+v * 10) / 10)) : null);
+      const t = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, n);
+      const r = { avg: num(msg.avg, 0, 10000), p90: num(msg.p90, 0, 10000), max: num(msg.max, 0, 100000), n: num(msg.n, 0, 1e6), segs: num(msg.segs, 0, 1e7), scale: num(msg.scale, 0, 1000),
+        dpr: num(msg.dpr, 0, 10), w: num(msg.w, 0, 10000), h: num(msg.h, 0, 10000), cores: num(msg.cores, 0, 512), mem: num(msg.mem, 0, 1024), tool: t(msg.tool, 12), ua: t(msg.ua, 160) };
+      console.log(`버벅임 [방 ${roomId}] 90% ${r.p90}ms 평균 ${r.avg}ms 최대 ${r.max}ms (${r.n}장) · 그림 ${r.segs}조각 · 배율 ${r.scale} · ${r.w}x${r.h}@${r.dpr} · 코어 ${r.cores} 메모리 ${r.mem}GB · ${r.tool} · ${r.ua}`);
+      try { P.onPerf(roomId, r); } catch {}
     } else if (msg.type === 'ping') {
       send(ws, { type: 'pong' });                         // 화면이 다시 보일 때 연결이 살아 있는지 확인 (그림 전체를 다시 받지 않는다)
     } else if (msg.type === 'cur') {

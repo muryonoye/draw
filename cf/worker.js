@@ -82,11 +82,15 @@ core.setPlatform({
   afterBye: (ws) => core.closed(ws),
   // 접속 정보를 소켓에 적어 둔다 (방 객체가 메모리에서 내려갔다 깨어나도 누가 어떤 접속인지 알 수 있게, 최대 2KB)
   attach: (ws) => { try { ws.serializeAttachment({ o: ws.owner, ipt: ws.ipt || '', z: ws.zOk || 0, ap: ws.approved ? 1 : 0, e: ws.echoOk ? 1 : 0 }); } catch {} },
+  // 화면이 버벅였다는 알림: Stats 객체에 모아 /stats 에서 본다
+  onPerf: (roomId, r) => { if (ENV && ENV.STATS) statsObj(ENV).fetch('https://stats/perf', { method: 'POST', body: JSON.stringify({ room: roomId, ...r, at: Date.now() }) }).catch(() => {}); },
 });
+let ENV = null;                                                  // (방 객체가 만들어질 때 적어 둔다: 위 onPerf 가 Stats 객체를 찾으려고)
 
 export class Room extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
+    ENV = env;
     this.store = sqlStore(ctx.storage, env.DATABASE_URL ? (id) => readOld(env.DATABASE_URL, id) : null);
     this.id = this.store.get('roomId');               // 이 객체가 맡은 방 (처음 접속 때 적어 둔다)
     this.saveT = null;
@@ -141,6 +145,7 @@ export class Room extends DurableObject {
 
   async webSocketMessage(ws, msg) {
     if (msg === '{"type":"__evict"}' && this.env.LOCAL_DEV === '1') return this.testEvict();
+    if (msg === '{"type":"__crash"}' && this.env.LOCAL_DEV === '1') return this.testCrash();
     const bin = typeof msg !== 'string';
     core.message(ws, bin ? Buffer.from(msg) : Buffer.from(msg, 'utf8'), bin);
     this.later();
@@ -153,6 +158,14 @@ export class Room extends DurableObject {
   async webSocketError(ws) { core.closed(ws); this.later(); }
 
   // 시험 전용: 방 객체가 메모리에서 내려갔다가 다시 깨어난 것처럼 (저장 → 메모리 버림 → 생성자와 같은 방법으로 되살림)
+  // 시험 전용: 저장하지 않고 메모리를 버림 (배포로 방 객체가 다시 시작될 때처럼 — 마지막 저장 뒤의 변화가 사라진다)
+  testCrash() {
+    const room = core.rooms.get(this.id);
+    if (room) for (const t of room.leaveTimers.values()) clearTimeout(t);
+    if (this.saveT) { clearTimeout(this.saveT); this.saveT = null; }
+    core.dropRoom(this.id);
+    console.log(`방 ${this.id}: (시험) 저장 없이 다시 시작`);
+  }
   async testEvict() {
     const room = core.rooms.get(this.id);
     if (room) { for (const t of room.leaveTimers.values()) clearTimeout(t); await core.maintainRoom(this.id, room, true); }
@@ -202,6 +215,7 @@ export class Stats extends DurableObject {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.sql.exec('CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, bytes INTEGER NOT NULL, segs INTEGER NOT NULL, title TEXT NOT NULL, at INTEGER NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS perf (at INTEGER NOT NULL, data TEXT NOT NULL)');
   }
   async fetch(req) {
     const path = new URL(req.url).pathname, s = this.sql;
@@ -212,6 +226,11 @@ export class Stats extends DurableObject {
         b.id, Math.max(0, +b.bytes || 0), Math.max(0, +b.segs || 0), String(b.title || '').slice(0, 30), +b.at || Date.now());
       return new Response('ok');
     }
+    if (path === '/perf') {                                    // 버벅임 알림 (최근 300개만)
+      s.exec('INSERT INTO perf (at, data) VALUES (?, ?)', Date.now(), JSON.stringify(b).slice(0, 1000));
+      s.exec('DELETE FROM perf WHERE at NOT IN (SELECT at FROM perf ORDER BY at DESC LIMIT 300)');
+      return new Response('ok');
+    }
     if (path === '/summary') {
       const now = Date.now(), day = 86400000;
       const one = (q, ...a) => s.exec(q, ...a).toArray()[0] || {};
@@ -219,7 +238,8 @@ export class Stats extends DurableObject {
       const old = one('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS bytes FROM rooms WHERE at < ?', now - 30 * day);
       const empty = one('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS bytes FROM rooms WHERE segs = 0');
       const top = s.exec('SELECT id, bytes, segs, title, at FROM rooms ORDER BY bytes DESC LIMIT 20').toArray();
-      return Response.json({ rooms: all.n, bytes: all.bytes, segs: all.segs, free: FREE_STORAGE, old30: old, empty, top, at: now });
+      const perf = s.exec('SELECT data FROM perf ORDER BY at DESC LIMIT 40').toArray().map((r) => { try { return JSON.parse(r.data); } catch { return null; } }).filter(Boolean);
+      return Response.json({ rooms: all.n, bytes: all.bytes, segs: all.segs, free: FREE_STORAGE, old30: old, empty, top, perf, at: now });
     }
     return new Response('not found', { status: 404 });
   }
@@ -240,7 +260,9 @@ $('f').onsubmit = async (ev) => { ev.preventDefault(); $('e').textContent = '';
   $('out').innerHTML = '<div class="card"><b>' + mb(j.bytes) + '</b> / 5GB (' + pct.toFixed(2) + '%) · 방 ' + j.rooms + '개 · 그림 ' + j.segs.toLocaleString() + '조각<div class="bar" style="margin-top:8px"><i style="width:' + pct + '%"></i></div>'
     + '<p class="mute">30일 넘게 안 그린 방: ' + j.old30.n + '개 (' + mb(j.old30.bytes) + ') · 그림 없는 방: ' + j.empty.n + '개 (' + mb(j.empty.bytes) + ')</p></div>'
     + '<div class="card"><b>큰 방 20개</b><table><tr><th>방</th><th>이름</th><th class="n">크기</th><th class="n">조각</th><th>마지막</th></tr>'
-    + j.top.map((x) => '<tr><td><a href="/?room=' + esc(x.id) + '">' + esc(x.id) + '</a></td><td>' + esc(x.title) + '</td><td class="n">' + mb(x.bytes) + '</td><td class="n">' + x.segs.toLocaleString() + '</td><td>' + new Date(x.at).toLocaleDateString('ko-KR') + '</td></tr>').join('') + '</table></div>';
+    + j.top.map((x) => '<tr><td><a href="/?room=' + esc(x.id) + '">' + esc(x.id) + '</a></td><td>' + esc(x.title) + '</td><td class="n">' + mb(x.bytes) + '</td><td class="n">' + x.segs.toLocaleString() + '</td><td>' + new Date(x.at).toLocaleDateString('ko-KR') + '</td></tr>').join('') + '</table></div>'
+    + '<div class="card"><b>버벅임 알림 (최근 40개)</b><p class="mute">그리는 동안 화면이 초당 30장 아래로 느려졌던 기기. 90% = 프레임 10장 중 9장이 이 시간 안.</p><table><tr><th>때</th><th>방</th><th class="n">90%</th><th class="n">조각</th><th>화면</th><th>기기</th></tr>'
+    + (j.perf || []).map((x) => '<tr><td>' + new Date(x.at).toLocaleString('ko-KR') + '</td><td>' + esc(x.room) + '</td><td class="n">' + x.p90 + 'ms</td><td class="n">' + (x.segs || 0).toLocaleString() + '</td><td>' + x.w + 'x' + x.h + '@' + x.dpr + ' · ' + esc(x.tool) + '</td><td class="mute">' + esc(x.ua) + '</td></tr>').join('') + '</table></div>';
 };
 </script></body></html>`;
 async function stats(req, env, url) {

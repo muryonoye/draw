@@ -703,6 +703,7 @@
   <div class="sheetgrab"></div><h3>설정</h3>
   <div class="field"><label for="nick">닉네임 (최대 12자)</label><input type="text" id="nick" class="inp" autocomplete="off" placeholder="닉네임"></div>
   <div class="field" id="acctBox" hidden><label>계정</label><div id="acctBody"></div></div>
+  <div class="switch"><div>도구 설명<small>도구를 고를 때 위에 잠깐 뜨는 설명 (끄면 안 떠요)</small></div><input type="checkbox" id="setToolTips" aria-label="도구 설명"></div>
   <div class="switch"><div>그리드<small>배경 격자 표시</small></div><input type="checkbox" id="setGrid" aria-label="그리드"></div>
   <div class="switch"><div>펜으로만 그리기<small>손가락은 이동·줌 전용</small></div><input type="checkbox" id="setPenOnly" aria-label="펜으로만 그리기"></div>
   <div class="switch"><div>다른 사람 커서 표시</div><input type="checkbox" id="setCursors" aria-label="다른 사람 커서 표시"></div>
@@ -811,7 +812,7 @@ const isWide = () => (WIDE_MQ ? WIDE_MQ.matches : innerWidth >= 1000);   // 넓�
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false, handMode: 'pan', lastRuler: 'line', textPx: 28, recentColors: [] };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false, handMode: 'pan', lastRuler: 'line', toolTips: true, textPx: 28, recentColors: [] };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -1883,7 +1884,29 @@ function syncEraserUI() {
   $('optPart').classList.toggle('on', !stroke); $('optStroke').classList.toggle('on', stroke);
   $('eraserHint').textContent = eraserHint();
 }
-function selectEraser() { setTool('eraser'); toast(eraserHint()); }
+// 버벅임 알리기 (실제 폰에서만 생기는 렉을 알아내려고): 누르고 있는 동안 프레임 간격을 모아, 5초쯤(300장) 모이면 판단 →
+// 10장 중 9장이 34ms(30fps) 안에 못 들면 서버에 한 번 알린다 (한 번 열 때 2번까지). 기기·그림 양·배율도 같이
+const perf = { on: false, fr: [], last: 0, sent: 0 };
+function perfTick(t) { if (!perf.on) return; if (perf.last) perf.fr.push(t - perf.last); perf.last = t; requestAnimationFrame(perfTick); }
+function perfStart() { if (perf.on || perf.sent >= 2) return; perf.on = true; perf.last = 0; requestAnimationFrame(perfTick); }
+function perfStop() {
+  if (!perf.on) return;
+  perf.on = false;
+  if (perf.fr.length < 300) return;
+  const a = perf.fr.slice().sort((x, y) => x - y), p90 = a[Math.floor(a.length * 0.9)];
+  if (p90 > 34 && ws && ws.readyState === 1) {
+    perf.sent++;
+    send({ type: 'perf', avg: a.reduce((s, v) => s + v, 0) / a.length, p90, max: a[a.length - 1], n: a.length, segs: segs.length, scale, dpr: devicePixelRatio, w: cssW, h: cssH,
+      cores: navigator.hardwareConcurrency || 0, mem: navigator.deviceMemory || 0, tool, ua: navigator.userAgent });
+  }
+  perf.fr = [];
+}
+board.addEventListener('pointerdown', perfStart, { passive: true });
+window.addEventListener('pointerup', perfStop, { passive: true });
+window.addEventListener('pointercancel', perfStop, { passive: true });
+// 도구를 고를 때의 설명 알림: 설정 '도구 설명'을 끄면 안 띄운다 (가린다는 의견)
+function tipToast(msg) { if (S.toolTips) toast(msg); }
+function selectEraser() { setTool('eraser'); tipToast(eraserHint()); }
 for (const b of [$('optPart'), $('optStroke')]) b.onclick = () => { S.eraserMode = b.dataset.mode; saveSettings(); syncEraserUI(); selectEraser(); closePop(); };
 
 /* ===== 도구 / 보기 / 방 / 설정 버튼 ===== */
@@ -1923,9 +1946,9 @@ $('tHand').onclick = () => {
   if (isWide()) { S.handMode = 'pan'; saveSettings(); setTool('hand'); return; }
   if (tool === 'hand' || tool === 'select') openPop('popHand', $('tHandMode')); else setTool(S.handMode === 'lasso' ? 'select' : 'hand');
 };
-$('wLasso').onclick = () => { if (tool !== 'select') { S.handMode = 'lasso'; saveSettings(); setTool('select'); toast('올가미: 내 그림을 둘러싸서 고르세요'); } };
+$('wLasso').onclick = () => { if (tool !== 'select') { S.handMode = 'lasso'; saveSettings(); setTool('select'); tipToast('올가미: 내 그림을 둘러싸서 고르세요'); } };
 $('tHandMode').onclick = () => { syncHandUI(); openPop('popHand', $('tHandMode')); };
-for (const b of document.querySelectorAll('#popHand .opt')) b.onclick = () => { S.handMode = b.dataset.hm; saveSettings(); setTool(S.handMode === 'lasso' ? 'select' : 'hand'); closePop(); if (S.handMode === 'lasso') toast('올가미: 내 그림을 둘러싸서 고르세요'); };
+for (const b of document.querySelectorAll('#popHand .opt')) b.onclick = () => { S.handMode = b.dataset.hm; saveSettings(); setTool(S.handMode === 'lasso' ? 'select' : 'hand'); closePop(); if (S.handMode === 'lasso') tipToast('올가미: 내 그림을 둘러싸서 고르세요'); };
 function syncHandUI() {
   const lasso = S.handMode === 'lasso' && !isWide();            // (넓은 화면: 이 버튼은 늘 화면 이동, 올가미는 옆 버튼)
   $('handUse').setAttribute('href', lasso ? '#i-lasso' : '#i-hand'); $('handSub').textContent = lasso ? '선택' : '';
@@ -2365,7 +2388,7 @@ nickEl.addEventListener('change', () => {
   if (!v) { nickEl.value = (me && names[me]) || myNick; return; }
   myNick = v; lsSet('draw:nick', v); send({ type: 'nick', name: v });
 });
-const toggles = { setGrid: 'grid', setPenOnly: 'penOnly', setCursors: 'showCursors', setPenHover: 'penHover', setTapUndo: 'tapUndo', setPinchRot: 'pinchRotate', setPressure: 'pressure' };
+const toggles = { setToolTips: 'toolTips', setGrid: 'grid', setPenOnly: 'penOnly', setCursors: 'showCursors', setPenHover: 'penHover', setTapUndo: 'tapUndo', setPinchRot: 'pinchRotate', setPressure: 'pressure' };
 for (const [id, key] of Object.entries(toggles)) {
   $(id).onchange = () => {
     S[key] = $(id).checked; saveSettings();
@@ -2524,8 +2547,8 @@ function finishDrop(p, touch) {
   setColor(c); setTool(back);
   toast('색을 가져왔어요 ' + c, 'ok');
 }
-function selectFill() { setTool('fill'); toast('채우기: 닫힌 칸이나 칠한 곳을 눌러 주세요 (끌면 화면 이동)'); }
-function selectDrop() { setTool('drop'); toast('스포이드: 누른 채 움직여 색을 보고, 떼면 가져와요'); }
+function selectFill() { setTool('fill'); tipToast('채우기: 닫힌 칸이나 칠한 곳을 눌러 주세요 (끌면 화면 이동)'); }
+function selectDrop() { setTool('drop'); tipToast('스포이드: 누른 채 움직여 색을 보고, 떼면 가져와요'); }
 
 /* --- 두 손가락 탭 = 이전, 세 손가락 탭 = 되돌리기 (이비스페인트처럼) --- */
 // 손가락이 거의 동시에 닿았다가, 많이 움직이지 않고, 짧은 시간 안에 모두 떼어지면 탭이다.
@@ -2691,21 +2714,21 @@ function syncRulerUI() {
   $('rulerOnOff').textContent = ruler.on ? '자 끄기' : '자 켜기';
 }
 $('tRuler').onclick = () => {
-  if (isWide() && isShape()) { S.rulerKind = lastRulerKind(); saveSettings(); if (!ruler.on) setRuler(true); else { syncRulerUI(); paintRuler(); } toast(RULER_INFO[S.rulerKind][0] + ' 켜짐: 펜 선이 자를 따라가요'); return; }   // (넓은 화면: 도형을 쓰다가 자 버튼 = 자로)
-  setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐: ' + (isShape() ? RULER_INFO[S.rulerKind][3] : '펜 선이 자를 따라가요') : (isShape() ? '도형 꺼짐' : '자 꺼짐')); };
+  if (isWide() && isShape()) { S.rulerKind = lastRulerKind(); saveSettings(); if (!ruler.on) setRuler(true); else { syncRulerUI(); paintRuler(); } tipToast(RULER_INFO[S.rulerKind][0] + ' 켜짐: 펜 선이 자를 따라가요'); return; }   // (넓은 화면: 도형을 쓰다가 자 버튼 = 자로)
+  setRuler(!ruler.on); tipToast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐: ' + (isShape() ? RULER_INFO[S.rulerKind][3] : '펜 선이 자를 따라가요') : (isShape() ? '도형 꺼짐' : '자 꺼짐')); };
 $('tRulerMode').onclick = () => { syncRulerUI(); openPop('popRuler', $('tRulerMode')); };
 for (const b of document.querySelectorAll('.wshape')) b.onclick = () => {   // 넓은 화면의 도형 버튼: 누르면 켜고(펜으로), 켜진 걸 다시 누르면 끔
   const k = b.dataset.rk;
-  if (ruler.on && S.rulerKind === k) { setRuler(false); toast('도형 꺼짐'); return; }
+  if (ruler.on && S.rulerKind === k) { setRuler(false); tipToast('도형 꺼짐'); return; }
   S.rulerKind = k; saveSettings();
   if (tool !== 'pen') setTool('pen');
   if (!ruler.on) setRuler(true); else { syncRulerUI(); paintRuler(); }
-  toast(RULER_INFO[k][0] + ': ' + RULER_INFO[k][3]);
+  tipToast(RULER_INFO[k][0] + ': ' + RULER_INFO[k][3]);
 };
 for (const b of document.querySelectorAll('#popRuler .opt')) b.onclick = () => {
   S.rulerKind = b.dataset.rk; if (!SHAPE_KINDS.has(b.dataset.rk)) S.lastRuler = b.dataset.rk; saveSettings();
   if (!ruler.on) setRuler(true); else { syncRulerUI(); paintRuler(); }
-  closePop(); toast(RULER_INFO[S.rulerKind][0] + ': ' + RULER_INFO[S.rulerKind][3]);
+  closePop(); tipToast(RULER_INFO[S.rulerKind][0] + ': ' + RULER_INFO[S.rulerKind][3]);
 };
 $('rulerHere').onclick = () => { placeRuler(); ruler.on = true; saveRuler(); syncRulerUI(); paintRuler(); closePop(); };
 $('rulerOnOff').onclick = () => { setRuler(!ruler.on); closePop(); };
@@ -3384,7 +3407,7 @@ window.addEventListener('keydown', (e) => {
     if (!spaceDown) { spaceDown = true; ring.hidden = true; syncCursor(); }
     return;
   }
-  if (k === 'u' && !e.repeat) { setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐 (U: 끄기)' : (isShape() ? '도형 꺼짐' : '자 꺼짐')); return; }   // U: 자 켜기·끄기
+  if (k === 'u' && !e.repeat) { setRuler(!ruler.on); tipToast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐 (U: 끄기)' : (isShape() ? '도형 꺼짐' : '자 꺼짐')); return; }   // U: 자 켜기·끄기
   const t = TOOL_KEYS[k];
   if (!t || e.repeat || ptr.size) return;
   heldTool = { code: e.code, t, prev: tool, used: false };
@@ -3744,6 +3767,9 @@ function syncUndoUi() {
 const RESEND_MS = 120000, RESEND_MAX = 3000;
 let myActs = [], lostActs = null;
 function noteAct(a) { a.t0 = now(); myActs.push(a); if (myActs.length > 80) myActs.shift(); }
+// 서버는 몇 초마다 모아서 저장하므로(Cloudflare 4초, Node 5초), 서버가 다시 시작되면(배포 등) 끊기기 직전 그만큼이 사라질 수 있다 → 넉넉히 12초 전부터 살핀다
+const LOST_BACK_MS = 12000;
+const segKey = (s) => s.x0 + '|' + s.y0 + '|' + s.x1 + '|' + s.y1 + '|' + s.color + '|' + s.size;
 function lostSince(t) {                                       // 연결이 끊길 때: 서버가 못 받았을 수 있는 내 획들 (내 화면에 남은 조각만)
   const live = new Set(segs), out = [];
   for (const a of myActs) {
@@ -3753,17 +3779,22 @@ function lostSince(t) {                                       // 연결이 끊�
   }
   return out;
 }
-function resendLost(list) {                                   // 다시 받은 그림에 없는 획만 다시 보낸다
+function resendLost(list) {                                   // 다시 받은 그림에 없는 내 조각만 다시 보낸다 (획이 통째로 없으면 통째로, 일부만 있으면 빠진 조각만)
   if (!me || myRestr.spectator || myRestr.wait) return;
-  const have = new Set(); for (const s of segs) have.add(s.sid);
+  const srv = new Map();                                       // 획 이름 → 서버 그림에 있는 그 획의 조각들
+  for (const s of segs) { let k = srv.get(s.sid); if (!k) srv.set(s.sid, k = new Set()); k.add(segKey(s)); }
   let n = 0, total = 0;
   for (const { a, segs: ss } of list) {
-    if (have.has(a.sid) || (a.sid2 && have.has(a.sid2))) continue;   // (서버가 일부라도 받은 획)
-    if (total + ss.length > RESEND_MAX || segs.length + ss.length > roomMax) break;
-    const add = ss.map((s) => ({ ...plain(s), o: me }));
+    const got = srv.has(a.sid) || (a.sid2 && srv.has(a.sid2));
+    if (a.fill && got) continue;                               // (칠하기는 한꺼번에 저장된다: 있으면 다 있음)
+    const miss = got ? ss.filter((s) => !(srv.get(s.sid) || new Set()).has(segKey(s))) : ss;
+    if (!miss.length) continue;
+    if (total + miss.length > RESEND_MAX || segs.length + miss.length > roomMax) break;
+    const add = miss.map((s) => ({ ...plain(s), o: me }));
     addSegs(add);
+    const all = got ? segs.filter((s) => s.o === me && (s.sid === a.sid || (a.sid2 && s.sid === a.sid2))) : add;   // (이전 = 그 획 전체)
     if (a.fill) { send(a.fill); pushAct({ t: 'draw', sid: a.sid, segs: add, fill: a.fill }); }
-    else { sendSegs('addsegs', add); pushAct({ t: 'draw', sid: a.sid, sid2: a.sid2 || null, segs: add }); }
+    else { sendSegs('addsegs', add); pushAct({ t: 'draw', sid: a.sid, sid2: a.sid2 || null, segs: all }); }
     n++; total += add.length;
   }
   if (!n) return;
@@ -3966,7 +3997,7 @@ function connect() {
   sock.onmessage = (e) => { if (sock === ws) { lastMsgAt = now(); onRx(sock, e.data); } };
 }
 function onDisconnected(code) {
-  if (histOk && !(code >= 4000 && code < 5000) && !lostActs) lostActs = lostSince(lastMsgAt - 2000);   // (그림을 받은 접속이 끊긴 첫 번만)
+  if (histOk && !(code >= 4000 && code < 5000) && !lostActs) lostActs = lostSince(lastMsgAt - LOST_BACK_MS);   // (그림을 받은 접속이 끊긴 첫 번만)
   connected = false; me = null; histOk = false; count = 0; online = new Set();
   if (aliveT) { clearTimeout(aliveT); aliveT = 0; }
   ownerId = null; admin = null; mods = new Set(); myRestr = { muted: null, spectator: false, wait: false };
