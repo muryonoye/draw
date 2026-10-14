@@ -470,6 +470,12 @@
   body.wide .wideonly { display: grid !important; }
   body.wide #tEraserMode, body.wide #tHandMode { display: none; }
   .wshape.on { background: var(--text); color: var(--panel); box-shadow: none; }
+  #modal .field label { font: 700 18px/1.3 var(--ui); color: var(--muted); }
+  @media (min-width: 721px) {                                  /* 컴퓨터·태블릿: 도구 아래 이름(부분·획·선택·네모…)을 읽히게 — 버튼을 조금 높이고 또렷한 글꼴로 */
+    .tool { height: 54px; }
+    .tool:has(.sub:not(:empty)) svg.ic { margin-top: -12px; }
+    .tool .sub { bottom: 4px; font: 12px/1 var(--read); opacity: .85; }
+  }
   #modal p, #endScreen p { font: 15px/1.55 var(--read); }
 </style>
 </head>
