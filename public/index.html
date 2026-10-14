@@ -420,7 +420,16 @@
   .seg2 .opt.on, .seg3 .opt.on { background: var(--text); color: var(--panel); border-color: var(--text); }
   .seg2 .opt.on small, .seg3 .opt.on small { color: #d9d4c6; }
   .swatches button { box-shadow: 0 0 0 1.5px var(--line); }
-  .swatches button.on { border-color: var(--panel); box-shadow: 0 0 0 3px var(--line); }
+  .swatches button { position: relative; }
+  .swatches button.on { border-color: var(--panel); box-shadow: 0 0 0 1.5px var(--line); }
+  /* 고른 색: 동그라미는 그대로, 바깥 테두리만 손으로 그린 선처럼 자글자글 (모양·각도·선이 세 장으로 번갈아) */
+  .swatches button.on::after { content: ""; position: absolute; inset: -6px; border: 2.5px solid var(--line); border-radius: 52% 48% 55% 45% / 47% 55% 45% 53%;
+    pointer-events: none; animation: jag .45s steps(1) infinite; }
+  @keyframes jag {
+    0% { border-radius: 52% 48% 55% 45% / 47% 55% 45% 53%; transform: rotate(0deg); filter: url(#boil1); }
+    33% { border-radius: 45% 55% 47% 53% / 55% 45% 53% 47%; transform: rotate(50deg); filter: url(#boil2); }
+    66% { border-radius: 55% 45% 50% 50% / 48% 52% 57% 43%; transform: rotate(-40deg); filter: url(#boil3); } }
+  .pop .swatches { padding: 4px 2px; }
   .prev { border: 2px solid var(--line); }
   .cmsg { background: var(--panel-2); border-radius: var(--hand); }
   .cmsg.mine { background: #e3decf; }
@@ -451,6 +460,11 @@
   .cur .dot { border-color: #fdfdfa; box-shadow: 0 0 0 1.5px #1d1d1b; }
   .cur .lbl { font: 700 14px/1.3 var(--ui); border: 2px solid #1d1d1b; border-radius: var(--hand); padding: 0 8px; }
   #rpTxt { color: var(--muted); font-size: 13px; }
+  /* 58차: 넓은 화면은 드롭다운 없이 (부분/획 지우개, 이동/올가미, 도형 4개를 바로) */
+  .wideonly { display: none !important; }
+  body.wide .wideonly { display: grid !important; }
+  body.wide #tEraserMode, body.wide #tHandMode { display: none; }
+  .wshape.on { background: var(--text); color: var(--panel); box-shadow: none; }
   #modal p, #endScreen p { font: 15px/1.55 var(--read); }
 </style>
 </head>
@@ -552,16 +566,22 @@
       <button id="tEraser" class="tool" aria-label="지우개 (E)" title="지우개 (E)" aria-pressed="false"><svg class="ic"><use id="eraserUse" href="#i-eraser"/></svg><span class="sub" id="eraserSub">부분</span></button>
       <button id="tEraserMode" class="caret" aria-label="지우개 모드 선택" title="지우개 모드 선택" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-chevron"/></svg></button>
     </div>
+    <button id="wEraserStroke" class="tool wideonly" aria-label="획 지우개 (닿은 선 한 획 전체)" title="획 지우개 (닿은 선 한 획 전체)" aria-pressed="false" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-eraser-stroke"/></svg><span class="sub">획</span></button>
     <button id="tFill" class="tool" aria-label="채우기 (F)" title="채우기 (F)" aria-pressed="false"><svg class="ic"><use href="#i-bucket"/></svg></button>
     <button id="tDrop" class="tool" aria-label="스포이드 (I)" title="스포이드 (I)" aria-pressed="false"><svg class="ic"><use href="#i-dropper"/></svg></button>
     <div class="toolwrap">
       <button id="tHand" class="tool" aria-label="화면 이동 (H)" title="화면 이동 (H)" aria-pressed="false"><svg class="ic"><use id="handUse" href="#i-hand"/></svg><span class="sub" id="handSub"></span></button>
       <button id="tHandMode" class="caret" aria-label="화면 이동·올가미 선택" title="화면 이동·올가미 선택" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-chevron"/></svg></button>
     </div>
+    <button id="wLasso" class="tool wideonly" aria-label="올가미 (M): 내 그림 골라 옮기기" title="올가미 (M): 내 그림 골라 옮기기" aria-pressed="false"><svg class="ic"><use href="#i-lasso"/></svg><span class="sub">선택</span></button>
     <div class="toolwrap">
       <button id="tRuler" class="tool" aria-label="자 켜기·끄기" title="자 (켜면 펜 선이 자를 따라가요)" aria-pressed="false"><svg class="ic"><use id="rulerUse" href="#i-ruler"/></svg><span class="sub" id="rulerSub">자</span></button>
       <button id="tRulerMode" class="caret" aria-label="자 종류 선택" title="자 종류 선택" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-chevron"/></svg></button>
     </div>
+    <button class="tool wideonly wshape" data-rk="sline" aria-label="선 도형" title="선: 끌면 곧은 선 (Shift: 15°씩)" aria-pressed="false"><svg class="ic"><use href="#i-shape-line"/></svg><span class="sub">선</span></button>
+    <button class="tool wideonly wshape" data-rk="rect" aria-label="네모" title="네모: 끈 만큼 (Shift: 정사각형)" aria-pressed="false"><svg class="ic"><use href="#i-shape-rect"/></svg><span class="sub">네모</span></button>
+    <button class="tool wideonly wshape" data-rk="oval" aria-label="동그라미" title="동그라미: 끈 만큼 (Shift: 정원)" aria-pressed="false"><svg class="ic"><use href="#i-shape-oval"/></svg><span class="sub">동글</span></button>
+    <button class="tool wideonly wshape" data-rk="text" aria-label="글자" title="글자: 누른 곳에 글자 넣기" aria-pressed="false"><svg class="ic"><use href="#i-shape-text"/></svg><span class="sub">글자</span></button>
     <div class="toolsep"></div>
     <button id="tUndo" class="tool" aria-label="이전 (실행 취소, Ctrl+Z)" title="이전 (실행 취소, Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo"/></svg></button>
     <button id="tRedo" class="tool" aria-label="되돌리기 (다시 실행, Ctrl+Shift+Z)" title="되돌리기 (다시 실행, Ctrl+Shift+Z)" disabled><svg class="ic"><use href="#i-redo"/></svg></button>
@@ -775,10 +795,12 @@ const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return nu
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 const isEditable = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').matches : innerWidth <= 720);
+const WIDE_MQ = window.matchMedia ? matchMedia('(min-width: 1000px)') : null;
+const isWide = () => (WIDE_MQ ? WIDE_MQ.matches : innerWidth >= 1000);   // 넓은 화면: 도구를 드롭다운 없이 다 꺼내 놓는다
 function newSid() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(8))) s += SID_CHARS[b % 36]; return s; }
 
 /* ===== 설정(저장) ===== */
-const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false, handMode: 'pan', textPx: 28, recentColors: [] };
+const DEFAULTS = { grid: true, penOnly: false, showCursors: true, penHover: true, tapUndo: true, pinchRotate: true, pressure: true, smooth: 0, wheel: 'auto', rulerKind: 'line', penSize: 4, eraserD: 60, eraserMode: 'part', color: '#000000', alpha: 1, eraseAll: false, handMode: 'pan', lastRuler: 'line', textPx: 28, recentColors: [] };
 function loadSettings() {
   const out = { ...DEFAULTS };
   try {
@@ -1800,7 +1822,7 @@ const swBox = $('swatches');
 for (const c of PALETTE) {
   const b = document.createElement('button');
   b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', '색 ' + c); b.title = c;
-  b.onclick = () => { setColor(c); closePop(); };
+  b.onclick = () => setColor(c);                               // (창은 그대로: 여러 색을 눌러 볼 수 있게. 그림판을 누르면 닫힌다)
   swBox.appendChild(b);
 }
 // 최근 쓴 색: 기본 색판에 없는 색으로 실제로 그렸을 때만 (색 고르기 창을 끄는 동안 지나간 색은 넣지 않는다)
@@ -1815,7 +1837,7 @@ function renderRecentColors() {
   for (const c of S.recentColors) {
     const b = document.createElement('button');
     b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', '최근 쓴 색 ' + c); b.title = c; b.classList.toggle('on', c === S.color);
-    b.onclick = () => { setColor(c); closePop(); };
+    b.onclick = () => setColor(c);
     box.appendChild(b);
   }
 }
@@ -1842,10 +1864,11 @@ function eraserHint() {
   return base + (isOwner() && S.eraseAll ? ' (모든 사람의 선)' : ' (내가 그린 선만)');
 }
 function syncEraserUI() {
-  const stroke = S.eraserMode === 'stroke';
-  $('eraserUse').setAttribute('href', stroke ? '#i-eraser-stroke' : '#i-eraser');
-  $('eraserSub').textContent = stroke ? '획' : '부분';
-  $('tEraser').title = $('tEraser').ariaLabel = '지우개: ' + (stroke ? '획 지우개' : '부분 지우개') + ' (E)';
+  const stroke = S.eraserMode === 'stroke', wide = isWide();
+  $('eraserUse').setAttribute('href', stroke && !wide ? '#i-eraser-stroke' : '#i-eraser');   // (넓은 화면: 이 버튼은 늘 부분 지우개, 획 지우개는 옆 버튼)
+  $('eraserSub').textContent = stroke && !wide ? '획' : '부분';
+  $('tEraser').title = $('tEraser').ariaLabel = wide ? '부분 지우개 (E)' : '지우개: ' + (stroke ? '획 지우개' : '부분 지우개') + ' (E)';
+  syncToolActive();
   $('optPart').classList.toggle('on', !stroke); $('optStroke').classList.toggle('on', stroke);
   $('eraserHint').textContent = eraserHint();
 }
@@ -1853,13 +1876,21 @@ function selectEraser() { setTool('eraser'); toast(eraserHint()); }
 for (const b of [$('optPart'), $('optStroke')]) b.onclick = () => { S.eraserMode = b.dataset.mode; saveSettings(); syncEraserUI(); selectEraser(); closePop(); };
 
 /* ===== 도구 / 보기 / 방 / 설정 버튼 ===== */
+// 도구 버튼의 '고름' 표시 (넓은 화면은 지우개·손 버튼이 둘씩)
+function syncToolActive() {
+  const t = tool, wide = isWide(), stroke = S.eraserMode === 'stroke';
+  const list = [[$('tPen'), t === 'pen'], [$('tFill'), t === 'fill'], [$('tDrop'), t === 'drop'],
+    [$('tEraser'), t === 'eraser' && (!wide || !stroke)], [$('wEraserStroke'), wide && t === 'eraser' && stroke],
+    [$('tHand'), wide ? t === 'hand' : (t === 'hand' || t === 'select')], [$('wLasso'), wide && t === 'select']];
+  for (const [b, on] of list) { b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
+}
 function setTool(t) {
   if (strokeSt) abortStroke();
   if (t === 'drop' && tool !== 'drop') dropFrom = tool;
   if (t === 'rotate' && tool !== 'rotate') rotFrom = tool;
   tool = t;
   if (t !== 'select') clearSel();
-  for (const [b, n] of [[$('tPen'), 'pen'], [$('tEraser'), 'eraser'], [$('tFill'), 'fill'], [$('tDrop'), 'drop'], [$('tHand'), 'hand']]) { const on = n === t || (n === 'hand' && t === 'select'); b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
+  syncToolActive();
   syncHandUI();
   syncCursor();
   ring.hidden = true; hideTip(); hideDropPrev(); syncSizeUI();
@@ -1871,13 +1902,21 @@ function syncCursor() { board.style.cursor = rotWanted(shiftDown) ? ROT_CURSOR :
 $('tPen').onclick = () => setTool('pen');
 $('tFill').onclick = () => selectFill();
 $('tDrop').onclick = () => selectDrop();
-$('tEraser').onclick = () => { if (tool === 'eraser') openPop('popEraser', $('tEraserMode')); else selectEraser(); };
+$('tEraser').onclick = () => {
+  if (isWide()) { if (tool === 'eraser' && S.eraserMode !== 'stroke') openPop('popEraser', $('tEraser')); else { S.eraserMode = 'part'; saveSettings(); syncEraserUI(); selectEraser(); } return; }
+  if (tool === 'eraser') openPop('popEraser', $('tEraserMode')); else selectEraser();
+};
+$('wEraserStroke').onclick = () => { if (tool === 'eraser' && S.eraserMode === 'stroke') openPop('popEraser', $('wEraserStroke')); else { S.eraserMode = 'stroke'; saveSettings(); syncEraserUI(); selectEraser(); } };   // (고른 지우개를 한 번 더 누르면 지우개 설정)
 $('tEraserMode').onclick = () => openPop('popEraser', $('tEraserMode'));
-$('tHand').onclick = () => { if (tool === 'hand' || tool === 'select') openPop('popHand', $('tHandMode')); else setTool(S.handMode === 'lasso' ? 'select' : 'hand'); };
+$('tHand').onclick = () => {
+  if (isWide()) { S.handMode = 'pan'; saveSettings(); setTool('hand'); return; }
+  if (tool === 'hand' || tool === 'select') openPop('popHand', $('tHandMode')); else setTool(S.handMode === 'lasso' ? 'select' : 'hand');
+};
+$('wLasso').onclick = () => { if (tool !== 'select') { S.handMode = 'lasso'; saveSettings(); setTool('select'); toast('올가미: 내 그림을 둘러싸서 고르세요'); } };
 $('tHandMode').onclick = () => { syncHandUI(); openPop('popHand', $('tHandMode')); };
 for (const b of document.querySelectorAll('#popHand .opt')) b.onclick = () => { S.handMode = b.dataset.hm; saveSettings(); setTool(S.handMode === 'lasso' ? 'select' : 'hand'); closePop(); if (S.handMode === 'lasso') toast('올가미: 내 그림을 둘러싸서 고르세요'); };
 function syncHandUI() {
-  const lasso = S.handMode === 'lasso';
+  const lasso = S.handMode === 'lasso' && !isWide();            // (넓은 화면: 이 버튼은 늘 화면 이동, 올가미는 옆 버튼)
   $('handUse').setAttribute('href', lasso ? '#i-lasso' : '#i-hand'); $('handSub').textContent = lasso ? '선택' : '';
   $('tHand').title = $('tHand').ariaLabel = lasso ? '올가미 (M): 내 그림 골라 옮기기' : '화면 이동 (H)';
   for (const b of document.querySelectorAll('#popHand .opt')) b.classList.toggle('on', b.dataset.hm === S.handMode);
@@ -2628,19 +2667,32 @@ function setRuler(on) {
   if (on && (!ruler.placed || !rulerOnScreen())) placeRuler();   // 처음이거나 화면 밖에 있으면 화면 가운데로
   saveRuler(); syncRulerUI(); paintRuler();
 }
+const lastRulerKind = () => (RULER_INFO[S.lastRuler] && !SHAPE_KINDS.has(S.lastRuler) ? S.lastRuler : 'line');   // 넓은 화면의 자 버튼이 보여 줄 자 (도형을 고른 동안에도)
 function syncRulerUI() {
   const [nm, ic, short, hint] = RULER_INFO[S.rulerKind];
-  $('tRuler').classList.toggle('on', ruler.on); $('tRuler').setAttribute('aria-pressed', String(ruler.on));
-  $('rulerUse').setAttribute('href', ic); $('rulerSub').textContent = short;
-  $('tRuler').title = $('tRuler').ariaLabel = nm + (ruler.on ? ' 켜짐 (누르면 끄기)' : ' (누르면 켜기)');
+  const wideShape = isWide() && isShape(), rk = wideShape ? lastRulerKind() : S.rulerKind, rOn = ruler.on && !wideShape;
+  $('tRuler').classList.toggle('on', rOn); $('tRuler').setAttribute('aria-pressed', String(rOn));
+  $('rulerUse').setAttribute('href', RULER_INFO[rk][1]); $('rulerSub').textContent = RULER_INFO[rk][2];
+  $('tRuler').title = $('tRuler').ariaLabel = RULER_INFO[rk][0] + (rOn ? ' 켜짐 (누르면 끄기)' : ' (누르면 켜기)');
+  for (const b of document.querySelectorAll('.wshape')) { const on = ruler.on && S.rulerKind === b.dataset.rk; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
   for (const b of document.querySelectorAll('#popRuler .opt')) b.classList.toggle('on', b.dataset.rk === S.rulerKind);
   $('rulerHint').textContent = hint; $('rulerState').textContent = ruler.on ? '켜짐' : '꺼짐';
   $('rulerOnOff').textContent = ruler.on ? '자 끄기' : '자 켜기';
 }
-$('tRuler').onclick = () => { setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐: ' + (isShape() ? RULER_INFO[S.rulerKind][3] : '펜 선이 자를 따라가요') : (isShape() ? '도형 꺼짐' : '자 꺼짐')); };
+$('tRuler').onclick = () => {
+  if (isWide() && isShape()) { S.rulerKind = lastRulerKind(); saveSettings(); if (!ruler.on) setRuler(true); else { syncRulerUI(); paintRuler(); } toast(RULER_INFO[S.rulerKind][0] + ' 켜짐: 펜 선이 자를 따라가요'); return; }   // (넓은 화면: 도형을 쓰다가 자 버튼 = 자로)
+  setRuler(!ruler.on); toast(ruler.on ? RULER_INFO[S.rulerKind][0] + ' 켜짐: ' + (isShape() ? RULER_INFO[S.rulerKind][3] : '펜 선이 자를 따라가요') : (isShape() ? '도형 꺼짐' : '자 꺼짐')); };
 $('tRulerMode').onclick = () => { syncRulerUI(); openPop('popRuler', $('tRulerMode')); };
+for (const b of document.querySelectorAll('.wshape')) b.onclick = () => {   // 넓은 화면의 도형 버튼: 누르면 켜고(펜으로), 켜진 걸 다시 누르면 끔
+  const k = b.dataset.rk;
+  if (ruler.on && S.rulerKind === k) { setRuler(false); toast('도형 꺼짐'); return; }
+  S.rulerKind = k; saveSettings();
+  if (tool !== 'pen') setTool('pen');
+  if (!ruler.on) setRuler(true); else { syncRulerUI(); paintRuler(); }
+  toast(RULER_INFO[k][0] + ': ' + RULER_INFO[k][3]);
+};
 for (const b of document.querySelectorAll('#popRuler .opt')) b.onclick = () => {
-  S.rulerKind = b.dataset.rk; saveSettings();
+  S.rulerKind = b.dataset.rk; if (!SHAPE_KINDS.has(b.dataset.rk)) S.lastRuler = b.dataset.rk; saveSettings();
   if (!ruler.on) setRuler(true); else { syncRulerUI(); paintRuler(); }
   closePop(); toast(RULER_INFO[S.rulerKind][0] + ': ' + RULER_INFO[S.rulerKind][3]);
 };
@@ -4036,6 +4088,9 @@ $('setSmooth').value = String(S.smooth);
 $('setSmooth').onchange = () => { S.smooth = clampInt(+$('setSmooth').value, 0, 3); saveSettings(); };
 $('setWheel').value = S.wheel;
 $('setWheel').onchange = () => { S.wheel = $('setWheel').value; saveSettings(); };
+function applyWide() { document.body.classList.toggle('wide', isWide()); syncEraserUI(); syncHandUI(); syncRulerUI(); syncToolActive(); }
+document.body.classList.toggle('wide', isWide());
+if (WIDE_MQ) { if (WIDE_MQ.addEventListener) WIDE_MQ.addEventListener('change', () => { closePop(); applyWide(); }); else if (WIDE_MQ.addListener) WIDE_MQ.addListener(() => { closePop(); applyWide(); }); }
 renderRecentColors(); setColor(S.color); syncAlphaUI(); syncEraserUI(); syncRulerUI(); setTool('pen'); syncOwnerUI(); syncUndoUi();
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
