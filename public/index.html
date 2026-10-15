@@ -425,15 +425,11 @@
   .seg2 .opt.on, .seg3 .opt.on { background: var(--text); color: var(--panel); border-color: var(--text); }
   .seg2 .opt.on small, .seg3 .opt.on small { color: #d9d4c6; }
   .swatches button { box-shadow: 0 0 0 1.5px var(--line); }
-  .swatches button { position: relative; }
-  .swatches button.on { border-color: var(--panel); box-shadow: 0 0 0 1.5px var(--line); }
-  /* 고른 색: 동그라미는 그대로, 바깥 테두리만 손으로 그린 선처럼 자글자글 (모양·각도·선이 세 장으로 번갈아) */
-  .swatches button.on::after { content: ""; position: absolute; inset: -6px; border: 2.5px solid var(--line); border-radius: 52% 48% 55% 45% / 47% 55% 45% 53%;
-    pointer-events: none; animation: jag .45s steps(1) infinite; }
-  @keyframes jag {
-    0% { border-radius: 52% 48% 55% 45% / 47% 55% 45% 53%; transform: rotate(0deg); filter: url(#boil1); }
-    33% { border-radius: 45% 55% 47% 53% / 55% 45% 53% 47%; transform: rotate(50deg); filter: url(#boil2); }
-    66% { border-radius: 55% 45% 50% 50% / 48% 52% 57% 43%; transform: rotate(-40deg); filter: url(#boil3); } }
+  .swatches button { position: relative; transition: transform .22s cubic-bezier(.3, 1.7, .5, 1), box-shadow .22s; }
+  /* 고른 색: 살짝 커지며 기울고(한 번 통 튀듯), 흰 띠 + 잉크 테두리 + 종이 그림자, 가운데 체크 (밝은 색이면 검은 체크) */
+  .swatches button.on { z-index: 1; transform: scale(1.2) rotate(-8deg); border: 3px solid var(--panel); box-shadow: 0 0 0 2.5px var(--line), 2px 4px 0 rgba(29,29,27,.22); }
+  .swatches button.on::after { content: ""; position: absolute; left: 50%; top: 46%; width: 7px; height: 13px; border: solid var(--chk, #fff); border-width: 0 3px 3px 0;
+    border-radius: 1px; transform: translate(-50%, -50%) rotate(42deg); pointer-events: none; }
   .pop .swatches { padding: 4px 2px; }
   .prev { border: 2px solid var(--line); }
   .cmsg { background: var(--panel-2); border-radius: var(--hand); }
@@ -469,7 +465,9 @@
   .wideonly { display: none !important; }
   body.wide .wideonly { display: grid !important; }
   body.wide #tEraserMode, body.wide #tHandMode { display: none; }
-  .wshape.on { background: var(--text); color: var(--panel); box-shadow: none; }
+  .wshape.on { background: var(--text); color: var(--panel); box-shadow: none; animation: wig .5s steps(1) infinite; }
+  .wshape.on svg.ic { animation: boil .5s steps(1) infinite; }
+  @media (max-width: 720px) { .wshape.on { animation-name: wigs; } }
   #modal .field label { font: 700 18px/1.3 var(--ui); color: var(--muted); }
   @media (min-width: 721px) {                                  /* 컴퓨터·태블릿: 도구 아래 이름(부분·획·선택·네모…)을 읽히게 — 버튼을 조금 높이고 또렷한 글꼴로 */
     .tool { height: 54px; }
@@ -1164,8 +1162,14 @@ const ctxView = () => { const m = viewMat(curView()); ctx.setTransform(m[0] * dp
 const aligned = () => inkView.x === cam.x && inkView.y === cam.y && inkView.s === scale && inkView.r === rot;
 function ensureAligned() { if (!aligned() || exactT) paintInkExact(); }
 
+let paintMs = 8, rafExact = 0, coarseT = 0;                    // paintMs: 최근 전체 다시 그리기에 걸린 시간 (평균, ms)
+const LIVE_PAINT_MS = 24;                                     // 이보다 빠르면 화면을 옮기는 동안에도 바로바로 다시 그린다 (마우스·휠 화면만)
+// 손가락 화면(폰·태블릿)은 화면 해상도가 높아 매번 다시 그리면 큰 그림을 매번 화면으로 옮기느라 오히려 버벅인다 → 예전처럼 늘려 보여 주고 멈추면 다시 그린다
+const LIVE_OK = !(window.matchMedia && matchMedia("(pointer: coarse)").matches);
 function paintInkExact() {
-  clearTimeout(exactT); exactT = 0;
+  const t0 = performance.now();
+  clearTimeout(exactT); exactT = 0; clearTimeout(coarseT); coarseT = 0;
+  if (rafExact) { cancelAnimationFrame(rafExact); rafExact = 0; }
   inkCv.style.transform = '';
   inkView = curView();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1175,6 +1179,13 @@ function paintInkExact() {
   drawSegs(xa, xb, ya, yb);
   paintPreview();
   dirty = null;                                            // (조금만 다시 그리기가 예정돼 있었어도 이걸로 충분하다)
+  if (drawSkipPx <= 0.6) { const d = performance.now() - t0; paintMs = d > paintMs ? d : paintMs * 0.85 + d * 0.15; }   // (오래 걸리면 바로 올리고, 빨라질 때는 천천히 내린다)
+}
+function paintCoarse() {                                       // 느린 화면에서 오래 움직일 때: 짧은 조각은 건너뛰고 빠르게 (멈추면 정확히 다시 그린다)
+  coarseT = 0;
+  const keep = drawSkipPx, ex = exactT; drawSkipPx = Math.max(keep, 2.5);
+  try { paintInkExact(); } finally { drawSkipPx = keep; }
+  if (ex) exactT = setTimeout(paintInkExact, GESTURE_REPAINT_MS);
 }
 // 선 목록을 덩어리(SEG_BLOCK 개씩)로 나눈 범위 (화면 밖 덩어리는 통째로 건너뛴다). 목록이 바뀌면(다른 배열이 되거나 길이가 바뀌면) 다시 만든다.
 const SEG_BLOCK = 256;
@@ -1404,8 +1415,11 @@ function viewChanged(immediate) {
   if (sel || lasso) selSoon();
   if (hl && hl.all) paintHighlight();                           // ('그린 곳 보기' 강조는 화면을 옮겨도 따라간다)
   if (lastMouse && !ring.hidden) updateRing(lastMouse);        // 휠·키로 확대·축소하면 커서 원도 바로 같이
-  clearTimeout(exactT);
-  if (immediate) paintInkExact(); else exactT = setTimeout(paintInkExact, GESTURE_REPAINT_MS);
+  clearTimeout(exactT); exactT = 0;
+  if (immediate) { paintInkExact(); return; }
+  if (LIVE_OK && paintMs < LIVE_PAINT_MS) { if (!rafExact) rafExact = requestAnimationFrame(() => { rafExact = 0; paintInkExact(); }); return; }   // 빠른 화면: 바로바로
+  exactT = setTimeout(paintInkExact, GESTURE_REPAINT_MS);
+  if (LIVE_OK && !coarseT) coarseT = setTimeout(paintCoarse, 250);   // 느린 화면(마우스): 오래 움직이면 가끔 거칠게
 }
 function resize() {
   const r = stage.getBoundingClientRect();
@@ -1830,10 +1844,12 @@ function syncSizeUI() {
 $('sizeRange').addEventListener('input', () => { const [a, b] = SIZE_RANGE[sizeTarget()]; setSize(sizeFromSlider(+$('sizeRange').value, a, b)); });
 $('sizeNum').addEventListener('change', () => { const v = parseFloat($('sizeNum').value); if (Number.isFinite(v)) setSize(v); else syncSizeUI(); });
 
+// 고른 색의 체크 표시 색: 밝은 색(흰색·노랑·분홍…) 위에는 검은 체크
+function chkColor(c) { const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(c) || [0, 'ff', 'ff', 'ff']; const [r, g, b] = [1, 2, 3].map((i) => parseInt(m[i], 16) / 255); return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 ? '#1d1d1b' : '#fdfdfa'; }
 const swBox = $('swatches');
 for (const c of PALETTE) {
   const b = document.createElement('button');
-  b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', '색 ' + c); b.title = c;
+  b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', '색 ' + c); b.title = c; b.style.setProperty('--chk', chkColor(c));
   b.onclick = () => setColor(c);                               // (창은 그대로: 여러 색을 눌러 볼 수 있게. 그림판을 누르면 닫힌다)
   swBox.appendChild(b);
 }
@@ -1848,7 +1864,7 @@ function renderRecentColors() {
   $('recentSwBox').hidden = !S.recentColors.length;
   for (const c of S.recentColors) {
     const b = document.createElement('button');
-    b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', '최근 쓴 색 ' + c); b.title = c; b.classList.toggle('on', c === S.color);
+    b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', '최근 쓴 색 ' + c); b.title = c; b.classList.toggle('on', c === S.color); b.style.setProperty('--chk', chkColor(c));
     b.onclick = () => setColor(c);
     box.appendChild(b);
   }
