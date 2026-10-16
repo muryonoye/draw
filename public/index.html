@@ -714,7 +714,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span><b>U</b><span>자·도형 켜기·끄기 (도형을 끌 때 Shift: 15°씩·정사각형·정원)</span><b>M</b><span>올가미 (내 그림 골라 옮기기·크기)</span><b>Ctrl+D</b><span>고른 것 복제</span><b>Delete</b><span>고른 것 지우기</span><b>Esc</b><span>고르기 끝</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-14 56차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-16 67차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -760,12 +760,15 @@ const PINCH_MIN_D = 24;              // 두 손가락 사이가 이보다 가까
 const PINCH_MAX_STEP = 1.6;          // 손가락 움직임 한 번에 배율이 바뀌는 최대 비율 (튀는 터치 값 하나로 끝까지 확대되지 않게)
 const PINCH_ROT_START = 12 * Math.PI / 180;   // 두 손가락을 이만큼 비틀어야 회전이 시작된다 (확대만 하려다 화면이 돌아가지 않게)
 const PINCH_ROT_MIN_D = 40;          // 두 손가락이 이보다 가까우면 각도가 불안정해서 회전은 안 한다
-// 터치 입력은 '확정 후 전송': 그동안은 내 화면에만 보인다
-const TOUCH_CONFIRM_MS = 150;        // 한 손가락으로 이 시간이 지나면 확정 (확정 전에도 내 화면에는 바로 그려진다)
-const TOUCH_CONFIRM_PX = 16;         // 또는 화면에서 이만큼 움직이면 확정
-const TOUCH_CONFIRM_ERASE_MS = 200;  // 지우개는 되돌릴 수 없어서 더 신중하게
-const TOUCH_CONFIRM_ERASE_PX = 14;
+// 터치 입력은 '확정 후 전송': 손가락 하나로 시작한 획은 잠깐 화면에도 그리지 않고 기다린다 (움직인 길은 기억했다가 확정되면 한 번에 그린다).
+// 그사이 두 번째 손가락이 닿으면 확대·이동하려던 것이라 아무것도 남지 않는다 (내 화면에도, 서버에도).
+const TOUCH_HOLD_MS = 120;           // 펜: 손가락이 닿고 이 시간이 지나면 확정 (움직인 거리와 상관없이: 두 손가락 이동은 첫 손가락이 먼저 꽤 움직이기도 한다)
+const TOUCH_HOLD_ERASE_MS = 180;     // 지우개는 되돌릴 수 없어서 조금 더
+const TOUCH_HOLD_AFTER_PINCH_MS = 300;   // 확대·이동·두 손가락 탭을 막 끝낸 뒤(GESTURE_GRACE_MS 안)에 닿은 손가락은 더 기다린다 (연달아 확대할 때 첫 손가락이 먼저 닿는 것)
+const GESTURE_GRACE_MS = 600;
 const PINCH_CANCEL_MS = 700;         // 획을 시작하고 이 시간 안에 두 번째 손가락이 닿으면 확대하려던 것: 방금 획을 통째로 취소 (얼마나 움직였든)
+const PINCH_CANCEL_TINY_PX = 12;     // 거의 안 움직인 획(점)은 시간과 상관없이 취소 (가만히 대고 있다가 두 번째 손가락으로 확대)
+const PALM_CANCEL_MS = 3000;         // 펜이 닿았을 때 이 시간 안에 시작된 손가락 획·화면 이동은 손바닥(펜을 쥔 손)으로 보고 없던 일로
 const MIN_POINT_PX = 1.5, MIN_POINT_MS = 5;   // 너무 가깝거나 빠른 점은 생략 (초당 약 200선분 이하)
 const PEN_STEP_PX = 6, PEN_DEV_PX = 0.3;      // 펜: 거의 곧은 곳은 최대 6px 마다 한 점, 건너뛴 점이 선분에서 0.3px 넘게 벗어나면 남긴다 (보이는 모양은 같고 조각 수는 크게 준다)
 const PRESS_MIN = 0.25;                       // 필압: 아주 살살 누르면 정한 굵기의 25%, 끝까지 누르면 100%
@@ -1714,8 +1717,9 @@ function formModal({ title, body, ok = '확인', cancel = '취소', danger = fal
   });
 }
 // 새로 생긴 기능 안내: 화면 판(NEWS_VER)이 바뀐 뒤 처음 그림을 받으면 한 번 (전에 써 본 사람에게만, 이 기기에 기억)
-const NEWS_VER = 2;
-const NEWS = ['새 디자인: 종이에 낙서한 느낌으로 바뀌었어요. 그림판이 화면 전체로 넓어지고, 도구 모음은 아래로 (고른 도구는 살짝 꿈틀거려요)',
+const NEWS_VER = 3;
+const NEWS = ['패드·폰: 확대·이동·회전하려던 손가락이 선으로 그려지지 않게 고쳤어요. 펜(애플펜슬 등)을 쓰면 손가락은 화면 조작만 해요 (설정 → 펜으로만 그리기)',
+  '새 디자인: 종이에 낙서한 느낌으로 바뀌었어요. 그림판이 화면 전체로 넓어지고, 도구 모음은 아래로 (고른 도구는 살짝 꿈틀거려요)',
   '계정: 설정 → 계정에서 구글·카카오로 로그인하면 다른 기기에서도 같은 사람 (방장 자격·내 그림이 따라와요)',
   '올가미: 손 버튼 ⌄ → 올가미 (M 키). 내 그림을 둘러싸서 옮기기·크기·복제·뒤집기·지우기',
   '펜 투명도: 색상 창 아래 슬라이더',
@@ -2773,7 +2777,7 @@ function shapePoints(sh) {
 }
 function paintShape() {                                        // 끄는 동안 도형 미리보기 (자 캔버스에, 실제 색·굵기)
   const st = strokeSt;
-  if (!st || !st.shape) return;
+  if (!st || !st.shape || st.phase === 'pending') return;      // (손가락은 확정된 뒤부터)
   const pts = shapePoints(st.shape);
   if (!pts) return;
   rctx.lineCap = rctx.lineJoin = 'round'; rctx.strokeStyle = st.color; rctx.lineWidth = Math.max(st.size * scale, 1);
@@ -2892,6 +2896,7 @@ function guidePoint(g, p) {                                    // p 를 그 선�
 const ptr = new Map();                                       // pointerId -> { id, type, x, y, sx, sy, t0, tn }
 let histOk = false;                                            // 이번 접속에서 그림(history/B3)을 받았나 (받기 전에는 그리지 않는다)
 let gmode = 'none', strokeSt = null, pinchPrev = null, pinchView = null, pinchRot = null, penActive = 0, lastCurSent = 0, qSeq = 0;
+let gestOn = false, gestEndAt = -1e9, palmView = null;          // 두 손가락 이상 제스처 중인가 / 그 제스처가 끝난(손가락을 모두 뗀) 때 / 첫 손가락이 닿을 때의 화면 (손바닥이 옮긴 것 되돌리기용)
 let rotDrag = null, lastMouse = null;                        // 회전 끌기 { a0, r0, moved } / 마우스·펜이 보드 위에 마지막으로 있던 곳 (키보드 확대 기준점)
 let heldTool = null, altDrop = null, revertTo = null;        // 누르고 있는 도구 키 { code, t, prev, used } / Alt 스포이드 { prev } / 그리기가 끝나면 돌아갈 도구
 let rotFrom = 'pen';                                         // 회전 도구(R)를 고르기 전에 쓰던 도구 (회전을 취소하면 돌아간다)
@@ -2921,13 +2926,18 @@ function dropTouches(keep) {
   if (st && !ptr.has(st.id)) { if (st.phase === 'pending') discardPending(st); else { commitAct(st); strokeSt = null; } }
   const tc = touchRecs().length;
   if (gmode === 'pinch' && tc < 2) gmode = tc ? 'pan' : 'none';
-  if (!tc) tapG = null;
+  if (!tc) { tapG = null; if (gestOn) { gestOn = false; gestEndAt = now(); } }
   if (!ptr.size) { gmode = 'none'; strokeSt = null; pinchView = null; }
 }
 for (const t of ['touchstart', 'touchend', 'touchcancel']) {
   document.addEventListener(t, (e) => {
     touchEvSeen = true; liveTouches = e.touches.length;
     if (!e.touches.length && t !== 'touchstart') setTimeout(() => { if (!liveTouches) dropTouches(0); }, 0);   // 손가락을 모두 뗐는데 남은 기록은 정리
+    // 손가락 하나로 기다리던(확정 전) 획이 있는데 두 번째 손가락이 그림판 밖(도구 모음 등)에 닿았다: 확대·이동하려던 것 → 획은 버리고 남은 손가락으로 화면 이동
+    const st = strokeSt;
+    if (t === 'touchstart' && st && st.phase === 'pending' && (ptr.get(st.id) || {}).type === 'touch' && [...e.changedTouches].some((c) => !board.contains(c.target))) {
+      discardPending(st); if (st.shape) rulerSoon(); gmode = 'pan'; gestOn = true;
+    }
   }, { capture: true, passive: true });
 }
 const evT = (e) => (e && e.timeStamp) || now();
@@ -3078,14 +3088,6 @@ function eraseStroke(st, a, b) {
   send({ type: 'erasestroke', q, x0, y0, x1, y1, r, ...(sc === null ? { all: true } : {}) });
 }
 function emit(st, a, b) { if (st.kind === 'pen') penSeg(st, a, b); else if (st.kind === 'epart') erasePart(st, a, b); else eraseStroke(st, a, b); }
-function previewSeg(st, a, b) {                                // 확정 전 터치 획: 내 화면에만 임시로 그린다
-  ensureAligned(); ctxView();
-  ctx.lineCap = 'round'; ctx.strokeStyle = st.color; ctx.lineWidth = Math.max(st.size, 0.6 / scale);
-  const dx = a.x === b.x && a.y === b.y ? 0.01 / scale : 0;    // (점도 보이게)
-  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x + dx, b.y);
-  if (st.mirror) { const A = mirrorPt(st.mirror, a), B = mirrorPt(st.mirror, b); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x + dx, B.y); }
-  ctx.stroke();
-}
 function strokePoint(st, sx, sy, t, force, p) {                // 너무 가깝거나 빠른 점은 생략 (마지막 점은 force 로 반드시 보낸다). p: 펜 필압(0~1)
   if (st.shape) { st.shape.b = toWorld({ x: sx, y: sy }); rulerSoon(); return; }   // (도형: 끝점만)
   if (st.press && p > 0) st.pp = st.pp * 0.5 + p * 0.5;         // 필압은 튀지 않게 조금 부드럽게
@@ -3108,8 +3110,8 @@ function strokePoint(st, sx, sy, t, force, p) {                // 너무 가깝�
   if (st.press && !same) w.p = st.pp;
   if (st.kind === 'pen') penPoint(st, w, force); else keepPoint(st, w);
 }
-function keepPoint(st, w) {                                    // 이 점까지 선을 잇는다 (터치는 확정 전이면 내 화면에만)
-  if (st.phase === 'pending') { const prev = st.pts[st.pts.length - 1]; st.pts.push(w); if (st.kind === 'pen') previewSeg(st, prev, w); }
+function keepPoint(st, w) {                                    // 이 점까지 선을 잇는다 (터치는 확정 전이면 기억만)
+  if (st.phase === 'pending') st.pts.push(w);
   else { emit(st, st.last, w); st.last = w; }
 }
 // 펜 선 줄이기: 거의 곧게 이어지는 점은 건너뛰고(st.skip), 건너뛴 점이 새 선분에서 PEN_DEV_PX 넘게 벗어나게 되면 바로 앞 점을 남긴다.
@@ -3126,15 +3128,14 @@ function confirmStroke(st) {                                   // 이 시점부�
   clearTimeout(st.timer);
   st.phase = 'live'; st.confirmedAt = now();
   if (gmode === 'pending') gmode = 'draw';
-  if (st.shape) { st.pts = []; return; }                        // (도형은 손을 뗄 때 한 번에)
+  if (st.shape) { st.pts = []; rulerSoon(); return; }           // (도형은 손을 뗄 때 한 번에. 미리보기는 지금부터)
   const pts = st.pts; st.pts = [];
   emit(st, pts[0], pts[0]); st.last = pts[0];
   for (let i = 1; i < pts.length; i++) { emit(st, st.last, pts[i]); st.last = pts[i]; }
 }
-function discardPending(st) {                                  // 네트워크 전송 없이 임시 획을 버린다
+function discardPending(st) {                                  // 확정 전 획을 버린다 (아직 아무 데도 그리거나 보내지 않았다)
   clearTimeout(st.timer);
   if (strokeSt === st) strokeSt = null;
-  if (st.kind === 'pen') redrawInk();
 }
 function cancelStroke(st) {                                    // 이미 전송된 획을 모두의 화면과 저장본에서 취소
   if (strokeSt === st) strokeSt = null;
@@ -3165,7 +3166,6 @@ function abortStroke() {
   const st = strokeSt;
   if (!st) return;
   clearTimeout(st.timer);
-  if (st.phase === 'pending' && st.kind === 'pen') redrawInk();
   strokeSt = null;
   if (st.shape) rulerSoon();                                    // (도형 미리보기 지우기)
   if (gmode === 'draw' || gmode === 'pending') gmode = 'none';
@@ -3187,9 +3187,10 @@ function startStroke(rec) {
   st.act = kind === 'pen' ? { t: 'draw', sid: st.sid, sid2: st.msid || null, segs: [] } : (eraseScope() === me ? { t: 'erase', removed: [], added: [] } : null);
   if (kind === 'pen') { noteAct(st.act); noteColor(); }
   if (touch) {
-    gmode = 'pending'; st.pts.push(w);
-    if (kind === 'pen' && !st.shape) previewSeg(st, w, w);
-    st.timer = setTimeout(() => confirmStroke(st), erase ? TOUCH_CONFIRM_ERASE_MS : TOUCH_CONFIRM_MS);
+    gmode = 'pending'; st.pts.push(w);                           // (확정 전에는 화면에도 그리지 않는다)
+    let hold = erase ? TOUCH_HOLD_ERASE_MS : TOUCH_HOLD_MS;
+    if (now() - gestEndAt < GESTURE_GRACE_MS) hold = Math.max(hold, TOUCH_HOLD_AFTER_PINCH_MS);
+    st.timer = setTimeout(() => confirmStroke(st), hold);
   } else {                                                     // 마우스·펜은 지연 없이 즉시
     gmode = 'draw'; st.confirmedAt = now();
     const le = lastEnd && rec.shift && lastEnd.pen === (kind === 'pen') ? lastEnd : null;   // Shift+클릭: 앞 획 끝에서 여기까지 직선 (클튜처럼)
@@ -3205,7 +3206,7 @@ function enterPinch() {                                        // 손가락이 2
   else if (st) {
     // 획을 시작한 지 얼마 안 돼 두 번째 손가락이 닿았다 = 확대·이동하려던 것 (손가락이 조금 먼저 닿아 그어진 선). 움직인 거리와 상관없이 방금 획을 없던 일로.
     // 한참 그리던 중이면(PINCH_CANCEL_MS 넘게) 그린 건 그대로 두고 확대로 넘어간다.
-    const fresh = now() - st.born <= PINCH_CANCEL_MS;
+    const fresh = now() - st.born <= PINCH_CANCEL_MS || st.moved < PINCH_CANCEL_TINY_PX;
     if (st.phase === 'pending') discardPending(st);
     else if (fresh && st.kind === 'pen') cancelStroke(st);
     else if (fresh && st.kind === 'epart' && st.act) revertErase(st);
@@ -3213,8 +3214,31 @@ function enterPinch() {                                        // 손가락이 2
     strokeSt = null;
   }
   if (gmode !== 'pinch') { pinchView = { x: cam.x, y: cam.y, s: scale, r: rot }; pinchRot = { acc: 0, on: false, raw: rot }; }   // 핀치를 시작할 때의 화면 (두·세 손가락 탭이면 되돌린다)
-  gmode = 'pinch'; pinchPrev = pinchState(); hideTip(); hideDropPrev();
+  gmode = 'pinch'; pinchPrev = pinchState(); hideTip(); hideDropPrev(); gestOn = true;
 }
+// 펜이 닿았는데 손가락 기록이 있다 = 펜을 쥔 손(손바닥)이 먼저 닿은 것: 펜이 우선. 그 손가락으로 막 한 것(획·화면 이동)은 없던 일로 하고 그 손가락은 끝까지 무시한다.
+function palmOff() {
+  const recs = touchRecs(), st = strokeSt, young = (t) => now() - t <= PALM_CANCEL_MS;
+  if (st && recs.some((r) => r.id === st.id)) {
+    if (st.shape) clearTimeout(st.timer);
+    else if (st.phase === 'pending') discardPending(st);
+    else if (young(st.born) && st.kind === 'pen') cancelStroke(st);
+    else if (young(st.born) && st.kind === 'epart' && st.act) revertErase(st);
+    else finishStroke(st);
+    strokeSt = null; rulerSoon();
+  }
+  if (rulerDrag) { rulerDrag = null; saveRuler(); }
+  if (lasso) { lasso = null; selSoon(); }
+  if (selDrag) { selDrag = null; selHide = null; redrawInk(); selSoon(); }
+  if (gmode === 'drop') hideDropPrev();
+  rotDrag = null;
+  if (palmView && (gmode === 'pan' || gmode === 'pinch') && young(palmView.t)) {   // 손바닥이 끌어 옮긴 화면은 처음대로
+    cam.x = palmView.x; cam.y = palmView.y; scale = palmView.s; applyRot(palmView.r); viewChanged(true);
+  }
+  for (const r of recs) ptr.delete(r.id);
+  tapG = null; pinchView = null; palmView = null; gestOn = false; gmode = 'none';
+}
+function setPenOnly(v) { S.penOnly = v; saveSettings(); $('setPenOnly').checked = v; }
 function updateRing(p) {                                       // 마우스 커서 주변에 현재 펜/지우개 크기 원
   if (tool === 'hand' || tool === 'fill' || tool === 'drop' || tool === 'rotate' || tool === 'select' || spaceDown) { ring.hidden = true; return; }
   const d = Math.max((tool === 'eraser' ? S.eraserD : S.penSize) * scale, 2);   // 실제로 그려질 굵기 그대로 (어느 배율에서든 확대·축소하면 같이 변한다)
@@ -3231,12 +3255,15 @@ board.addEventListener('pointerdown', (e) => {
   const p = rel(e);
   const rec = { id: e.pointerId, type: e.pointerType || 'mouse', x: p.x, y: p.y, sx: p.x, sy: p.y, t0: evT(e), tn: now(), lt: now(), shift: e.shiftKey, p: e.pressure };
   if (rec.type === 'touch' && touchEvSeen) dropTouches(liveTouches);   // 뗀 신호를 놓쳐 남은 손가락 기록 정리 (터치 이벤트가 없는 브라우저에선 하지 않는다)
+  if (rec.type === 'pen' && touchRecs().length) palmOff();      // 손바닥이 먼저 닿아 있었다: 펜이 우선
+  if (rec.type === 'touch' && !touchRecs().length) palmView = { x: cam.x, y: cam.y, s: scale, r: rot, t: now() };
   ptr.set(e.pointerId, rec);
   if (rec.type === 'pen') penActive++;
-  if (rec.type === 'pen' && !S.penOnly && navigator.maxTouchPoints > 0 && !lsGet('draw:penHint')) {   // 펜(애플펜슬 등)을 처음 쓰면 한 번만: 손가락은 화면 조작용으로 쓰자고 권한다
+  if (rec.type === 'pen' && !S.penOnly && navigator.maxTouchPoints > 0 && !lsGet('draw:penHint')) {   // 펜(애플펜슬 등)을 처음 쓰면 한 번만: 손가락은 화면 조작만 하게 바로 바꾼다 (손바닥·확대하려던 손가락이 그려지지 않게)
     lsSet('draw:penHint', '1');
-    showHint('✏️ 펜이 감지됐어요. "펜으로만 그리기"를 켜면 손가락 하나로 화면을 옮기고, 두 손가락으로 확대할 수 있어요', '켜기', () => {
-      S.penOnly = true; saveSettings(); $('setPenOnly').checked = true; toast('펜으로만 그리기를 켰어요 (설정에서 끌 수 있어요)', 'ok');
+    setPenOnly(true);
+    showHint('✏️ 펜이 감지돼서 이제 손가락은 화면 조작만 해요 (한 손가락 이동, 두 손가락 확대·회전). 설정에서 바꿀 수 있어요', '손가락으로도 그리기', () => {
+      setPenOnly(false); toast('손가락으로도 그려요 (설정 → 펜으로만 그리기)', 'ok');
     });
   }
   hideTip();
@@ -3297,10 +3324,6 @@ board.addEventListener('pointermove', (e) => {
     const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     for (const ce of (list.length ? list : [e])) { const q = rel(ce); strokePoint(st, q.x, q.y, evT(ce), false, ce.pressure); }
     st.moved = Math.max(st.moved, Math.hypot(rec.x - st.sx, rec.y - st.sy));
-    if (st.phase === 'pending') {
-      const erase = st.kind !== 'pen';
-      if (st.moved >= (erase ? TOUCH_CONFIRM_ERASE_PX : TOUCH_CONFIRM_PX)) confirmStroke(st);   // 충분히 움직였으면 확정
-    }
   }
 });
 board.addEventListener('pointerleave', (e) => {
@@ -3333,6 +3356,7 @@ function endPtr(e) {
   if (wasDrop) { if (e.type === 'pointerup') finishDrop(rec, rec.type !== 'mouse'); else hideDropPrev(); }
   if (rec.type === 'touch') tapUp(e);
   const tc = touchRecs().length;
+  if (!tc && gestOn) { gestOn = false; gestEndAt = now(); }
   if (gmode === 'pinch') { if (tc >= 2) pinchPrev = pinchState(); else gmode = tc === 1 ? 'pan' : 'none'; }   // 2→1: 선을 긋지 않고 이동으로 이어진다
   if (ptr.size === 0) {
     gmode = 'none'; strokeSt = null; pinchView = null;
@@ -3341,6 +3365,8 @@ function endPtr(e) {
   else if ((gmode === 'draw' || gmode === 'pending') && !strokeSt) gmode = 'none';
 }
 board.addEventListener('pointerup', endPtr);
+// 아이패드 '손글씨 입력(Scribble)'이 켜져 있으면 사파리가 애플펜슬의 포인터 이벤트를 삼키는 일이 있다: 그림판의 touchmove 기본 동작을 막으면 괜찮아진다 (애플 개발자 포럼에 알려진 방법)
+board.addEventListener('touchmove', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
 board.addEventListener('pointercancel', endPtr);
 board.addEventListener('lostpointercapture', endPtr);
 
@@ -4130,7 +4156,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-14 56차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-16 67차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 let roomTitle = '';                                             // 방 이름 (방장·부방장이 정함, 없으면 방 코드)
 const BASE_TITLE = '같이 그리기';                                 // (Cloudflare 는 첫 화면 제목에 방 이름을 미리 넣어 보낸다)
