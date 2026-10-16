@@ -243,6 +243,14 @@ function blockHash(u) {
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return (h2 >>> 0).toString(36).padStart(7, '0') + (h1 >>> 0).toString(36).padStart(7, '0');
 }
+// Plus 꾸미기: 이름 색·커서 모양 (서버는 이 목록에 있는 값만 받는다)
+const DECO_COLORS = ['#e53935', '#fb8c00', '#f9a825', '#43a047', '#00897b', '#1e88e5', '#3949ab', '#8e24aa', '#d81b60', '#6d4c41'];
+const DECO_CURSORS = ['dot', 'star', 'heart', 'flower', 'cat', 'pencil'];
+function cleanDeco(d) {
+  const o = {};
+  if (d && typeof d === 'object') { if (DECO_COLORS.includes(d.c)) o.c = d.c; if (DECO_CURSORS.includes(d.cur)) o.cur = d.cur; }
+  return o;
+}
 // @@SHARED_END
 
 // ---- 방 그림 보관: 선분을 덩어리(BLOCK 개 안팎)로 나눠 두고, 덩어리마다 범위(선 굵기 포함)를 기억한다 ----
@@ -522,7 +530,8 @@ let dbState = 'none';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // clientCloses: 강퇴·밴 때 서버가 닫지 않고 화면이 'bye' 를 받아 닫게 한다 (Cloudflare 의 쉬는 소켓은 다른 접속의 메시지를 처리하는 중에 닫으면
 //   닫기 인사가 상대에게 가지 않고, 그 뒤 화면이 닫으려 해도 끝나지 않는다 — 로컬 workerd 에서 확인). afterBye(ws): bye 를 보낸 직후
-let P = { hasStore: false, storeFor: () => null, init: async () => {}, term: (ws) => ws.close(), attach: () => {}, track: () => {}, afterBye: () => {}, clientCloses: false, onPerf: () => {} };
+// plusOf(o): 그 사람(주인 ID)의 Plus { until, deco } 를 돌려준다 (Cloudflare 판: 계정 저장소. 없으면 Plus 없음)
+let P = { hasStore: false, storeFor: () => null, init: async () => {}, term: (ws) => ws.close(), attach: () => {}, track: () => {}, afterBye: () => {}, clientCloses: false, onPerf: () => {}, plusOf: null };
 let dbReady = Promise.resolve();
 function setPlatform(p) {
   P = { ...P, ...p };
@@ -862,7 +871,7 @@ function getRoom(id) {
     room = { id, clients: new Set(), hb: [], hn: 0, ver: 0, flat: null, zc: null, zp: null, snapMs: 0, lastSave: 0,
       names: {}, meta: normalizeMeta(null), dirty: false, metaDirty: false, noSave: false,
       loaded: false, loadFailed: false, corrupt: false, recovering: false, lastActive: Date.now(), q: null,
-      chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map(), cover: new Map(), fcover: new Map() };
+      chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map(), cover: new Map(), fcover: new Map(), plus: new Map() };
     const r = room;
     r.ready = loadRoom(id).then((d) => {
       const h = cleanHistory(d.history);
@@ -1065,9 +1074,10 @@ const IPT_RE = /^[A-Za-z0-9_-]{12}$/;
 const tagList = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && IPT_RE.test(x)).slice(0, 3) : []);
 const numOr = (v, d) => (Number.isFinite(+v) ? +v : d);
 function normalizeMeta(j) {
-  const m = { owner: null, title: '', locked: false, gate: false, noCover: false, bans: {}, mutes: {}, spectators: {}, mods: {}, log: {} };
+  const m = { owner: null, title: '', locked: false, gate: false, noCover: false, ownerPlus: 0, bans: {}, mutes: {}, spectators: {}, mods: {}, log: {} };
   if (!j || typeof j !== 'object') return m;
   m.title = cleanTitle(j.title);
+  m.ownerPlus = Math.max(0, numOr(j.ownerPlus, 0));             // 방장의 Plus 가 끝나는 때 (마지막으로 확인한 값: 방장이 없을 때도 Plus 방 기능을 판단하려고)
   if (typeof j.owner === 'string' && OWNER_RE.test(j.owner)) m.owner = j.owner;
   m.locked = j.locked === true;
   m.gate = j.gate === true;
@@ -1149,8 +1159,43 @@ const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null :
   mods: room.noSave ? [] : Object.keys(room.meta.mods), gate: room.meta.gate, cover: !room.meta.noCover, share: OWNER_SHARE, title: room.meta.title || '' });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
 function meMsg(room, o, now = Date.now()) {
   const mu = room.meta.mutes[o];
-  return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: isSpect(room, o), wait: isWaiting(room, o) };
+  return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: isSpect(room, o), wait: isWaiting(room, o), plus: plusUntil(room, o) };
 }
+// ---- Plus (구독): 계정 저장소(P.plusOf)가 알려 준 Plus 기간·꾸미기. Plus 기능은 화면이 보낸 걸 믿지 않고 서버가 이걸로 검사한다 ----
+const PLUS_CACHE_MS = 5 * 60 * 1000;                             // (한 번 물어본 건 5분 동안 그대로: 들어올 때마다 계정 저장소를 깨우지 않게)
+const plusUntil = (room, o) => { const p = room.plus.get(o); return p && p.until > Date.now() ? p.until : 0; };
+const isPlus = (room, o) => plusUntil(room, o) > 0;
+function plusMapMsg(room) {                                     // 지금 이 방에 있는 Plus 사람들 (배지·이름 색·커서 모양)
+  const l = {};
+  for (const c of room.clients) if (!l[c.owner] && isPlus(room, c.owner)) l[c.owner] = room.plus.get(c.owner).deco || {};
+  return { type: 'plusmap', l };
+}
+function lookPlus(ws, room, force) {                            // 이 사람의 Plus 를 계정 저장소에 묻는다 (손님·저장 꺼진 방은 없음)
+  const o = ws.owner, c = room.plus.get(o);
+  if (c && c.asking) { if (force) c.again = true; return; }       // (묻는 중에 다시 물어 달라면: 답이 온 뒤 한 번 더)
+  if (isGuest(o) || !P.plusOf || room.noSave) return;
+  if (c && !force && Date.now() - c.at < PLUS_CACHE_MS) return;
+  room.plus.set(o, { until: c ? c.until : 0, deco: c ? c.deco : {}, at: Date.now(), asking: true });
+  Promise.resolve().then(() => P.plusOf(o)).then((r) => {
+    const again = !!(room.plus.get(o) || {}).again;
+    const key = () => JSON.stringify([isPlus(room, o), (room.plus.get(o) || {}).deco || {}]), before = c ? key() : '';
+    room.plus.set(o, { until: Math.max(0, +(r && r.until) || 0), deco: cleanDeco(r && r.deco), at: Date.now() });
+    if (room.meta.owner === o) syncOwnerPlus(room);
+    sendMe(room, o);
+    if (key() !== before) broadcastAll(room, plusMapMsg(room));
+    if (again) lookPlus(ws, room, true);
+  }).catch((e) => { const x = room.plus.get(o); if (x) x.asking = false; console.error('Plus 확인 실패:', e && e.message); });
+}
+function syncOwnerPlus(room) {                                  // 방장의 Plus 기간을 방 설정에 적어 둔다 (모르면 0: 새 방장이 들어오면 다시 확인)
+  const o = room.meta.owner, p = o && room.plus.get(o);
+  const u = p && !p.asking ? plusUntil(room, o) : 0;
+  if (u !== room.meta.ownerPlus) { room.meta.ownerPlus = u; persistMeta(room); }
+}
+function ownerChanged(room) {                                   // 방장이 바뀜: 새 방장의 Plus 를 확인
+  syncOwnerPlus(room);
+  for (const c of room.clients) if (c.owner === room.meta.owner) { lookPlus(c, room); break; }
+}
+const roomPlus = (room) => !room.noSave && room.meta.ownerPlus > Date.now();   // 이 방의 방장이 Plus (방장이 없을 때도 마지막으로 확인한 값)
 function adminMsg(room) {
   const now = Date.now();
   const L = (src) => Object.keys(src).map((o) => ({ o, name: src[o].name, until: src[o].until, reason: src[o].reason || '' }));
@@ -1216,6 +1261,7 @@ function admit(room, roomId, owner, ipt) {
   purgeMeta(room, now);
   if (roomId !== 'lobby' && !room.noSave && !room.meta.owner && !isGuest(owner)) {
     room.meta.owner = owner;                            // 방장 정보가 없는 방에 처음 도착한 사람이 방장이 된다
+    room.meta.ownerPlus = 0;
     persistMeta(room);
   }
   if (isRoomOwner(room, owner)) return null;            // 방장은 밴·잠금과 무관하게 항상 입장
@@ -1254,6 +1300,8 @@ function approve(ws, room, wantName) {
   send(ws, { type: 'names', names: room.names });
   send(ws, roomStateMsg(room));
   send(ws, meMsg(room, owner));
+  send(ws, plusMapMsg(room));
+  lookPlus(ws, room);                                   // (Plus 인지는 계정 저장소에 물어서: 알게 되면 me·plusmap 을 다시 보낸다)
   sendAdmin(room);                                      // 방장·부방장에게 입장 기록·접속 표시를 바로 (들어온 사람이 방장·부방장이면 그 사람도 받는다)
   send(ws, { type: 'chats', list: room.chat });
   if (ws.zOk === 3) startSync(ws, room);                  // (그림은 화면의 덩어리 목록을 받은 뒤: 이 뒤로 이 화면에 갈 메시지는 그림 다음에)
@@ -1385,7 +1433,7 @@ function handleCmd(ws, room, roomId, msg) {
   } else if (cmd === 'transfer') {
     if (!online.length || isGuest(target)) return cmdErr(ws, '접속 중인 다른 사용자에게만 넘길 수 있어요');
     const old = ws.owner, oldName = room.names[old] || '방장';
-    room.meta.owner = target; delete room.meta.mods[target]; persistMeta(room);
+    room.meta.owner = target; delete room.meta.mods[target]; persistMeta(room); ownerChanged(room);
     broadcastAll(room, roomStateMsg(room));
     sendMe(room, old); sendMe(room, target); sendAdmin(room);
     sysChat(room, `${oldName}님이 ${nm}님에게 방장을 넘겼습니다`);
@@ -1402,9 +1450,11 @@ function handleCmd(ws, room, roomId, msg) {
   }
 }
 // 방장 되찾기: 이사하면서 예전 브라우저의 '나'를 못 넘긴 방장이 쓴다. 코드는 서버 비밀값 OWNER_CLAIM (8글자 이상일 때만 켜짐). 틀리면 1분에 3번까지.
+// 68차부터는 CLAIM_ROOMS=1 일 때만: 코드 하나로 어느 방이든 방장을 가져갈 수 있어 위험하다 (코드는 저장 공간 페이지·Plus 관리에만 쓴다)
 function claimOwner(ws, room, msg) {
   const code = String(process.env.OWNER_CLAIM || '');
   const now = Date.now();
+  if (process.env.CLAIM_ROOMS !== '1') return cmdErr(ws, '방장 되찾기는 꺼져 있어요');
   ws.claimTries = (ws.claimTries || []).filter((t) => t > now - 60000);
   if (code.length < 8 || room.noSave || room.id === 'lobby' || isGuest(ws.owner)) return cmdErr(ws, '방장 되찾기를 쓸 수 없어요');
   if (ws.claimTries.length >= 3) return cmdErr(ws, '잠시 뒤에 다시 해 주세요');
@@ -1415,6 +1465,7 @@ function claimOwner(ws, room, msg) {
   broadcastAll(room, roomStateMsg(room));
   for (const o of new Set([...room.clients].map((c) => c.owner))) sendMe(room, o);
   sendAdmin(room);
+  ownerChanged(room);
   sysChat(room, `${room.names[ws.owner] || '누군가'}님이 방장을 되찾았어요`);
   console.log(`방 ${room.id}: 방장 되찾기 코드로 방장이 바뀜`);
 }
@@ -1743,6 +1794,10 @@ function handleMsg(ws, room, roomId, owner, msg) {
         dpr: num(msg.dpr, 0, 10), w: num(msg.w, 0, 10000), h: num(msg.h, 0, 10000), cores: num(msg.cores, 0, 512), mem: num(msg.mem, 0, 1024), tool: t(msg.tool, 12), ua: t(msg.ua, 160) };
       console.log(`버벅임 [방 ${roomId}] 90% ${r.p90}ms 평균 ${r.avg}ms 최대 ${r.max}ms (${r.n}장) · 그림 ${r.segs}조각 · 배율 ${r.scale} · ${r.w}x${r.h}@${r.dpr} · 코어 ${r.cores} 메모리 ${r.mem}GB · ${r.tool} · ${r.ua}`);
       try { P.onPerf(roomId, r); } catch {}
+    } else if (msg.type === 'plusre') {                   // 화면: 방금 Plus 를 샀어요·꾸미기를 바꿨어요 → 계정 저장소에 다시 묻기
+      const wait = 3000 - (Date.now() - (ws.plusReAt || 0));     // (3초에 한 번: 그 안에 또 오면 3초가 지난 뒤 한 번)
+      if (wait <= 0) { ws.plusReAt = Date.now(); lookPlus(ws, room, true); }
+      else if (!ws.plusReT) ws.plusReT = setTimeout(() => { ws.plusReT = null; ws.plusReAt = Date.now(); if (ws.approved && !ws.gone) lookPlus(ws, room, true); }, wait);
     } else if (msg.type === 'ping') {
       send(ws, { type: 'pong' });                         // 화면이 다시 보일 때 연결이 살아 있는지 확인 (그림 전체를 다시 받지 않는다)
     } else if (msg.type === 'cur') {
@@ -1843,6 +1898,8 @@ function initSock(ws, owner) {
   ws.isAlive = true;
 }
 let pruneAt = 0;
+// 비밀 키 → 주인 ID (10글자, 남에게 보여도 되는 값). 계정 저장소도 같은 함수로 Plus 를 주인 ID 에 묶는다
+const ownerIdOf = (key) => (/^[A-Za-z0-9_-]{16,64}$/.test(key) ? crypto.createHash('sha256').update(key).digest('base64url').slice(0, 10) : null);
 async function connect(ws, { url, cip }) {
   if (Date.now() - pruneAt > 60000) { pruneAt = Date.now(); pruneConnRate(); }   // (Cloudflare 에는 1분마다 도는 타이머가 없다)
   sockets.add(ws);
@@ -1861,9 +1918,7 @@ async function connect(ws, { url, cip }) {
   ws.zOk = ({ 1: 1, 2: 2, 3: 3 })[url.searchParams.get('z')] || 0;
   ws.echoOk = url.searchParams.get('e') === '1';                   // 받은 그림 뒤 돌려주기(echo)를 아는 화면 (synced 를 보낸다)   // 화면이 압축된 그림(바이너리)을 풀 수 있다: 1 = JSON 압축, 2 = D2 도, 3 = 덩어리 맞추기(B3)도
   const key = url.searchParams.get('k') || '';
-  const owner = /^[A-Za-z0-9_-]{16,64}$/.test(key)
-    ? crypto.createHash('sha256').update(key).digest('base64url').slice(0, 10)
-    : 'g' + crypto.randomBytes(5).toString('hex');
+  const owner = ownerIdOf(key) || 'g' + crypto.randomBytes(5).toString('hex');
   initSock(ws, owner);
   ws.room = room; ws.roomId = roomId;
   P.attach(ws);
@@ -1907,7 +1962,7 @@ async function restore(roomId, list) {
 function dropRoom(id) { rooms.delete(id); }            // (Cloudflare: 방이 새로 깨어날 때 예전 메모리를 버린다)
 
 module.exports = {
-  setPlatform, connect, message, closed, restore, dropRoom, getRoom, packRoom, parseDbUrl, maintainRoom, saveAll, saveTick, pruneConnRate, versionInfo, newRoomId, ipTag,
+  setPlatform, connect, message, closed, restore, dropRoom, getRoom, packRoom, parseDbUrl, maintainRoom, saveAll, saveTick, pruneConnRate, versionInfo, newRoomId, ipTag, cleanDeco, ownerIdOf,
   rooms, sockets, get dbState() { return dbState; },
   MAX_FILL_BYTES, PING_MS, SAVE_MS, ROOM_RE, MAX_HISTORY,
 };

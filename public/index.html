@@ -438,6 +438,15 @@
   .chatbar { border-top: 2px dashed rgba(29,29,27,.3); }
   .tag { background: var(--panel); color: var(--text); border: 1.5px solid var(--line); border-radius: var(--hand); font-size: 13px; font-weight: 700; }
   .tag.own { background: var(--text); color: var(--panel); }
+  .tag.plus { background: #f9d65c; color: var(--text); }
+  .cmsg .chead .pb { font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: 6px; background: #f9d65c; color: #1d1d1b; }
+  .cur .dot.glyph { background: none !important; border: 0; box-shadow: none; width: 22px; height: 22px; left: -11px; top: -11px; font-size: 19px; line-height: 22px; text-align: center; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
+  #plusBody .plist { margin: 6px 0 10px; padding-left: 18px; font-family: var(--read); font-size: 14px; }
+  #plusBody .plist li { margin: 2px 0; }
+  #plusBody .decorow { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+  #plusBody .decorow button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); padding: 0; font-size: 16px; background: var(--panel); }
+  #plusBody .decorow button.on { outline: 3px solid var(--text); outline-offset: 2px; }
+  #plusBody .acctno { font-family: ui-monospace, Consolas, monospace; user-select: all; -webkit-user-select: all; }
   .tag.mod { background: var(--panel-2); color: var(--text); }
   .tag.on { color: var(--ok); border-color: var(--ok); }
   .tag.warn { color: var(--danger); border-color: var(--danger); background: var(--panel); }
@@ -701,6 +710,7 @@
   <div class="sheetgrab"></div><h3>설정</h3>
   <div class="field"><label for="nick">닉네임 (최대 12자)</label><input type="text" id="nick" class="inp" autocomplete="off" placeholder="닉네임"></div>
   <div class="field" id="acctBox" hidden><label>계정</label><div id="acctBody"></div></div>
+  <div class="field" id="plusBox" hidden><label>✦ Plus</label><div id="plusBody"></div></div>
   <div class="switch"><div>도구 설명<small>도구를 고를 때 위에 잠깐 뜨는 설명 (끄면 안 떠요)</small></div><input type="checkbox" id="setToolTips" aria-label="도구 설명"></div>
   <div class="switch"><div>그리드<small>배경 격자 표시</small></div><input type="checkbox" id="setGrid" aria-label="그리드"></div>
   <div class="switch"><div>펜으로만 그리기<small>손가락은 이동·줌 전용</small></div><input type="checkbox" id="setPenOnly" aria-label="펜으로만 그리기"></div>
@@ -714,7 +724,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span><b>U</b><span>자·도형 켜기·끄기 (도형을 끌 때 Shift: 15°씩·정사각형·정원)</span><b>M</b><span>올가미 (내 그림 골라 옮기기·크기)</span><b>Ctrl+D</b><span>고른 것 복제</span><b>Delete</b><span>고른 것 지우기</span><b>Esc</b><span>고르기 끝</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-16 67차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-16 68차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -1030,6 +1040,14 @@ function blockHash(u) {
   h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return (h2 >>> 0).toString(36).padStart(7, '0') + (h1 >>> 0).toString(36).padStart(7, '0');
+}
+// Plus 꾸미기: 이름 색·커서 모양 (서버는 이 목록에 있는 값만 받는다)
+const DECO_COLORS = ['#e53935', '#fb8c00', '#f9a825', '#43a047', '#00897b', '#1e88e5', '#3949ab', '#8e24aa', '#d81b60', '#6d4c41'];
+const DECO_CURSORS = ['dot', 'star', 'heart', 'flower', 'cat', 'pencil'];
+function cleanDeco(d) {
+  const o = {};
+  if (d && typeof d === 'object') { if (DECO_COLORS.includes(d.c)) o.c = d.c; if (DECO_CURSORS.includes(d.cur)) o.cur = d.cur; }
+  return o;
 }
 // @@SHARED_END
 
@@ -1542,7 +1560,9 @@ function hudSoon() { if (!rafHud) rafHud = requestAnimationFrame(updateHud); }
 
 /* ===== 다른 사람 커서 / 이름 ===== */
 const hue = (o) => { let h = 0; for (const ch of String(o)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
-const colorOf = (o) => `hsl(${hue(o)} 65% 42%)`;
+const colorOf = (o) => (plusMap[o] && plusMap[o].c) || `hsl(${hue(o)} 65% 42%)`;
+let plusMap = {};                                               // 지금 방의 Plus 사람들: 주인 ID → 꾸미기 { c: 이름 색, cur: 커서 모양 } (서버가 확인한 것)
+const CUR_GLYPH = { star: '★', heart: '♥', flower: '✿', cat: '🐱', pencil: '✏️' };
 const nameOf = (o) => names[o] || '알 수 없음';
 const cursors = new Map();                                   // 주인 ID -> { el, lbl, x, y, t }
 // glide: 서버가 모아 보내는 커서는 받은 간격(평균, 0.06~0.25초)에 맞춰 그 사이를 부드럽게 옮긴다 (화면을 움직일 때는 바로)
@@ -1603,11 +1623,20 @@ function showCursor(o, x, y, glide) {
   }
   const fresh = !c.t, t = now();
   if (!fresh) c.gap = clamp(((c.gap || 100) * 0.6 + (t - c.t) * 0.4), 60, 250);
-  c.x = x; c.y = y; c.t = t; c.lbl.textContent = nameOf(o);
+  c.x = x; c.y = y; c.t = t; c.lbl.textContent = labelOf(o);
+  if (fresh) decoCursor(o, c);
   layoutCursor(c, glide && !fresh);
 }
+const labelOf = (o) => nameOf(o) + (plusMap[o] ? ' ✦' : '');
+function decoCursor(o, c) {                                       // Plus 꾸미기: 커서 모양·색
+  const g = plusMap[o] && CUR_GLYPH[plusMap[o].cur], col = colorOf(o);
+  c.el.querySelector('.dot').classList.toggle('glyph', !!g);
+  c.el.querySelector('.dot').textContent = g || '';
+  c.el.querySelector('.dot').style.background = g ? '' : col; c.el.querySelector('.dot').style.color = col;
+  c.lbl.style.background = col; c.arr.style.fill = col;
+}
 function hideCursor(o) { const c = cursors.get(o); if (c) { c.el.remove(); cursors.delete(o); } }
-function refreshLabels() { for (const [o, c] of cursors) c.lbl.textContent = nameOf(o); }
+function refreshLabels() { for (const [o, c] of cursors) { c.lbl.textContent = labelOf(o); decoCursor(o, c); } }
 setInterval(() => { const t = now(); for (const [o, c] of cursors) if (t - c.t > 4000) hideCursor(o); }, 1000);
 
 /* ===== 선에 올리면(탭하면) 그린 사람 표시 + 해당 획 강조 ===== */
@@ -3557,6 +3586,7 @@ function renderPeople() {
     const li = mk('li', 'prow'); li.dataset.o = o;
     const dot = mk('span', 'dot'); dot.style.background = colorOf(o);
     li.append(dot, mk('span', 'nm', nameOf(o)));
+    if (plusMap[o]) li.appendChild(mk('span', 'tag plus', '✦ Plus'));
     if (o === ownerId) { const t = mk('span', 'tag own'); t.append(icon('i-crown'), document.createTextNode('방장')); li.appendChild(t); }
     else if (mods.has(o)) li.appendChild(mk('span', 'tag mod', '부방장'));
     if (o === me) li.appendChild(mk('span', 'tag', '나'));
@@ -3773,7 +3803,9 @@ function chatEl(m) {                                              // 모든 글�
   if (m.sys) return mk('div', 'cmsg sys', m.text);
   const el = mk('div', 'cmsg' + (m.o === me ? ' mine' : '')), head = mk('div', 'chead'), dot = mk('span', 'cdot');
   dot.style.background = colorOf(m.o);
-  head.append(dot, mk('b', '', m.name), mk('span', '', fmtTime(m.t)));
+  head.append(dot, mk('b', '', m.name));
+  if (plusMap[m.o]) head.appendChild(mk('span', 'pb', '✦'));
+  head.appendChild(mk('span', '', fmtTime(m.t)));
   el.append(head, mk('div', 'ctext', m.text)); return el;
 }
 function renderChatAll() { chatList.textContent = ''; for (const m of chatMsgs) chatList.appendChild(chatEl(m)); scrollChatBottom(); }
@@ -4115,7 +4147,12 @@ function handleMsg(m) {
       ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); if (m.max > 0) { roomMax = m.max; checkCap(); }
       mods = new Set(Array.isArray(m.mods) ? m.mods : []); gateOn = !!m.gate; coverOn = m.cover !== false; roomShare = m.share > 0 && m.share < 1 ? m.share : 0;
       syncOwnerUI(); break;
+    case 'plusmap': plusMap = m.l && typeof m.l === 'object' ? m.l : {}; refreshLabels(); renderPeople(); renderChatAll(); break;
     case 'me': {
+      const wasPlus = myPlus > Date.now();
+      myPlus = +m.plus || 0;
+      if (!wasPlus && myPlus > Date.now() && plusJustBought) { plusJustBought = false; toast('✦ Plus 가 켜졌어요. 고마워요!', 'ok'); }
+      if (wasPlus !== myPlus > Date.now()) { renderPlus(); plusStatus(); syncPlusUI(); }   // (설정의 Plus 칸도 다시 물어서: 구독 관리 버튼 등)
       const was = myRestr;
       myRestr = { muted: m.muted ? { ...m.muted } : null, spectator: !!m.spectator, wait: !!m.wait };
       if (!was.spectator && myRestr.spectator) toast(myRestr.wait ? '이 방은 방장·부방장이 허락해야 그릴 수 있어요 (지금은 보기만)' : '방장이 그리기를 제한했어요 (보기만 가능)', 'warn');
@@ -4156,7 +4193,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-16 67차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-16 68차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 let roomTitle = '';                                             // 방 이름 (방장·부방장이 정함, 없으면 방 코드)
 const BASE_TITLE = '같이 그리기';                                 // (Cloudflare 는 첫 화면 제목에 방 이름을 미리 넣어 보낸다)
@@ -4223,6 +4260,83 @@ function renderAcct() {
   if (authCfg && authCfg.google && /KAKAOTALK/i.test(navigator.userAgent)) body.appendChild(mk('small', 'hint', '카톡 안에서는 구글 로그인이 안 돼요 (구글이 막음). 카카오로 로그인하거나, 오른쪽 위 ⋯ 에서 다른 브라우저로 열어 주세요.'));
 }
 if (window.fetch) fetch('/auth/config').then((r) => (r.ok ? r.json() : null)).then((j) => { authCfg = j; renderAcct(); }).catch(() => {});
+// ── Plus (구독, Cloudflare 판): 결제는 Polar. 방 안에서 Plus 인지는 서버가 알려 준 것(me.plus)으로만 판단한다 ──
+let myPlus = 0, plusInfo = null, plusJustBought = false;          // myPlus: Plus 가 끝나는 때 (0 = 아님) / plusInfo: /plus/status 답
+const hasPlus = () => myPlus > Date.now();
+const PLUS_PERKS = ['레이어 무제한 (무료는 2개)', '방 되감기: 분탕·실수로 망가진 방을 원하는 때로', '비밀 방: 비밀번호를 아는 사람만 들어와요', '고화질 내보내기: 아주 큰 PNG·투명 배경·그리는 과정 영상', '꾸미기: ✦ 배지·이름 색·커서 모양·방 종이 색'];
+const plusPost = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: myKey, ...body }) }).then(async (r) => ({ ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) }));
+function plusStatus() {
+  if (!window.fetch) return Promise.resolve();
+  return plusPost('/plus/status', {}).then((r) => { if (r.ok) { plusInfo = r.j; if (r.j.until > myPlus && !me) myPlus = r.j.until; } else plusInfo = null; renderPlus(); }).catch(() => {});
+}
+function syncPlusUI() { document.body.classList.toggle('isplus', hasPlus()); }
+function renderPlus() {
+  const box = $('plusBox'), body = $('plusBody');
+  if (!box) return;
+  box.hidden = !plusInfo;
+  if (!plusInfo) return;
+  body.textContent = '';
+  const until = Math.max(myPlus, plusInfo.until || 0), on = until > Date.now();
+  if (on) {
+    body.appendChild(mk('div', 'hint', `Plus 사용 중 · ${new Date(until).toLocaleDateString('ko-KR')}까지` + (plusInfo.pu > Date.now() ? ' (구독 중이면 자동으로 이어져요)' : '')));
+    if (plusInfo.pu > 0) { const b = mk('button', 'btn block', '구독 관리 (해지·카드·영수증)'); b.type = 'button'; b.style.marginTop = '6px'; b.onclick = plusPortal; body.appendChild(b); }
+    body.appendChild(mk('div', 'hint', '이름 색'));
+    const r1 = mk('div', 'decorow'), cur = (plusMap[me] || plusInfo.deco || {});
+    const none = mk('button', '', '✕'); none.type = 'button'; none.title = '기본'; none.classList.toggle('on', !cur.c); none.onclick = () => setDeco({ ...cur, c: undefined }); r1.appendChild(none);
+    for (const c of DECO_COLORS) { const b = mk('button'); b.type = 'button'; b.style.background = c; b.title = c; b.classList.toggle('on', cur.c === c); b.onclick = () => setDeco({ ...cur, c }); r1.appendChild(b); }
+    body.appendChild(r1);
+    body.appendChild(mk('div', 'hint', '내 커서 모양 (다른 사람 화면에 보여요)'));
+    const r2 = mk('div', 'decorow');
+    for (const k of DECO_CURSORS) { const b = mk('button', '', CUR_GLYPH[k] || '●'); b.type = 'button'; b.classList.toggle('on', (cur.cur || 'dot') === k); b.onclick = () => setDeco({ ...cur, cur: k }); r2.appendChild(b); }
+    body.appendChild(r2);
+  } else {
+    const ul = mk('ul', 'plist'); for (const t of PLUS_PERKS) ul.appendChild(mk('li', '', t)); body.appendChild(ul);
+    const b = mk('button', 'btn primary block', plusInfo.on ? 'Plus 시작하기' + (plusInfo.price ? ' · ' + plusInfo.price : '') : 'Plus 준비 중이에요'); b.type = 'button';
+    b.disabled = !plusInfo.on; b.onclick = plusBuy; body.appendChild(b);
+    body.appendChild(mk('small', 'hint', plusInfo.acct ? '결제는 Polar(해외 결제 대행)에서 해요. 언제든 해지할 수 있어요.' : 'Plus 는 로그인한 계정에 붙어요 (다른 기기에서도 그대로). 먼저 위 계정 칸에서 로그인해 주세요.'));
+  }
+  if (plusInfo.o) { const n = mk('small', 'hint'); n.append('계정 번호 ', mk('span', 'acctno', plusInfo.o)); body.appendChild(n); }
+}
+async function plusBuy() {
+  if (!plusInfo || !plusInfo.acct) { toast('먼저 로그인해 주세요 (설정 → 계정)', 'warn'); return; }
+  rememberRoom();
+  const r = await plusPost('/plus/checkout', { ret: location.pathname + location.search }).catch(() => null);
+  if (r && r.ok && r.j.url) { location.href = r.j.url; return; }
+  toast(r && r.j.error === 'login' ? '먼저 로그인해 주세요 (설정 → 계정)' : r && r.j.error === 'wait' ? '잠시 뒤에 다시 해 주세요' : '결제 화면을 못 열었어요. 잠시 뒤 다시 해 주세요', 'warn');
+}
+async function plusPortal() {
+  const r = await plusPost('/plus/portal', { ret: location.pathname + location.search }).catch(() => null);
+  if (r && r.ok && r.j.url) { location.href = r.j.url; return; }
+  toast(r && r.j.error === 'none' ? '결제한 구독이 없어요 (선물받은 Plus 는 관리할 게 없어요)' : '구독 관리 화면을 못 열었어요. 잠시 뒤 다시 해 주세요', 'warn');
+}
+async function setDeco(d) {
+  const r = await plusPost('/plus/deco', { deco: cleanDeco(d) }).catch(() => null);
+  if (!r || !r.ok) { toast(r && r.status === 403 ? 'Plus 일 때만 꾸밀 수 있어요' : '바꾸지 못했어요', 'warn'); return; }
+  plusInfo.deco = r.j.deco; send({ type: 'plusre' }); renderPlus();
+}
+// Plus 전용 기능을 눌렀을 때: 무엇을 할 수 있는지 보여 주고 설정의 Plus 칸으로
+async function plusAsk(what) {
+  const v = await formModal({ title: '✦ Plus 기능이에요', body: what + '\n\nPlus 를 쓰면:\n' + PLUS_PERKS.map((t) => '• ' + t).join('\n'), ok: 'Plus 알아보기', cancel: '닫기' });
+  if (!v) return;
+  openPop('popSettings', $('btnSettings'));
+  plusStatus().then(() => { const b = $('plusBox'); if (b && !b.hidden) b.scrollIntoView({ block: 'center' }); });
+}
+// 결제하고 돌아옴 (#plus=ok): 웹훅을 기다리지 않고 바로 확인 → 방에도 다시 물어 달라고
+{
+  if (location.hash === '#plus=ok') {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch {}
+    plusJustBought = true;
+    setTimeout(() => toast('결제를 확인하고 있어요…', 'ok'), 300);
+    const tryRefresh = (n) => loginReady.then(() => plusPost('/plus/refresh', {})).then((r) => {
+      if (r.ok && r.j.until > Date.now()) { myPlus = Math.max(myPlus, r.j.until); send({ type: 'plusre' }); plusStatus(); return; }
+      if (n < 5) setTimeout(() => tryRefresh(n + 1), 3000 * (n + 1));            // (결제 확인이 몇 초 늦을 수 있다)
+      else toast('결제 확인이 늦어지고 있어요. 조금 뒤 새로고침해 주세요', 'warn');
+    }).catch(() => {});
+    tryRefresh(0);
+  }
+}
+$('btnSettings').addEventListener('click', () => plusStatus());
+loginReady.then(plusStatus);
 // 로그인한 기기: 이 사람에게 이어진 로그인(다른 기기에서 연결한 것도)을 다시 물어 계정 칸을 맞춘다
 if (window.fetch && lsGet('draw:acct')) loginReady.then(() => fetch('/auth/linked', { method: 'POST', body: JSON.stringify({ key: myKey }) }))
   .then((r) => (r && r.ok ? r.json() : null)).then((j) => { if (j && Array.isArray(j.linked) && j.linked.length && lsGet('draw:acct')) { lsSet('draw:acct', j.linked.join(',')); renderAcct(); } }).catch(() => {});

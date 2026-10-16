@@ -4,6 +4,7 @@
 // 방 객체는 할 일이 없으면 잠들고(접속은 그대로), 오래 쉬면 메모리에서 내려간다 → 다시 깨어날 때 SQLite 에서 방을, 소켓에 적어 둔 정보에서 접속을 되살린다.
 import { DurableObject } from 'cloudflare:workers';
 import { Buffer } from 'node:buffer';
+import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 import core from '../core.js';
 
 // 방 하나의 저장소 (그 방 객체의 SQLite). 표: kv(history 'p1:…'·names·meta·extra·roomId), parts(덩어리 번호 → 'z2:'+base64). Node 판 Postgres 와 같은 내용·형식.
@@ -84,6 +85,12 @@ core.setPlatform({
   attach: (ws) => { try { ws.serializeAttachment({ o: ws.owner, ipt: ws.ipt || '', z: ws.zOk || 0, ap: ws.approved ? 1 : 0, e: ws.echoOk ? 1 : 0 }); } catch {} },
   // 화면이 버벅였다는 알림: Stats 객체에 모아 /stats 에서 본다
   onPerf: (roomId, r) => { if (ENV && ENV.STATS) statsObj(ENV).fetch('https://stats/perf', { method: 'POST', body: JSON.stringify({ room: roomId, ...r, at: Date.now() }) }).catch(() => {}); },
+  // Plus: 그 사람(주인 ID)의 Plus 기간·꾸미기를 계정 저장소에서
+  plusOf: async (o) => {
+    if (!ENV || !ENV.ACCT) return null;
+    const r = await acctObj(ENV).fetch('https://acct/plus/get', { method: 'POST', body: JSON.stringify({ o }) });
+    return r.ok ? r.json() : null;
+  },
 });
 let ENV = null;                                                  // (방 객체가 만들어질 때 적어 둔다: 위 onPerf 가 Stats 객체를 찾으려고)
 
@@ -262,17 +269,48 @@ $('f').onsubmit = async (ev) => { ev.preventDefault(); $('e').textContent = '';
     + '<div class="card"><b>큰 방 20개</b><table><tr><th>방</th><th>이름</th><th class="n">크기</th><th class="n">조각</th><th>마지막</th></tr>'
     + j.top.map((x) => '<tr><td><a href="/?room=' + esc(x.id) + '">' + esc(x.id) + '</a></td><td>' + esc(x.title) + '</td><td class="n">' + mb(x.bytes) + '</td><td class="n">' + x.segs.toLocaleString() + '</td><td>' + new Date(x.at).toLocaleDateString('ko-KR') + '</td></tr>').join('') + '</table></div>'
     + '<div class="card"><b>버벅임 알림 (최근 40개)</b><p class="mute">그리는 동안 화면이 초당 30장 아래로 느려졌던 기기. 90% = 프레임 10장 중 9장이 이 시간 안.</p><table><tr><th>때</th><th>방</th><th class="n">90%</th><th class="n">조각</th><th>화면</th><th>기기</th></tr>'
-    + (j.perf || []).map((x) => '<tr><td>' + new Date(x.at).toLocaleString('ko-KR') + '</td><td>' + esc(x.room) + '</td><td class="n">' + x.p90 + 'ms</td><td class="n">' + (x.segs || 0).toLocaleString() + '</td><td>' + x.w + 'x' + x.h + '@' + x.dpr + ' · ' + esc(x.tool) + '</td><td class="mute">' + esc(x.ua) + '</td></tr>').join('') + '</table></div>';
+    + (j.perf || []).map((x) => '<tr><td>' + new Date(x.at).toLocaleString('ko-KR') + '</td><td>' + esc(x.room) + '</td><td class="n">' + x.p90 + 'ms</td><td class="n">' + (x.segs || 0).toLocaleString() + '</td><td>' + x.w + 'x' + x.h + '@' + x.dpr + ' · ' + esc(x.tool) + '</td><td class="mute">' + esc(x.ua) + '</td></tr>').join('') + '</table></div>'
+    + '<div class="card"><b>Plus</b> <span class="mute">결제(Polar): ' + (j.polar ? '켜짐' : '꺼짐 (비밀값 POLAR_TOKEN·POLAR_WEBHOOK_SECRET, 상품 POLAR_PRODUCT 필요)') + '</span>'
+    + '<form id="g" style="margin:10px 0"><label>계정 번호 <input id="go" size="12" required placeholder="설정 → 계정에 보임"></label> <label>며칠 <input id="gd" type="number" min="0" max="3660" value="30" style="width:6em"></label> <button>선물</button> <span class="mute">(0일 = 선물 취소)</span> <span id="ge" class="err"></span></form>'
+    + '<table><tr><th>계정 번호</th><th>결제</th><th>선물</th><th>끝나는 날</th></tr>' + (j.plus || []).map((x) => '<tr><td>' + esc(x.o) + '</td><td>' + (x.pu > Date.now() ? '구독 중' : '') + '</td><td>' + (x.gu > Date.now() ? '선물' : '') + '</td><td>' + new Date(Math.max(x.pu, x.gu)).toLocaleDateString('ko-KR') + '</td></tr>').join('') + '</table></div>';
+  if ($('g')) $('g').onsubmit = async (e2) => { e2.preventDefault();
+    const r2 = await fetch('/__stats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: $('k').value, act: 'gift', o: $('go').value.trim(), days: +$('gd').value }) });
+    if (!r2.ok) { $('ge').textContent = '못 했어요 (' + r2.status + ')'; return; }
+    $('f').requestSubmit(); };
 };
 </script></body></html>`;
+// 같은 길이로 바꿔 비교 (맞는 글자 수에 따라 걸리는 시간이 달라지지 않게)
+const sameSecret = (a, b) => { const x = createHash('sha256').update(String(a)).digest(), y = createHash('sha256').update(String(b)).digest(); return timingSafeEqual(x, y) && String(a) === String(b); };
+// 틀린 시도 세기 (이 프로그램 안, IP 마다): 10분에 10번 넘게 틀리면 잠시 막는다
+const fails = new Map();
+function tooManyFails(ip, add) {
+  const now = Date.now(), a = (fails.get(ip) || []).filter((t) => t > now - 600000);
+  if (add) a.push(now);
+  if (a.length) fails.set(ip, a); else fails.delete(ip);
+  if (fails.size > 5000) fails.clear();
+  return a.length >= 10;
+}
+// 그 밖의 횟수 제한 (이 프로그램 안): k 마다 ms 동안 n 번까지
+const hits = new Map();
+function rateOk(k, n, ms) { const now = Date.now(), a = (hits.get(k) || []).filter((t) => t > now - ms); if (a.length >= n) { hits.set(k, a); return false; } a.push(now); hits.set(k, a); if (hits.size > 5000) hits.clear(); return true; }
+const clientIp = (req, env) => (env.LOCAL_DEV === '1' ? req.headers.get('X-Test-IP') : req.headers.get('CF-Connecting-IP')) || 'local';
 async function stats(req, env, url) {
   if (url.pathname === '/stats') return new Response(STATS_PAGE, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
   if (req.method !== 'POST' || !env.STATS) return new Response('not found', { status: 404 });
+  const ip = clientIp(req, env);
+  if (tooManyFails(ip, false)) return new Response('wait', { status: 429 });
   let b = {}; try { b = await req.json(); } catch {}
   const code = String(env.OWNER_CLAIM || '');
-  if (code.length < 8 || typeof b.key !== 'string' || b.key !== code) return new Response('no', { status: 403 });
+  if (code.length < 8 || typeof b.key !== 'string' || !sameSecret(b.key, code)) { tooManyFails(ip, true); return new Response('no', { status: 403 }); }
+  const J = (r) => new Response(r.body, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  if (b.act === 'gift' && env.ACCT) {                     // Plus 선물 (친구·시험용): 주인 ID 에 며칠 (0 이면 선물 취소)
+    return J(await acctObj(env).fetch('https://acct/plus/gift', { method: 'POST', body: JSON.stringify({ o: b.o, days: b.days }) }));
+  }
   const r = await statsObj(env).fetch('https://stats/summary');
-  return new Response(r.body, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  const j = await r.json().catch(() => ({}));
+  if (env.ACCT) { try { j.plus = (await (await acctObj(env).fetch('https://acct/plus/list', { method: 'POST', body: '{}' })).json()).list; } catch {} }
+  j.polar = plusReady(env);
+  return Response.json(j, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 // 무료 하루 한도를 넘었다는 오류인지 (정확한 문구는 Cloudflare 가 정하므로 넓게 본다. 메모리·CPU 초과는 아니다)
@@ -386,6 +424,14 @@ export class Accounts extends DurableObject {
     this.sql = ctx.storage.sql;
     this.sql.exec('CREATE TABLE IF NOT EXISTS acct (pid TEXT PRIMARY KEY, key TEXT NOT NULL, nick TEXT NOT NULL, at INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS ticket (id TEXT PRIMARY KEY, pid TEXT NOT NULL, st TEXT NOT NULL, at INTEGER NOT NULL)');
+    this.sql.exec('CREATE INDEX IF NOT EXISTS acct_key ON acct(key)');
+    // Plus: 주인 ID 마다 결제(Polar)로 받은 기간 pu · 선물받은 기간 gu (끝나는 시각, ms) · 꾸미기
+    this.sql.exec("CREATE TABLE IF NOT EXISTS plus (o TEXT PRIMARY KEY, pu INTEGER NOT NULL DEFAULT 0, gu INTEGER NOT NULL DEFAULT 0, deco TEXT NOT NULL DEFAULT '{}', at INTEGER NOT NULL)");
+  }
+  plusRow(o) { return this.sql.exec('SELECT pu, gu, deco FROM plus WHERE o = ?', o).toArray()[0] || { pu: 0, gu: 0, deco: '{}' }; }
+  plusSet(o, f) {                                              // f: 바꿀 칸들 { pu?, gu?, deco? }
+    const r = { ...this.plusRow(o), ...f };
+    this.sql.exec('INSERT INTO plus (o, pu, gu, deco, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(o) DO UPDATE SET pu = excluded.pu, gu = excluded.gu, deco = excluded.deco, at = excluded.at', o, r.pu, r.gu, r.deco, Date.now());
   }
   async fetch(req) {
     const path = new URL(req.url).pathname, s = this.sql, now = Date.now();
@@ -414,18 +460,172 @@ export class Accounts extends DurableObject {
       return Response.json({ key: a.key, nick: a.nick, p: t.pid.split(':')[0], created, linked: this.linked(a.key) });
     }
     if (path === '/linked') return Response.json({ linked: typeof b.key === 'string' && KEY_RE.test(b.key) ? this.linked(b.key) : [] });
+    // ── Plus ──
+    const O_RE = /^[A-Za-z0-9_-]{10}$/;
+    const deco = (r) => { try { return core.cleanDeco(JSON.parse(r.deco)); } catch { return {}; } };
+    if (path === '/plus/get') {                                // 방이 묻는다: 이 사람의 Plus
+      if (!O_RE.test(b.o)) return Response.json({ until: 0, deco: {} });
+      const r = this.plusRow(b.o);
+      return Response.json({ until: Math.max(r.pu, r.gu), deco: deco(r) });
+    }
+    if (path === '/plus/me') {                                 // 본인: 키 → 계정인지·주인 ID·Plus
+      const key = typeof b.key === 'string' && KEY_RE.test(b.key) ? b.key : null, o = key && core.ownerIdOf(key);
+      if (!o) return Response.json({ acct: false });
+      const acct = !!this.sql.exec('SELECT 1 AS x FROM acct WHERE key = ? LIMIT 1', key).toArray()[0], r = this.plusRow(o);
+      return Response.json({ acct, o, until: Math.max(r.pu, r.gu), pu: r.pu, gu: r.gu, deco: deco(r) });
+    }
+    if (path === '/plus/polar') {                              // 결제 소식(웹훅)에서 확인한 구독 기간
+      if (!O_RE.test(b.o) || !(b.until >= 0)) return bad('o');
+      this.plusSet(b.o, { pu: Math.floor(b.until) });
+      return Response.json({ ok: true });
+    }
+    if (path === '/plus/gift') {                               // 관리: 선물 (며칠, 0 = 취소)
+      const days = Number.isInteger(b.days) ? b.days : -1;
+      if (!O_RE.test(b.o) || days < 0 || days > 3660) return bad('o');
+      const r = this.plusRow(b.o);
+      this.plusSet(b.o, { gu: days ? Math.max(now, r.gu) + days * 86400000 : 0 });
+      console.log(`Plus 선물: ${b.o} ${days}일`);
+      return Response.json({ ok: true });
+    }
+    if (path === '/plus/deco') {                               // 본인: 꾸미기 바꾸기 (Plus 일 때만)
+      const key = typeof b.key === 'string' && KEY_RE.test(b.key) ? b.key : null, o = key && core.ownerIdOf(key);
+      if (!o) return bad('key');
+      const r = this.plusRow(o);
+      if (Math.max(r.pu, r.gu) <= now) return Response.json({ error: 'plus' }, { status: 403 });
+      const d = core.cleanDeco(b.deco);
+      this.plusSet(o, { deco: JSON.stringify(d) });
+      return Response.json({ ok: true, deco: d });
+    }
+    if (path === '/plus/list') {                               // 관리: 최근 30일 안에 Plus 였던 사람
+      return Response.json({ list: this.sql.exec('SELECT o, pu, gu FROM plus WHERE pu > ? OR gu > ? ORDER BY MAX(pu, gu) DESC LIMIT 200', now - 30 * 86400000, now - 30 * 86400000).toArray() });
+    }
     return new Response('not found', { status: 404 });
   }
   linked(key) { return [...new Set(this.sql.exec('SELECT pid FROM acct WHERE key = ?', key).toArray().map((r) => r.pid.split(':')[0]))]; }   // 이 키(같은 사람)에 이어진 로그인들
 }
 
+// ── Plus 구독 (Polar) ──
+// 결제·구독 관리는 Polar(판매 대행: 카드 결제·나라별 세금). Plus 는 계정(로그인)이 있어야 살 수 있다 (기기를 바꿔도 따라오게).
+// Polar 의 '외부 고객 ID' = 계정 키로 만든 주인 ID (방에서 쓰는 10글자, 남에게 보여도 되는 값).
+// 비밀값: POLAR_TOKEN (조직 액세스 토큰: checkouts:write · customers:read · customer_sessions:write), POLAR_WEBHOOK_SECRET (whsec_…)
+// 설정(vars): POLAR_PRODUCT (Plus 상품 ID), POLAR_API (기본 https://api.polar.sh · 시험판 https://sandbox-api.polar.sh), PLUS_PRICE (화면에 보일 가격, 예: 월 $3.99)
+// 기간은 웹훅 내용을 믿지 않고 Polar 에 그 사람의 '지금 상태'를 다시 물어서 정한다 (순서가 바뀌어 와도·여러 번 와도 결과가 같다)
+const GRACE_MS = 2 * 86400000;                               // 다음 결제가 조금 늦게 확인돼도 Plus 가 끊기지 않게 (해지 예약이면 그날까지만)
+const plusReady = (env) => !!(env.POLAR_TOKEN && env.POLAR_WEBHOOK_SECRET && env.POLAR_PRODUCT);
+async function polar(env, method, path, body) {
+  const base = String(env.POLAR_API || 'https://api.polar.sh').replace(/\/+$/, '');
+  const r = await fetch(base + path, { method, headers: { Authorization: 'Bearer ' + env.POLAR_TOKEN, 'Content-Type': 'application/json', Accept: 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, j };
+}
+function untilOf(env, st, now = Date.now()) {               // Polar 고객 상태 → Plus 가 끝나는 때 (구독이 없으면 0)
+  let u = 0;
+  for (const x of (st && Array.isArray(st.active_subscriptions) ? st.active_subscriptions : [])) {
+    if (x.product_id !== env.POLAR_PRODUCT || (x.status !== 'active' && x.status !== 'trialing')) continue;
+    const end = Date.parse(x.ends_at || x.current_period_end || '') || now + 31 * 86400000;
+    u = Math.max(u, x.cancel_at_period_end || x.ends_at ? end : end + GRACE_MS);
+  }
+  return u;
+}
+async function refreshPlus(env, o) {                         // Polar 에 이 사람의 상태를 물어 계정 저장소에 적는다
+  const st = await polar(env, 'GET', '/v1/customers/external/' + encodeURIComponent(o) + '/state');
+  if (!st.ok && st.status !== 404) throw new Error('Polar 고객 상태 ' + st.status);
+  const until = st.ok ? untilOf(env, st.j) : 0;
+  await acctObj(env).fetch('https://acct/plus/polar', { method: 'POST', body: JSON.stringify({ o, until }) });
+  return until;
+}
+// 웹훅 서명 확인 (Standard Webhooks: HMAC-SHA256(아이디.시각.본문), 키 = whsec_ 뒤를 base64 로 푼 것 / 예전 Polar 방식: whsec_ 글자 그대로). 5분 넘은 것은 거절
+function hookOk(env, req, body) {
+  const id = req.headers.get('webhook-id') || '', ts = req.headers.get('webhook-timestamp') || '', sig = req.headers.get('webhook-signature') || '';
+  const secret = String(env.POLAR_WEBHOOK_SECRET || '');
+  if (!id || !secret || !/^\d{1,12}$/.test(ts) || Math.abs(Date.now() / 1000 - +ts) > 300) return false;
+  const msg = id + '.' + ts + '.' + body, keys = [Buffer.from(secret.replace(/^whsec_/, ''), 'base64'), Buffer.from(secret, 'utf8')];
+  const given = sig.split(' ').map((x) => x.split(',')).filter((x) => x[0] === 'v1' && x[1]).map((x) => Buffer.from(x[1], 'base64'));
+  for (const k of keys) { const mac = createHmac('sha256', k).update(msg).digest(); if (given.some((g) => g.length === mac.length && timingSafeEqual(g, mac))) return true; }
+  return false;
+}
+const extOf = (d) => { const x = d && (d.external_id ?? (d.customer && d.customer.external_id) ?? d.external_customer_id); return typeof x === 'string' && /^[A-Za-z0-9_-]{10}$/.test(x) ? x : null; };
+async function plusRoute(req, env, url) {
+  const path = url.pathname, J = (o, status = 200) => Response.json(o, { status, headers: { 'Cache-Control': 'no-store' } });
+  if (path === '/plus/webhook' && req.method === 'POST') {    // Polar → 결제·구독이 바뀜
+    const body = await req.text();
+    if (body.length > 1000000) return new Response('too big', { status: 413 });
+    if (!plusReady(env) || !hookOk(env, req, body)) return new Response('no', { status: 403 });
+    let ev = null; try { ev = JSON.parse(body); } catch { return new Response('bad', { status: 400 }); }
+    const o = extOf(ev && ev.data);
+    if (!o || !/^(subscription|order|customer)\./.test(String(ev.type))) return new Response('', { status: 202 });   // (상관없는 소식·우리 계정이 아닌 고객)
+    try { const u = await refreshPlus(env, o); console.log(`Plus 소식 ${ev.type}: ${o} → ${u ? new Date(u).toISOString() : '없음'}`); }
+    catch (e) { console.error('Plus 소식 처리 실패:', e.message); return new Response('retry', { status: 500 }); }   // (Polar 가 다시 보낸다)
+    return new Response('', { status: 202 });
+  }
+  if (req.method !== 'POST') return new Response('not found', { status: 404 });
+  let b = {}; try { b = await req.json(); } catch {}
+  const me = await (await acctObj(env).fetch('https://acct/plus/me', { method: 'POST', body: JSON.stringify({ key: b.key }) })).json();
+  if (path === '/plus/status') return J({ ...me, on: plusReady(env), price: String(env.PLUS_PRICE || '').slice(0, 40) });
+  if (!me.o) return J({ error: 'key' }, 400);
+  if (path === '/plus/deco') {
+    const r = await acctObj(env).fetch('https://acct/plus/deco', { method: 'POST', body: JSON.stringify({ key: b.key, deco: b.deco }) });
+    return new Response(r.body, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  }
+  if (!plusReady(env)) return J({ error: 'off' }, 503);
+  if (path === '/plus/refresh') {                             // 결제하고 돌아옴: 웹훅을 기다리지 않고 바로 확인 (1분에 6번까지)
+    if (!rateOk('re:' + me.o, 6, 60000)) return J({ error: 'wait' }, 429);
+    try { return J({ until: Math.max(await refreshPlus(env, me.o), me.gu || 0) }); } catch (e) { console.error(e.message); return J({ error: 'polar' }, 502); }
+  }
+  if (!me.acct) return J({ error: 'login' }, 403);
+  if (!rateOk('pay:' + me.o, 10, 60000)) return J({ error: 'wait' }, 429);            // 사려면 로그인 (기기를 바꿔도 Plus 가 따라오게)
+  const ret = safeRet(b.ret);
+  if (path === '/plus/checkout') {
+    const r = await polar(env, 'POST', '/v1/checkouts/', { products: [env.POLAR_PRODUCT], external_customer_id: me.o, metadata: { o: me.o }, success_url: url.origin + ret + '#plus=ok', return_url: url.origin + ret });
+    if (!r.ok || !/^https:\/\//.test(String(r.j.url || ''))) { console.error('Polar 결제 만들기 실패:', r.status, JSON.stringify(r.j).slice(0, 300)); return J({ error: 'polar' }, 502); }
+    return J({ url: r.j.url });
+  }
+  if (path === '/plus/portal') {                              // 구독 관리 (해지·카드 바꾸기·영수증): Polar 의 고객 화면
+    const r = await polar(env, 'POST', '/v1/customer-sessions/', { external_customer_id: me.o, return_url: url.origin + ret });
+    if (!r.ok || !/^https:\/\//.test(String(r.j.customer_portal_url || ''))) return J({ error: r.status === 404 || r.status === 422 ? 'none' : 'polar' }, r.status === 404 || r.status === 422 ? 404 : 502);
+    return J({ url: r.j.customer_portal_url });
+  }
+  return new Response('not found', { status: 404 });
+}
+
+// ── 보안 머리글 ──
+// 모든 응답: 내용 종류 추측 금지 · 다른 사이트 안에 넣기(iframe) 금지 · 다른 사이트로 갈 때 주소(방 코드) 대신 사이트 이름만 · 카메라·마이크·위치 안 씀 · https 만
+const SEC_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()', 'Cross-Origin-Opener-Policy': 'same-origin' };
+function secure(res, url, csp) {
+  if (res.status === 101 || res.webSocket) return res;
+  const h = new Headers(res.headers);
+  for (const [k, v] of Object.entries(SEC_HEADERS)) h.set(k, v);
+  if (url.protocol === 'https:') h.set('Strict-Transport-Security', 'max-age=31536000');
+  if (csp) h.set('Content-Security-Policy', csp);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+// 화면(HTML)의 내용 보안 정책: 스크립트는 이 사이트 파일과 페이지 안의 그 스크립트(해시가 같은 것)만 → 누가 글자 칸에 스크립트를 몰래 넣어도 실행되지 않는다 (비밀 키를 훔치지 못하게)
+const b64sha = async (t) => Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t))).toString('base64');
+async function scriptHashes(html) { const out = []; for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) out.push(await b64sha(m[1])); return out; }
+const cspOf = (url, hashes) => ["default-src 'self'", "script-src 'self' " + hashes.map((h) => `'sha256-${h}'`).join(' '),
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src 'self' https://fonts.gstatic.com data:", "img-src 'self' data: blob:",
+  `connect-src 'self' ${url.protocol === 'https:' ? 'wss' : 'ws'}://${url.host} blob: data:`, "media-src 'self' blob:", "worker-src 'self' blob:", "frame-src 'none'", "object-src 'none'",
+  "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"].join('; ');
+let indexCache = null, statsHash = null;                     // { etag, hashes } (배포 때만 바뀐다)
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
+    const res = await route(req, env, url);
+    if (url.pathname === '/stats') return secure(res, url, cspOf(url, [statsHash || (statsHash = (await scriptHashes(STATS_PAGE))[0])]));
+    return secure(res, url, res.csp || null);
+  },
+};
+async function route(req, env, url) {
+  {
     if (url.pathname.startsWith('/auth/')) return auth(req, env, url);
+    if (url.pathname.startsWith('/plus/')) return plusRoute(req, env, url);
     if (url.pathname === '/stats' || url.pathname === '/__stats') return stats(req, env, url);
     if (url.pathname === '/ws') {                        // 실시간 접속 → 그 방의 객체로
       if (req.headers.get('Upgrade') !== 'websocket') return new Response('websocket only', { status: 426 });
+      const origin = req.headers.get('Origin');           // 브라우저는 다른 사이트에서 연 접속이면 그 사이트를 Origin 에 적는다: 이 사이트에서 연 것만 받는다
+      if (origin && origin !== url.origin) return new Response('forbidden origin', { status: 403 });
       const raw = url.searchParams.get('room') || 'lobby', id = core.ROOM_RE.test(raw) ? raw : 'lobby';
       try {
         const f = env.LOCAL_DEV === '1' && url.searchParams.get('__fail');   // (시험 전용: 방 객체가 거절한 것처럼)
@@ -446,9 +646,17 @@ export default {
     if (url.pathname === '/' && !url.searchParams.get('room')) {   // 방 없이 오면 새 방 (new=1: 화면이 '이 방 링크를 보내 주세요' 안내를 띄운다)
       return new Response(null, { status: 302, headers: { Location: '/?room=' + core.newRoomId() + '&new=1', 'Cache-Control': 'no-store' } });
     }
-    const res = await env.ASSETS.fetch(req);             // 화면(index.html·og.png): Cloudflare 가 압축·캐시
+    let res = await env.ASSETS.fetch(req);               // 화면(index.html·og.png): Cloudflare 가 압축·캐시
     // 첫 화면: 링크 미리보기 그림 주소(og:image)를 이 주소로 (미리보기는 절대 주소여야 한다. index.html 에는 Render 주소가 적혀 있다)
     if (url.pathname === '/' && (res.headers.get('Content-Type') || '').includes('text/html')) {
+      let csp = null;
+      if (res.status === 200) {                         // (304 등은 본문이 없다: 정책은 처음 받은 것 그대로)
+        const html = await res.text(), et = res.headers.get('ETag') || html.length + ':' + html.slice(-200);
+        if (!indexCache || indexCache.etag !== et) indexCache = { etag: et, hashes: await scriptHashes(html) };
+        csp = cspOf(url, indexCache.hashes);
+        const h = new Headers(res.headers); h.delete('Content-Length');
+        res = new Response(html, { status: res.status, statusText: res.statusText, headers: h });
+      }
       const rw = new HTMLRewriter().on('meta[property="og:image"]', { element(e) { e.setAttribute('content', url.origin + '/og.png'); } });
       const raw = url.searchParams.get('room') || '', id = core.ROOM_RE.test(raw) && !url.searchParams.get('new') ? raw : null;
       let title = '';
@@ -460,8 +668,10 @@ export default {
         const full = title + ' · 같이 그리기';
         rw.on('meta[property="og:title"]', { element(e) { e.setAttribute('content', full); } }).on('title', { element(e) { e.setInnerContent(full); } });
       }
-      return rw.transform(res);
+      const out = rw.transform(res);
+      if (csp) out.csp = csp;
+      return out;
     }
     return res;
-  },
-};
+  }
+}
