@@ -652,8 +652,9 @@ async function route(req, env, url) {
       let csp = null;
       if (res.status === 200) {                         // (304 등은 본문이 없다: 정책은 처음 받은 것 그대로)
         const html = await res.text(), et = res.headers.get('ETag') || html.length + ':' + html.slice(-200);
-        if (!indexCache || indexCache.etag !== et) indexCache = { etag: et, hashes: await scriptHashes(html) };
-        csp = cspOf(url, indexCache.hashes);
+        // (HEAD 요청은 본문이 비어 있다: 빈 본문으로 해시를 만들어 두면 그 뒤 화면 스크립트가 모두 막힌다 → GET 의 진짜 본문으로만)
+        if (req.method === 'GET' && html.includes('<script>') && (!indexCache || indexCache.etag !== et)) indexCache = { etag: et, hashes: await scriptHashes(html) };
+        csp = indexCache && indexCache.etag === et ? cspOf(url, indexCache.hashes) : null;
         const h = new Headers(res.headers); h.delete('Content-Length');
         res = new Response(html, { status: res.status, statusText: res.statusText, headers: h });
       }
