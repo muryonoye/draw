@@ -24,7 +24,7 @@ const MIN_MS = +process.env.MIN_MS || 60000;                   // 밴·채팅 �
 const LEAVE_GRACE_MS = +process.env.LEAVE_GRACE_MS || 10000;   // 이 시간 안에 다시 들어오면 입장/퇴장 메시지를 내지 않는다
 const LOCK_GRACE_MS = +process.env.LOCK_GRACE_MS || 120000;    // 방이 잠겨 있어도 방금 나간 사람은 다시 들어올 수 있다
 const MAX_CHAT = 100, CHAT_MAX_CHARS = 200, REASON_MAX = 50, MAX_LIST = 200, BAN_MAX_MIN = 43200;
-const BYE_CODE = { kicked: 4001, banned: 4002, locked: 4003, toomany: 4004 };
+const BYE_CODE = { kicked: 4001, banned: 4002, locked: 4003, toomany: 4004, moved: 4005 };
 // ---- 분탕 방지 ----
 const MAX_LOG = 300, MAX_MODS = 20;                             // 입장 기록(방마다 최근 300명) / 부방장 수
 const IP_BAN_MAX_MS = 7 * 24 * 60 * 60 * 1000;                  // 밴할 때 같은 인터넷(IP)도 막는 기간은 최대 7일 (IP 는 바뀌고, 나중에 다른 사람이 쓸 수 있다)
@@ -88,9 +88,13 @@ function erInterval(s, ex0, ey0, edx, edy, eL, rho) {
   }
   return lo <= hi ? [lo, hi] : null;
 }
+// 레이어: 무료는 방에 2개까지 (기본 + 1), 그 이상은 만드는 사람이 Plus. 아무리 많아도 LAYER_MAX 개 (화면이 레이어마다 따로 그리므로)
+const LAYER_FREE = 2, LAYER_MAX = 30, LAYER_RE = /^[a-z0-9]{6}$/;
+const layerOf = (s) => s.l || '';                         // 선분의 레이어 ('' = 기본 레이어: 레이어가 생기기 전의 그림도 여기)
 // owner 가 null 이 아니면 그 사람의 선만 지운다. 지워진 곳이 없으면 null, 있으면 새 배열(잘린 조각 포함)을 돌려준다.
 // 잘린 조각은 원래 획의 sid 를 그대로 가진다. diff({removed:[], added:[]})를 넘기면 지워진 원본/새 조각을 담아 준다(이전·되돌리기용).
-function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
+// layer 가 문자열이면 그 레이어의 선만 (null·없음 = 모든 레이어)
+function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff, layer) {
   r = Math.min(Math.max(r, 1), ERASER_R_MAX);
   const edx = x1 - x0, edy = y1 - y0;
   const eL = Math.sqrt(edx * edx + edy * edy);
@@ -100,6 +104,7 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
   for (let i = 0; i < list.length; i++) {
     const s = list[i];
     if (owner !== null && s.o !== owner) continue;
+    if (layer != null && layerOf(s) !== layer) continue;
     const m = s.size / 2;
     if (Math.max(s.x0, s.x1) + m < minX || Math.min(s.x0, s.x1) - m > maxX ||
         Math.max(s.y0, s.y1) + m < minY || Math.min(s.y0, s.y1) - m > maxY) continue;
@@ -121,6 +126,7 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
     const piece = (a, b) => {
       const p = { x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o, sid: s.sid };
       if (s.f) p.f = 1;                                   // 칠하기 조각은 잘려도 칠하기 조각이다
+      if (s.l) p.l = s.l;                                 // (같은 레이어)
       return p;
     };
     if (iv[0] * len >= 0.25) { const p = piece(0, iv[0]); out.push(p); if (diff) diff.added.push(p); }
@@ -128,8 +134,8 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
   }
   return out;
 }
-// 지우개 경로에 한 번이라도 닿은 획의 [주인, sid] 목록 (최대 max개). owner 가 null 이 아니면 그 사람의 획만.
-function hitStrokes(list, owner, x0, y0, x1, y1, r, max) {
+// 지우개 경로에 한 번이라도 닿은 획의 [주인, sid] 목록 (최대 max개). owner 가 null 이 아니면 그 사람의 획만. layer: 위와 같음
+function hitStrokes(list, owner, x0, y0, x1, y1, r, max, layer) {
   r = Math.min(Math.max(r, 1), ERASER_R_MAX);
   const edx = x1 - x0, edy = y1 - y0;
   const eL = Math.sqrt(edx * edx + edy * edy);
@@ -140,6 +146,7 @@ function hitStrokes(list, owner, x0, y0, x1, y1, r, max) {
     const s = list[i];
     if (!s.sid || !s.o) continue;
     if (owner !== null && s.o !== owner) continue;
+    if (layer != null && layerOf(s) !== layer) continue;
     const m = s.size / 2;                                 // 범위 밖은 먼저 거른다 (획 이름을 만드는 것보다 훨씬 싸다)
     if (Math.max(s.x0, s.x1) + m < minX || Math.min(s.x0, s.x1) - m > maxX ||
         Math.max(s.y0, s.y1) + m < minY || Math.min(s.y0, s.y1) - m > maxY) continue;
@@ -178,17 +185,19 @@ function insertSegs(list, items) {
 // 칠하기: 칸 크기(cell, 0.2의 배수)와 가로줄 목록([[줄, 시작칸, 끝칸], ...])을 선분으로 바꾼다. 칸 (i, j)의 중심은 ((i+0.5)*cell, (j+0.5)*cell).
 // 줄 두께는 칸 크기보다 조금 굵어서(FILL_THICK) 줄끼리 겹쳐 이음새가 안 보이고, 가장자리는 경계선 밑으로 살짝 들어간다.
 function fillSize(cell) { return Math.round(cell * FILL_THICK * 100) / 100; }
-function fillSegs(o, sid, color, cell, rows) {
+function fillSegs(o, sid, color, cell, rows, l) {        // l: 레이어 (기본 레이어면 없음)
   const size = fillSize(cell), R = (n) => Math.round(n * 10) / 10, out = [];
   for (const r of rows) {
     const y = R((r[0] + 0.5) * cell);
-    out.push({ x0: R((r[1] + 0.5) * cell), y0: y, x1: R((r[2] + 0.5) * cell), y1: y, color, size, o, sid, f: 1 });
+    const s = { x0: R((r[1] + 0.5) * cell), y0: y, x1: R((r[2] + 0.5) * cell), y1: y, color, size, o, sid, f: 1 };
+    if (l) s.l = l;
+    out.push(s);
   }
   return out;
 }
 // 그림 목록을 작게 담는 이진 형식 'D2' 풀기 (서버가 encodeSegs 로 만든다. 저장된 그림을 불러올 때 서버도 같은 함수를 쓴다).
 // [D2][문자열 수, (길이, UTF-8)…][선분 수][선분…]. 선분: 표시 1바이트 + 필요한 값들 (정수는 7비트씩 이어 쓰는 수, 좌표는 0.1 단위 정수의 차이).
-// 표시: 1 칠하기, 2 주인·획 바뀜, 4 색·굵기 바뀜, 8 앞 선분 끝에서 이어짐, 16 좌표를 실수 그대로, 32 굵기를 실수 그대로
+// 표시: 1 칠하기, 2 주인·획 바뀜, 4 색·굵기 바뀜, 8 앞 선분 끝에서 이어짐, 16 좌표를 실수 그대로, 32 굵기를 실수 그대로, 64 레이어 바뀜 (그 뒤 문자열 번호, '' = 기본)
 function decodeSegs(u) {
   const r = d2Reader(u);
   if (!r) return null;
@@ -209,7 +218,7 @@ function d2Reader(u) {
   const td = new TextDecoder(), S = new Array(vu());
   for (let i = 0; i < S.length; i++) { const l = vu(); if (p + l > n) throw cut(); S[i] = td.decode(u.subarray(p, p + l)); p += l; }
   const count = vu();
-  let o = '', sid = '', color = '', size = 0, px = 0, py = 0, X = 0, Y = 0;
+  let o = '', sid = '', color = '', size = 0, px = 0, py = 0, X = 0, Y = 0, lay = '';
   return {
     count,
     next() {
@@ -217,6 +226,7 @@ function d2Reader(u) {
       const fl = u[p++];
       if (fl & 2) { o = S[vu()]; sid = S[vu()]; }
       if (fl & 4) { color = S[vu()]; size = fl & 32 ? f64() : vu() / 100; }
+      if (fl & 64) lay = S[vu()];
       let x0, y0, x1, y1;
       if (fl & 16) {
         if (fl & 8) { x0 = px; y0 = py; } else { x0 = f64(); y0 = f64(); }
@@ -226,9 +236,10 @@ function d2Reader(u) {
         if (fl & 8) { x0 = px; y0 = py; } else { X0 = X + vs(); Y0 = Y + vs(); x0 = X0 / 10; y0 = Y0 / 10; }
         const X1 = X0 + vs(), Y1 = Y0 + vs(); x1 = X1 / 10; y1 = Y1 / 10;
       }
-      if (o === undefined || sid === undefined || color === undefined) throw new Error('D2: 잘못된 문자열 번호');
+      if (o === undefined || sid === undefined || color === undefined || lay === undefined) throw new Error('D2: 잘못된 문자열 번호');
       const s = { x0, y0, x1, y1, color, size, o, sid };
       if (fl & 1) s.f = 1;
+      if (lay) s.l = lay;
       px = x1; py = y1; X = Math.round(x1 * 10); Y = Math.round(y1 * 10);
       return s;
     },
@@ -243,12 +254,13 @@ function blockHash(u) {
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return (h2 >>> 0).toString(36).padStart(7, '0') + (h1 >>> 0).toString(36).padStart(7, '0');
 }
-// Plus 꾸미기: 이름 색·커서 모양 (서버는 이 목록에 있는 값만 받는다)
+// 방 종이 색 (✦ Plus 방장이 고름, 첫 번째 = 기본)
+const PAPERS = ['#f6f4ee', '#ffffff', '#fbf3df', '#fdecef', '#e9f3fb', '#e8f5ec', '#efeae0', '#e6e6e6'];
+// Plus 꾸미기: 이름 색 (서버는 이 목록에 있는 값만 받는다)
 const DECO_COLORS = ['#e53935', '#fb8c00', '#f9a825', '#43a047', '#00897b', '#1e88e5', '#3949ab', '#8e24aa', '#d81b60', '#6d4c41'];
-const DECO_CURSORS = ['dot', 'star', 'heart', 'flower', 'cat', 'pencil'];
 function cleanDeco(d) {
   const o = {};
-  if (d && typeof d === 'object') { if (DECO_COLORS.includes(d.c)) o.c = d.c; if (DECO_CURSORS.includes(d.cur)) o.cur = d.cur; }
+  if (d && typeof d === 'object') { if (DECO_COLORS.includes(d.c)) o.c = d.c; }
   return o;
 }
 // @@SHARED_END
@@ -324,13 +336,13 @@ function histInsert(room, items) {
 const capsuleBox = (x0, y0, x1, y1, r) => { const rr = Math.min(Math.max(r, 1), ERASER_R_MAX); return { xa: Math.min(x0, x1) - rr, xb: Math.max(x0, x1) + rr, ya: Math.min(y0, y1) - rr, yb: Math.max(y0, y1) + rr }; };
 const blockOut = (b, c) => b.x1 < c.xa || b.x0 > c.xb || b.y1 < c.ya || b.y0 > c.yb;   // 덩어리 안 모든 선이 지우개 범위 밖 (공용 함수의 선분별 검사와 같은 기준)
 // 부분 지우개: 바뀌었으면 true. 결과가 너무 커지면(잘게 잘려서) 하지 않는다.
-function histErase(room, owner, x0, y0, x1, y1, r) {
+function histErase(room, owner, x0, y0, x1, y1, r, layer) {
   const c = capsuleBox(x0, y0, x1, y1, r), ch = [];
   let n = room.hn;
   for (let i = 0; i < room.hb.length; i++) {
     const b = room.hb[i];
     if (blockOut(b, c)) continue;
-    const res = eraseCapsule(b.a, owner, x0, y0, x1, y1, r);
+    const res = eraseCapsule(b.a, owner, x0, y0, x1, y1, r, null, layer);
     if (res) { ch.push([i, res]); n += res.length - b.a.length; }
   }
   if (!ch.length || n > MAX_HISTORY * 1.5) return false;
@@ -343,11 +355,11 @@ function histErase(room, owner, x0, y0, x1, y1, r) {
   return true;
 }
 // 획 지우개: 지우개에 닿은 획 [주인, sid] 목록 (목록 순서대로 최대 max 개)
-function histHit(room, owner, x0, y0, x1, y1, r, max) {
+function histHit(room, owner, x0, y0, x1, y1, r, max, layer) {
   const c = capsuleBox(x0, y0, x1, y1, r), keys = new Map();
   for (const b of room.hb) {
     if (blockOut(b, c)) continue;
-    for (const k of hitStrokes(b.a, owner, x0, y0, x1, y1, r, max)) {
+    for (const k of hitStrokes(b.a, owner, x0, y0, x1, y1, r, max, layer)) {
       const key = k[0] + '|' + k[1];
       if (keys.has(key)) continue;
       if (keys.size >= max) return [...keys.values()];
@@ -428,12 +440,14 @@ function segEncoder(total) {
   const f64 = (v) => { need(8); new DataView(buf.buffer).setFloat64(p, v, true); p += 8; };
   const si = (s) => { let i = idx.get(s); if (i === undefined) { i = strs.length; strs.push(s); idx.set(s, i); } return i; };
   const q10 = (v) => { const k = Math.round(v * 10); return k / 10 === v && Math.abs(k) < 4e15 ? k : null; };   // 0.1 단위로 정확히 나타낼 수 있으면 그 정수
-  let o = null, sid = null, color = null, size = NaN, px = 0, py = 0, X = 0, Y = 0, n = 0;
+  let o = null, sid = null, color = null, size = NaN, px = 0, py = 0, X = 0, Y = 0, n = 0, lay = '';
   return {
     add(list) {
       for (const s of list) {
-        if ((s.f !== undefined && s.f !== 1) || typeof s.o !== 'string' || typeof s.sid !== 'string' || typeof s.color !== 'string' || ![s.x0, s.y0, s.x1, s.y1, s.size].every(Number.isFinite)) return false;
+        if ((s.f !== undefined && s.f !== 1) || (s.l !== undefined && (typeof s.l !== 'string' || !s.l)) || typeof s.o !== 'string' || typeof s.sid !== 'string' || typeof s.color !== 'string' || ![s.x0, s.y0, s.x1, s.y1, s.size].every(Number.isFinite)) return false;
         let fl = s.f === 1 ? 1 : 0;
+        const L = s.l || '', nl = L !== lay;
+        if (nl) fl |= 64;
         const nk = s.o !== o || s.sid !== sid, nst = s.color !== color || s.size !== size;
         const sz = Math.round(s.size * 100), rawSize = !(sz / 100 === s.size && sz >= 0 && sz < 4e15);
         const joined = n > 0 && s.x0 === px && s.y0 === py;
@@ -446,6 +460,7 @@ function segEncoder(total) {
         need(1); buf[p++] = fl;
         if (nk) { vu(si(s.o)); vu(si(s.sid)); o = s.o; sid = s.sid; }
         if (nst) { vu(si(s.color)); if (rawSize) f64(s.size); else vu(sz); color = s.color; size = s.size; }
+        if (nl) { vu(si(L)); lay = L; }
         if (raw) { if (!joined) { f64(s.x0); f64(s.y0); } f64(s.x1); f64(s.y1); }
         else { if (!joined) { vs(A - X); vs(B - Y); } vs(C - A); vs(D - B); }
         px = s.x1; py = s.y1; X = Math.round(s.x1 * 10); Y = Math.round(s.y1 * 10); n++;
@@ -464,7 +479,7 @@ function segEncoder(total) {
     },
   };
 }
-const sameSeg = (a, b) => a.x0 === b.x0 && a.y0 === b.y0 && a.x1 === b.x1 && a.y1 === b.y1 && a.color === b.color && a.size === b.size && a.o === b.o && a.sid === b.sid && a.f === b.f;
+const sameSeg = (a, b) => a.x0 === b.x0 && a.y0 === b.y0 && a.x1 === b.x1 && a.y1 === b.y1 && a.color === b.color && a.size === b.size && a.o === b.o && a.sid === b.sid && a.f === b.f && a.l === b.l;
 // 그림 전체의 압축본 (room.ver 로 캐시). 'D2' 로 만들고, 풀어서 원래와 하나하나 같은지 확인한 뒤에만 쓴다 (다르면 예전 JSON 형식으로).
 // fmt: 'z2' (D2 를 zlib 압축) 또는 'z1' (JSON 을 zlib 압축). 저장소에는 fmt + ':' + base64 로 저장한다.
 function makeSnap(room) {
@@ -812,6 +827,7 @@ async function maintainRoom(id, room, force) {
   purgeMeta(room);
   if (room.loadFailed) await recoverRoom(id, room);
   await saveRoom(id, room, force || room.clients.size === 0);   // 아무도 없는 방은 기다릴 이유가 없다
+  await snapMaybe(room);                                          // (✦ Plus 방: 15분마다 되감기 사본)
   if (force || room.clients.size === 0 || Date.now() - (room.metaAt || 0) >= META_GAP_MS) await saveMeta(id, room);   // (입장 기록만 바뀐 건 1분에 한 번)
   await saveExtra(id, room);
   const clean = !P.storeFor(id) || (!room.dirty && !room.metaDirty && !room.extraDirty);   // 저장소가 없으면 dirty 표시는 의미가 없다
@@ -863,7 +879,7 @@ function autoSid(ws, s) {
 
 const isPlainObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
 // DB 에서 읽은 선분 중 쓸 수 없는 것(손상된 값)은 버린다. 정상적인 선분은 그대로 둔다.
-const isSeg = (s) => !!s && typeof s === 'object' && [s.x0, s.y0, s.x1, s.y1, s.size].every(Number.isFinite);
+const isSeg = (s) => !!s && typeof s === 'object' && [s.x0, s.y0, s.x1, s.y1, s.size].every(Number.isFinite) && (s.l === undefined || (typeof s.l === 'string' && LAYER_RE.test(s.l)));
 const cleanHistory = (h) => (Array.isArray(h) ? h.filter(isSeg) : []);
 function getRoom(id) {
   let room = rooms.get(id);
@@ -871,7 +887,7 @@ function getRoom(id) {
     room = { id, clients: new Set(), hb: [], hn: 0, ver: 0, flat: null, zc: null, zp: null, snapMs: 0, lastSave: 0,
       names: {}, meta: normalizeMeta(null), dirty: false, metaDirty: false, noSave: false,
       loaded: false, loadFailed: false, corrupt: false, recovering: false, lastActive: Date.now(), q: null,
-      chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map(), cover: new Map(), fcover: new Map(), plus: new Map() };
+      chat: [], chatSeq: 0, leaveTimers: new Map(), recent: new Map(), rate: new Map(), cover: new Map(), fcover: new Map(), plus: new Map(), snapAt: 0, snapVer: -1 };
     const r = room;
     r.ready = loadRoom(id).then((d) => {
       const h = cleanHistory(d.history);
@@ -1016,7 +1032,7 @@ function announce(room) {
   broadcastAll(room, { type: 'presence', owners });
   broadcastAll(room, { type: 'count', n: owners.length });
 }
-const RESYNC_CODES = new Set(['cover', 'share', 'full', 'rate', 'spectator']);
+const RESYNC_CODES = new Set(['cover', 'share', 'full', 'rate', 'spectator', 'layer']);
 const tooFast = (ws) => notice(ws, 'rate', '너무 빠르게 그리고 있어요. 화면을 서버 그림에 맞출게요.');   // (조용히 버리면 그 선이 내 화면에만 남는다)   // 이 알림을 받으면 화면이 서버 그림에 다시 맞춘다 (빠지면 거절된 선이 그 화면에만 남는다)
 function notice(ws, code, text) {
   const now = Date.now();
@@ -1074,8 +1090,14 @@ const IPT_RE = /^[A-Za-z0-9_-]{12}$/;
 const tagList = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && IPT_RE.test(x)).slice(0, 3) : []);
 const numOr = (v, d) => (Number.isFinite(+v) ? +v : d);
 function normalizeMeta(j) {
-  const m = { owner: null, title: '', locked: false, gate: false, noCover: false, ownerPlus: 0, bans: {}, mutes: {}, spectators: {}, mods: {}, log: {} };
+  const m = { owner: null, title: '', locked: false, gate: false, noCover: false, ownerPlus: 0, layers: cleanLayers(null), secret: null, members: {}, knock: {}, paper: '', bans: {}, mutes: {}, spectators: {}, mods: {}, log: {} };
   if (!j || typeof j !== 'object') return m;
+  // 비밀 방: 비밀번호는 소금을 친 해시(pbkdf2)로만. members: 비밀번호를 넣고 들어온 사람 (방장·부방장은 늘 들어옴)
+  if (j.secret && typeof j.secret === 'object' && /^[0-9a-f]{64}$/.test(j.secret.h) && /^[0-9a-f]{32}$/.test(j.secret.s)) m.secret = { h: j.secret.h, s: j.secret.s, at: numOr(j.secret.at, 0) };
+  if (j.members && typeof j.members === 'object') for (const o of Object.keys(j.members).slice(-MAX_MEMBERS)) if (OWNER_RE.test(o)) m.members[o] = 1;
+  if (PAPERS.includes(j.paper) && j.paper !== PAPERS[0]) m.paper = j.paper;
+  if (j.knock && typeof j.knock === 'object') for (const t of Object.keys(j.knock).slice(0, 200)) { const a = Array.isArray(j.knock[t]) ? j.knock[t].filter(Number.isFinite).slice(-20) : []; if (a.length && /^[A-Za-z0-9_-]{1,32}$/.test(t)) m.knock[t] = a; }
+  m.layers = cleanLayers(j.layers);
   m.title = cleanTitle(j.title);
   m.ownerPlus = Math.max(0, numOr(j.ownerPlus, 0));             // 방장의 Plus 가 끝나는 때 (마지막으로 확인한 값: 방장이 없을 때도 Plus 방 기능을 판단하려고)
   if (typeof j.owner === 'string' && OWNER_RE.test(j.owner)) m.owner = j.owner;
@@ -1096,6 +1118,207 @@ function normalizeMeta(j) {
     if (v.wait) e.wait = 1;
   });
   return m;
+}
+// ---- 비밀 방 (✦ Plus): 비밀번호를 아는 사람만. 한 번 맞히면 그 사람(주인 ID)은 다음부터 바로 들어온다 ----
+const MAX_MEMBERS = 1000, PW_ITER = 40000;
+const pwHash = (pw, salt) => crypto.pbkdf2Sync(String(pw).normalize('NFC'), Buffer.from(salt, 'hex'), PW_ITER, 32, 'sha256').toString('hex');
+const needsKey = (room, o) => !!room.meta.secret && !isStaff(room, o) && !room.meta.members[o];
+function addMember(room, o) {
+  if (room.meta.members[o]) return;
+  room.meta.members[o] = 1;
+  const ks = Object.keys(room.meta.members);
+  if (ks.length > MAX_MEMBERS) for (const k of ks.slice(0, ks.length - MAX_MEMBERS)) if (!hasOwner(room, k)) delete room.meta.members[k];
+  persistMeta(room);
+}
+// 문 앞에서 기다리는 접속: 비밀번호만 받는다 (그림·이름·채팅은 아직 안 보낸다). 틀리면 접속마다 5번, 같은 인터넷에서 10분에 15번까지
+function knock(ws, raw) {
+  const room = ws.room, k = ws.knock;
+  let m = null; try { m = JSON.parse(raw); } catch {}
+  if (!m || m.type !== 'unlock' || typeof m.pw !== 'string' || m.pw.length > 100) return;
+  const v = admit(room, ws.roomId, ws.owner, ws.ipt);              // (문 앞에서 기다리는 사이에 밴·잠금이 됐을 수 있다)
+  if (v) { ws.knock = null; byeAndClose(ws, v); return; }
+  if (!room.meta.secret || !needsKey(room, ws.owner)) { ws.knock = null; send(ws, { type: 'unlock', ok: true, sync: ws.zOk === 3 && !ws.pendingSync }); approve(ws, room, k.n); P.attach(ws); return; }   // (그사이 비밀 방이 꺼졌거나 허락받음)
+  const now = Date.now(), tag = ws.ipt || 'local', K = room.meta.knock;
+  let all = 0;
+  for (const t of Object.keys(K)) { K[t] = K[t].filter((x) => x > now - 600000); if (!K[t].length) delete K[t]; else all += K[t].length; }
+  const a = K[tag] || [];
+  if (a.length >= 15 || all >= 60) { send(ws, { type: 'unlock', ok: false, wait: true }); return; }
+  let good = false;
+  try { good = crypto.timingSafeEqual(Buffer.from(pwHash(m.pw, room.meta.secret.s), 'hex'), Buffer.from(room.meta.secret.h, 'hex')); } catch {}
+  if (!good) {
+    a.push(now); K[tag] = a; persistMeta(room);
+    ++k.tries; P.attach(ws);
+    if (k.tries >= 5) { byeAndClose(ws, { code: 'locked', text: '비밀번호를 여러 번 틀렸어요. 잠시 뒤 다시 해 주세요.' }); return; }
+    send(ws, { type: 'unlock', ok: false, left: 5 - k.tries }); return;
+  }
+  ws.knock = null;
+  addMember(room, ws.owner);
+  send(ws, { type: 'unlock', ok: true, sync: ws.zOk === 3 && !ws.pendingSync });   // (sync: 화면이 보낸 덩어리 목록을 잃었으면 다시 보내 달라고 — 방 객체가 잠들었다 깨어난 경우)
+  approve(ws, room, k.n); P.attach(ws);
+  openDoors(room);                                                // (같은 사람의 다른 탭도)
+}
+// 문 앞에서 기다리던 사람 중 이제 비밀번호가 필요 없는 사람(비밀 방을 껐거나·부방장이 됐거나·다른 탭에서 들어옴)은 들인다
+function openDoors(room) {
+  for (const c of [...sockets]) {
+    if (c.room !== room || !c.knock || c.bye || c.readyState !== 1 || needsKey(room, c.owner)) continue;
+    const n = c.knock.n; c.knock = null;
+    const v = admit(room, c.roomId, c.owner, c.ipt);
+    if (v) { byeAndClose(c, v); continue; }
+    send(c, { type: 'unlock', ok: true, sync: c.zOk === 3 && !c.pendingSync });
+    approve(c, room, n); P.attach(c);
+  }
+}
+// ---- 방 되감기 (✦ Plus): 방장이 Plus 인 방은 그림이 바뀌었으면 SNAP_MS(15분)마다 사본(그림 D2 압축 + 레이어 목록)을 남긴다 ----
+// 남기는 것: 최근 2시간은 모두, 하루 안은 1시간에 하나, 일주일 안은 하루에 하나 (이름 붙은 사본 — 되감기 전·모두 지우기 전 — 은 일주일). 저장은 P.snaps (Cloudflare: 방 객체 SQLite)
+const SNAP_MS = Math.max(1000, +process.env.SNAP_MS || 15 * 60 * 1000), H_MS = 3600000, D_MS = 86400000;
+function snapKeep(list, now) {                                   // 남길 사본의 때 (list: 새것부터)
+  const keep = new Set(), slot = new Set();
+  for (const x of list) {
+    const age = now - x.at;
+    if (age > 7 * D_MS) continue;
+    if (x.label) { keep.add(x.at); continue; }
+    const key = age < 2 * H_MS ? 'r' + x.at : age < D_MS ? 'h' + Math.floor(x.at / H_MS) : 'd' + Math.floor(x.at / D_MS);
+    if (!slot.has(key)) { slot.add(key); keep.add(x.at); }
+  }
+  return new Set([...keep].sort((a, b) => b - a).slice(0, 60));
+}
+async function snapInit(room) {                                // 저장된 사본에서 마지막 때·내용 해시 (방 객체가 깨어난 뒤에도 15분 간격·같은 그림 건너뛰기가 이어지게)
+  if (room.snapInit) return;
+  room.snapInit = true;
+  const l = await P.snaps.list(room.id);
+  if (l[0]) { room.snapAt = room.snapLast = Math.max(room.snapAt, l[0].at); room.snapH = (l.find((x) => !x.label) || {}).h || ''; }
+}
+async function snapPrune(room) { const list = await P.snaps.list(room.id), keep = snapKeep(list, Date.now()); for (const x of list) if (!keep.has(x.at)) await P.snaps.del(room.id, x.at); }
+async function snapNow(room, label) {
+  await snapInit(room);
+  const arr = histArr(room), enc = segEncoder(arr.length), ver = room.ver, layers = room.meta.layers;
+  if (!enc.add(arr)) return false;
+  const bin = Buffer.from(enc.finish()), h = crypto.createHash('sha1').update(bin).update(JSON.stringify(layers)).digest('base64');
+  if (!label && h === room.snapH) { room.snapVer = ver; room.snapAt = Date.now(); return false; }   // (그림이 그대로면 또 남기지 않는다)
+  const names = {};
+  for (const s of arr) if (!names[s.o] && room.names[s.o]) names[s.o] = room.names[s.o];   // (되감기로 돌아온 그림의 그린 사람 이름)
+  const z = await deflateP(bin);
+  let at = Date.now(); if (at <= (room.snapLast || 0)) at = room.snapLast + 1;
+  room.snapLast = at; room.snapAt = at; room.snapVer = ver;
+  await P.snaps.save(room.id, at, arr.length, label || '', JSON.stringify({ v: 1, layers, names, z: z.toString('base64') }), h);
+  if (!label) room.snapH = h;
+  await snapPrune(room);
+  return true;
+}
+async function snapMaybe(room) {                                // (저장할 때마다 불린다: 방장이 Plus 이고 15분이 지났고 그림이 바뀌었으면)
+  if (!P.snaps || room.noSave || !room.loaded || room.snapBusy) return;
+  room.snapBusy = true;
+  try {
+    const now = Date.now();
+    if (now - (room.snapPruneAt || 0) > H_MS) { room.snapPruneAt = now; await snapPrune(room); }   // (Plus 가 끝난 방도 일주일 지난 사본은 지운다)
+    const o = room.meta.owner;                                   // 방장의 Plus 가 곧 끝나면 1시간에 한 번 다시 묻는다 (방장이 안 들어와도 갱신을 알게)
+    if (o && !isGuest(o) && P.plusOf && room.meta.ownerPlus > 0 && room.meta.ownerPlus - now < 3 * D_MS && now - (room.ownerAskAt || 0) > H_MS) {
+      room.ownerAskAt = now;
+      try { setPlus(room, o, await P.plusOf(o)); } catch {}
+    }
+    if (!roomPlus(room)) return;
+    await snapInit(room);
+    if (room.snapVer === room.ver) return;
+    const wait = room.snapAt + SNAP_MS - Date.now();
+    if (wait > 0) { if (P.snapLater) P.snapLater(room.id, wait + 500); return; }   // (마지막으로 그린 그림도 남게: 15분이 차면 그때 한 번 — 아무도 없어도)
+    await snapNow(room, '');
+  } catch (e) { console.error(`방 ${room.id}: 되감기 사본 실패:`, e.message); } finally { room.snapBusy = false; }
+}
+async function rewindCmd(ws, room, roomId, msg) {
+  if (!P.snaps) return cmdErr(ws, '이 서버에서는 되감기를 쓸 수 없어요');
+  if (!(await plusOk(ws, room))) return notice(ws, 'plus', '방 되감기는 ✦ Plus 기능이에요');
+  if (msg.op === 'list') {
+    await snapInit(room);
+    if (!room.snapAt && room.snapVer !== room.ver) await snapMaybe(room);   // (처음 열어 볼 때 사본이 하나도 없으면 지금 하나)
+    return send(ws, { type: 'rewinds', l: (await P.snaps.list(roomId)).map((x) => ({ at: x.at, n: x.n, label: x.label || '' })) });
+  }
+  const at = Number.isInteger(msg.at) ? msg.at : -1, raw = at > 0 ? await P.snaps.load(roomId, at) : null;
+  if (!raw) return cmdErr(ws, '그 때의 그림이 없어요 (오래돼서 지워졌을 수 있어요)');
+  const j = JSON.parse(raw);
+  if (msg.op === 'peek') return send(ws, { type: 'rwpeek', at, layers: j.layers, z: j.z });
+  if (msg.op !== 'go') return;
+  const segs = decodeSegs(new Uint8Array(await inflateP(Buffer.from(j.z, 'base64'))));
+  if (!segs) return cmdErr(ws, '그 때의 그림을 읽지 못했어요');
+  await snapNow(room, '되감기 전');                                 // (되감기도 되돌릴 수 있게)
+  histReplace(room, segs); room.snapH = '';
+  room.meta.layers = cleanLayers(j.layers); persistMeta(room);
+  let nm = false;                                                 // (그린 사람 이름이 지워졌으면 사본의 이름·입장 기록으로)
+  for (const s of segs) if (!room.names[s.o]) { const n = (j.names && j.names[s.o]) || (room.meta.log[s.o] && room.meta.log[s.o].name); if (n) { room.names[s.o] = cleanNick(n) || n; nm = true; } }
+  if (nm) broadcastAll(room, { type: 'names', names: room.names });
+  saveRoom(roomId, room, true);
+  broadcastAll(room, layersMsg(room));
+  broadcastAll(room, { type: 'rewound', at, by: ws.owner });
+  const d = new Date(at + 9 * H_MS);                               // (한국 시각으로 알림)
+  sysChat(room, `방장이 그림을 ${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일 ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} 때로 되돌렸어요`);
+  console.log(`방 ${roomId}: 되감기 → ${new Date(at).toISOString()} (${segs.length} 조각)`);
+}
+// 레이어 목록 (아래 → 위): { id ('' = 기본), name, by (만든 사람) }. 기본 레이어는 꼭 하나
+function cleanLayers(a) {
+  const out = [], seen = new Set();
+  for (const x of Array.isArray(a) ? a.slice(0, LAYER_MAX + 5) : []) {
+    if (!x || typeof x !== 'object') continue;
+    const id = x.id === '' ? '' : typeof x.id === 'string' && LAYER_RE.test(x.id) ? x.id : null;
+    if (id === null || seen.has(id) || out.length >= LAYER_MAX) continue;
+    seen.add(id);
+    out.push({ id, name: cleanTitle(x.name) || (id ? '레이어' : '레이어 1'), by: typeof x.by === 'string' && OWNER_RE.test(x.by) ? x.by : '' });
+  }
+  if (!seen.has('')) out.unshift({ id: '', name: '레이어 1', by: '' });
+  return out;
+}
+const layersMsg = (room, mine) => ({ type: 'layers', l: room.meta.layers, ...(mine ? { mine } : {}) });
+const layerOk = (room, l) => l === '' || room.meta.layers.some((x) => x.id === l);
+// 화면이 보낸 레이어: 없으면 기본(''), 문자열인데 이 방에 없으면 null (지워진 레이어: 화면이 다시 맞춘다)
+const msgLayer = (room, l) => (l === undefined || l === null || l === '' ? '' : typeof l === 'string' && LAYER_RE.test(l) && layerOk(room, l) ? l : null);
+function badLayer(ws) { notice(ws, 'layer', '그 레이어가 지워졌어요. 화면을 다시 맞출게요.'); }
+// 레이어 명령: 만들기(무료 2개, 더는 Plus) · 이름 · 순서 · 지우기 (방장·부방장, 또는 만든 사람. 지우기는 남의 그림이 있으면 방장·부방장만)
+async function layerCmd(ws, room, msg) {
+  const o = ws.owner, L = room.meta.layers, now = Date.now();
+  if (room.noSave) return cmdErr(ws, '저장이 꺼진 방에서는 레이어를 바꿀 수 없어요');
+  if (isSpect(room, o)) return cmdErr(ws, '지금은 보기만 할 수 있어요');
+  ws.layTok = Math.min(5, (ws.layTok ?? 5) + (now - (ws.layAt || now)) / 1000); ws.layAt = now;   // (초당 1번, 한꺼번에 5번)
+  if (ws.layTok < 1) return cmdErr(ws, '잠시 뒤에 다시 해 주세요');
+  ws.layTok -= 1;
+  const i = L.findIndex((x) => x.id === msg.id), it = L[i], mine = it && (it.by === o || isStaff(room, o));
+  if (msg.op === 'add') {
+    if (L.length >= LAYER_MAX) return cmdErr(ws, `레이어는 ${LAYER_MAX}개까지 만들 수 있어요`);
+    if (L.length >= LAYER_FREE && !(await plusOk(ws, room))) return notice(ws, 'plus', `레이어는 ${LAYER_FREE}개까지 무료예요. ✦ Plus 는 레이어를 마음껏 만들 수 있어요`);
+    return layerAdd(ws, room, msg);
+  }
+  if (!it) return cmdErr(ws, '없는 레이어예요');
+  return layerEdit(ws, room, msg, i, it, mine);
+}
+function layerAdd(ws, room, msg) {                               // (Plus 를 기다리는 동안 목록이 바뀌었을 수 있어서 지금 목록으로 다시)
+  const o = ws.owner, L = room.meta.layers, i = L.findIndex((x) => x.id === msg.id);
+  if (L.length >= LAYER_MAX) return cmdErr(ws, `레이어는 ${LAYER_MAX}개까지 만들 수 있어요`);
+  if (L.length >= LAYER_FREE && !isPlus(room, o)) return notice(ws, 'plus', `레이어는 ${LAYER_FREE}개까지 무료예요. ✦ Plus 는 레이어를 마음껏 만들 수 있어요`);
+  {
+    let id; do { id = crypto.randomBytes(6).toString('base64url').toLowerCase().replace(/[^a-z0-9]/g, 'x').slice(0, 6); } while (L.some((x) => x.id === id));
+    let n = L.length + 1; while (L.some((x) => x.name === `레이어 ${n}`)) n++;
+    const at = msg.id !== undefined && i >= 0 ? i + 1 : L.length;    // (고른 레이어 바로 위, 없으면 맨 위)
+    L.splice(at, 0, { id, name: `레이어 ${n}`, by: isGuest(o) ? '' : o });
+    persistMeta(room); broadcastAll(room, layersMsg(room)); send(ws, layersMsg(room, id));
+  }
+}
+function layerEdit(ws, room, msg, i, it, mine) {
+  const o = ws.owner, L = room.meta.layers;
+  if (!mine) return cmdErr(ws, '그 레이어는 만든 사람·방장·부방장만 바꿀 수 있어요');
+  if (msg.op === 'rename') {
+    const name = cleanTitle(msg.name);
+    if (!name) return cmdErr(ws, '이름을 써 주세요');
+    it.name = name;
+  } else if (msg.op === 'move') {
+    const to = Number.isInteger(msg.to) ? Math.max(0, Math.min(L.length - 1, msg.to)) : -1;
+    if (to < 0 || to === i) return;
+    L.splice(i, 1); L.splice(to, 0, it);
+  } else if (msg.op === 'del') {
+    if (it.id === '') return cmdErr(ws, '맨 처음 레이어는 지울 수 없어요');
+    const others = histArr(room).some((s) => s.l === it.id && s.o !== o);
+    if (others && !isStaff(room, o)) return cmdErr(ws, '다른 사람 그림이 있는 레이어는 방장·부방장만 지울 수 있어요');
+    L.splice(i, 1);
+    if (histFilter(room, (s) => s.l !== it.id)) saveRoom(room.id, room, true);
+    broadcastAll(room, { type: 'layerdel', id: it.id });
+  } else return;
+  persistMeta(room); broadcastAll(room, layersMsg(room));
 }
 // 만료된 밴·채팅 금지를 정리한다
 function purgeMeta(room, now = Date.now()) {
@@ -1156,19 +1379,28 @@ const isStaff = (room, o) => isRoomOwner(room, o) || isMod(room, o);
 const isWaiting = (room, o) => room.meta.gate && !!(room.meta.log[o] && room.meta.log[o].wait) && !isStaff(room, o);
 const isSpect = (room, o) => !!room.meta.spectators[o] || isWaiting(room, o);
 const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked, persist: dbState === 'ok' && !room.noSave, max: MAX_HISTORY,
-  mods: room.noSave ? [] : Object.keys(room.meta.mods), gate: room.meta.gate, cover: !room.meta.noCover, share: OWNER_SHARE, title: room.meta.title || '' });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
+  mods: room.noSave ? [] : Object.keys(room.meta.mods), gate: room.meta.gate, cover: !room.meta.noCover, share: OWNER_SHARE, title: room.meta.title || '',
+  secret: !!room.meta.secret, paper: room.meta.paper || '', plusRoom: roomPlus(room), snaps: !!P.snaps });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
 function meMsg(room, o, now = Date.now()) {
   const mu = room.meta.mutes[o];
   return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: isSpect(room, o), wait: isWaiting(room, o), plus: plusUntil(room, o) };
 }
 // ---- Plus (구독): 계정 저장소(P.plusOf)가 알려 준 Plus 기간·꾸미기. Plus 기능은 화면이 보낸 걸 믿지 않고 서버가 이걸로 검사한다 ----
-const PLUS_CACHE_MS = 5 * 60 * 1000;                             // (한 번 물어본 건 5분 동안 그대로: 들어올 때마다 계정 저장소를 깨우지 않게)
+const PLUS_CACHE_MS = Math.max(1000, +process.env.PLUS_CACHE_MS || 5 * 60 * 1000);                             // (한 번 물어본 건 5분 동안 그대로: 들어올 때마다 계정 저장소를 깨우지 않게)
 const plusUntil = (room, o) => { const p = room.plus.get(o); return p && p.until > Date.now() ? p.until : 0; };
 const isPlus = (room, o) => plusUntil(room, o) > 0;
-function plusMapMsg(room) {                                     // 지금 이 방에 있는 Plus 사람들 (배지·이름 색·커서 모양)
+function plusMapMsg(room) {                                     // 지금 이 방에 있는 Plus 사람들 (배지·이름 색)
   const l = {};
   for (const c of room.clients) if (!l[c.owner] && isPlus(room, c.owner)) l[c.owner] = room.plus.get(c.owner).deco || {};
   return { type: 'plusmap', l };
+}
+function setPlus(room, o, r, all) {                             // 계정 저장소의 답을 적는다 (Plus·꾸미기가 바뀌었으면 그 사람 화면과 방 사람들에게: 어디서 물었든)
+  const key = () => JSON.stringify([isPlus(room, o), (room.plus.get(o) || {}).deco || {}]), before = key();
+  room.plus.set(o, { until: Math.max(0, +(r && r.until) || 0), deco: cleanDeco(r && r.deco), at: Date.now() });
+  if (room.meta.owner === o) syncOwnerPlus(room);
+  const ch = key() !== before;
+  if (ch || all) { for (const c of room.clients) if (c.owner === o) P.attach(c); sendMe(room, o); }   // (Cloudflare: 방 객체가 잠들었다 깨어나도 Plus 를 기억하게 소켓에 적어 둔다)
+  if (ch) broadcastAll(room, plusMapMsg(room));
 }
 function lookPlus(ws, room, force) {                            // 이 사람의 Plus 를 계정 저장소에 묻는다 (손님·저장 꺼진 방은 없음)
   const o = ws.owner, c = room.plus.get(o);
@@ -1178,24 +1410,27 @@ function lookPlus(ws, room, force) {                            // 이 사람의
   room.plus.set(o, { until: c ? c.until : 0, deco: c ? c.deco : {}, at: Date.now(), asking: true });
   Promise.resolve().then(() => P.plusOf(o)).then((r) => {
     const again = !!(room.plus.get(o) || {}).again;
-    const key = () => JSON.stringify([isPlus(room, o), (room.plus.get(o) || {}).deco || {}]), before = c ? key() : '';
-    room.plus.set(o, { until: Math.max(0, +(r && r.until) || 0), deco: cleanDeco(r && r.deco), at: Date.now() });
-    if (room.meta.owner === o) syncOwnerPlus(room);
-    sendMe(room, o);
-    if (key() !== before) broadcastAll(room, plusMapMsg(room));
+    setPlus(room, o, r, true);
     if (again) lookPlus(ws, room, true);
   }).catch((e) => { const x = room.plus.get(o); if (x) x.asking = false; console.error('Plus 확인 실패:', e && e.message); });
 }
 function syncOwnerPlus(room) {                                  // 방장의 Plus 기간을 방 설정에 적어 둔다 (모르면 0: 새 방장이 들어오면 다시 확인)
   const o = room.meta.owner, p = o && room.plus.get(o);
   const u = p && !p.asking ? plusUntil(room, o) : 0;
-  if (u !== room.meta.ownerPlus) { room.meta.ownerPlus = u; persistMeta(room); }
+  if (u !== room.meta.ownerPlus) { room.meta.ownerPlus = u; persistMeta(room); broadcastAll(room, roomStateMsg(room)); }   // (Plus 방 표시가 바뀜)
 }
 function ownerChanged(room) {                                   // 방장이 바뀜: 새 방장의 Plus 를 확인
   syncOwnerPlus(room);
   for (const c of room.clients) if (c.owner === room.meta.owner) { lookPlus(c, room); break; }
 }
-const roomPlus = (room) => !room.noSave && room.meta.ownerPlus > Date.now();   // 이 방의 방장이 Plus (방장이 없을 때도 마지막으로 확인한 값)
+const roomPlus = (room) => !room.noSave && room.meta.ownerPlus > Date.now();
+async function plusOk(ws, room) {                              // 이 사람이 Plus 인가 (모르면 계정 저장소에 물어서 기다린다)
+  const o = ws.owner, c = room.plus.get(o);
+  if (c && !c.asking && Date.now() - c.at < PLUS_CACHE_MS) return isPlus(room, o);
+  if (isGuest(o) || !P.plusOf || room.noSave) return false;
+  try { setPlus(room, o, await P.plusOf(o)); } catch { return isPlus(room, o); }
+  return isPlus(room, o);
+}   // 이 방의 방장이 Plus (방장이 없을 때도 마지막으로 확인한 값)
 function adminMsg(room) {
   const now = Date.now();
   const L = (src) => Object.keys(src).map((o) => ({ o, name: src[o].name, until: src[o].until, reason: src[o].reason || '' }));
@@ -1247,7 +1482,7 @@ function chatAllow(room, o, now) {                      // 2초에 3개 (사람 
 }
 function byeAndClose(ws, info) {                        // 서버가 의도적으로 끊을 때: 안내 메시지 + 4000번대 코드 (클라이언트는 자동 재접속하지 않는다)
   send(ws, { type: 'bye', ...info, now: Date.now() });
-  ws.noLeaveMsg = true; ws.bye = true;                  // (이 뒤로 이 접속이 보내는 메시지는 받지 않는다)
+  ws.noLeaveMsg = true; ws.bye = true; ws.knock = null;   // (이 뒤로 이 접속이 보내는 메시지는 받지 않는다)
   if (!P.clientCloses) try { ws.close(BYE_CODE[info.code], info.code); } catch {}   // (Cloudflare: 화면이 'bye' 를 받고 스스로 닫는다 — 아래 setPlatform 설명)
   P.afterBye(ws);                                       // (Cloudflare: 닫기 인사가 상대에게 안 갈 수 있어 방에서 바로 뺀다 — 화면은 'bye' 를 받으면 스스로 끊는다)
   // Render 앞단(Cloudflare)을 거치면 닫기 인사가 끝나지 않아 접속이 30초 넘게 남아 있다: 잠시 뒤 끊어 버린다 (화면은 'bye' 를 받자마자 스스로 끝낸다)
@@ -1301,6 +1536,7 @@ function approve(ws, room, wantName) {
   send(ws, roomStateMsg(room));
   send(ws, meMsg(room, owner));
   send(ws, plusMapMsg(room));
+  send(ws, layersMsg(room));
   lookPlus(ws, room);                                   // (Plus 인지는 계정 저장소에 물어서: 알게 되면 me·plusmap 을 다시 보낸다)
   sendAdmin(room);                                      // 방장·부방장에게 입장 기록·접속 표시를 바로 (들어온 사람이 방장·부방장이면 그 사람도 받는다)
   send(ws, { type: 'chats', list: room.chat });
@@ -1314,7 +1550,7 @@ function approve(ws, room, wantName) {
 // 방장 명령: 모든 명령은 서버가 방장 여부를 검사한다
 function cmdErr(ws, text) { send(ws, { type: 'cmderr', text }); }
 function checkMinutes(v) { return Number.isInteger(v) && (v === 0 || (v >= 1 && v <= BAN_MAX_MIN)); }
-function handleCmd(ws, room, roomId, msg) {
+async function handleCmd(ws, room, roomId, msg) {
   const now = Date.now();
   ws.cmdTok = Math.min(5, ws.cmdTok + (now - ws.cmdAt) * 0.005); ws.cmdAt = now;
   if (ws.cmdTok < 1) return cmdErr(ws, '명령을 너무 빠르게 보내고 있어요');
@@ -1343,6 +1579,7 @@ function handleCmd(ws, room, roomId, msg) {
   const minutes = msg.minutes;
   if (cmd === 'kick') {
     if (!online.length) return cmdErr(ws, '접속 중인 사용자가 아니에요');
+    if (room.meta.members[target]) { delete room.meta.members[target]; persistMeta(room); }   // (비밀 방이면 다시 들어오려면 비밀번호를 또)
     for (const c of online) byeAndClose(c, { code: 'kicked', text: `${who}에 의해 강퇴되었습니다` + (reason ? `(${reason})` : ''), reason });
     sysChat(room, `${nm}님이 강퇴되었습니다`);
   } else if (cmd === 'ban') {
@@ -1354,6 +1591,7 @@ function handleCmd(ws, room, roomId, msg) {
     const ip = msg.ip === true ? [...new Set([...online.map((c) => c.ipt), ...(logged ? logged.ip : [])].filter(Boolean))].slice(0, 3) : [];
     room.meta.bans[target] = { until, name: nm, reason, at: now, ip, ipUntil: ip.length ? (until === 0 ? now + IP_BAN_MAX_MS : Math.min(until, now + IP_BAN_MAX_MS)) : 0, tries: 0, ipWanted: msg.ip === true };
     delete room.meta.mods[target];                                // (방장이 부방장을 밴하면 부방장도 해제)
+    delete room.meta.members[target];                             // (비밀 방: 밴이 풀려도 비밀번호를 다시)
     persistMeta(room);
     for (const c of online) byeAndClose(c, { code: 'banned', text: `${who}에 의해 밴되었습니다` + (reason ? `(${reason})` : ''), until, reason });
     sysChat(room, minutes === 0 ? `${nm}님이 영구 밴되었습니다` : `${nm}님이 ${fmtDur(minutes)} 동안 밴되었습니다`);
@@ -1428,6 +1666,7 @@ function handleCmd(ws, room, roomId, msg) {
     broadcastAll(room, roomStateMsg(room));
     sendMe(room, target);
     sysChat(room, msg.on === true ? `${nm}님이 부방장이 되었습니다` : `${nm}님의 부방장이 해제되었습니다`);
+    if (msg.on === true) openDoors(room);
     sendAdmin(room);
     if (msg.on !== true) for (const c of online) send(c, { type: 'admin', none: true });   // 해제된 사람 화면에서 관리 정보를 지운다
   } else if (cmd === 'transfer') {
@@ -1437,7 +1676,32 @@ function handleCmd(ws, room, roomId, msg) {
     broadcastAll(room, roomStateMsg(room));
     sendMe(room, old); sendMe(room, target); sendAdmin(room);
     sysChat(room, `${oldName}님이 ${nm}님에게 방장을 넘겼습니다`);
+  } else if (cmd === 'secret') {                                   // 비밀 방 켜기(비밀번호 정하기·바꾸기) / 끄기
+    if (msg.on === true) {
+      if (!(await plusOk(ws, room))) return notice(ws, 'plus', '비밀 방은 ✦ Plus 기능이에요');
+      const pw = typeof msg.pw === 'string' ? msg.pw.normalize('NFC') : '';
+      if (Array.from(pw).length < 4 || Array.from(pw).length > 40) return cmdErr(ws, '비밀번호는 4~40글자로 해 주세요');
+      const was = !!room.meta.secret, salt = crypto.randomBytes(16).toString('hex');
+      room.meta.secret = { h: pwHash(pw, salt), s: salt, at: now };
+      if (!was || msg.reset === true) { room.meta.members = {}; for (const c of room.clients) addMember(room, c.owner); }   // (지금 있는 사람은 그대로 둔다)
+      persistMeta(room); broadcastAll(room, roomStateMsg(room));
+      sysChat(room, was ? (msg.reset === true ? '비밀번호가 바뀌었어요 (전에 들어온 사람도 새 비밀번호가 필요해요)' : '비밀번호가 바뀌었어요 (이미 들어온 사람은 그대로)') : '🔒 비밀 방이 됐어요: 비밀번호를 아는 사람만 들어와요');
+    } else {
+      if (!room.meta.secret) return;
+      room.meta.secret = null; room.meta.members = {};
+      persistMeta(room); broadcastAll(room, roomStateMsg(room));
+      sysChat(room, '비밀 방을 껐어요: 링크를 아는 누구나 들어와요');
+      openDoors(room);
+    }
+  } else if (cmd === 'paper') {                                    // 방 종이 색
+    if (!(await plusOk(ws, room))) return notice(ws, 'plus', '방 종이 색은 ✦ Plus 기능이에요');
+    const c = PAPERS.includes(msg.paper) ? (msg.paper === PAPERS[0] ? '' : msg.paper) : null;
+    if (c === null || c === room.meta.paper) return;
+    room.meta.paper = c; persistMeta(room); broadcastAll(room, roomStateMsg(room));
+  } else if (cmd === 'rewind') {                                   // 방 되감기 (목록·미리 보기·되돌리기)
+    rewindCmd(ws, room, roomId, msg).catch((e) => { console.error('되감기 오류:', e.message); cmdErr(ws, '되감기를 하지 못했어요'); });
   } else if (cmd === 'clearall') {
+    if (P.snaps && roomPlus(room)) await snapNow(room, '모두 지우기 전');   // (실수로 지웠어도 되감기로 살릴 수 있게)
     histReplace(room, []);
     broadcastAll(room, { type: 'clearall' });
     saveRoom(roomId, room, true);
@@ -1595,8 +1859,9 @@ function coverBlocked(ws, room, owner, s, loud = false) {
 }
 // 남의 칠하기 덮기 막기: 새 칠하기 줄이 다른 사람의 (색이 다른) 칠하기 조각에 닿는 수를 센다. 칠하기는 늘 선 아래라 선은 덮을 수 없다.
 // 줄 j 의 가운데 y = (j + 0.5) x 칸, 굵기 = 칸 x 2. 조각마다 겹칠 수 있는 줄 번호만 찾아 본다.
-function fillCoverBlocked(ws, room, owner, list, cell) {
+function fillCoverBlocked(ws, room, owner, list, cell, lay) {
   if (room.meta.noCover || isStaff(room, owner) || !list.length) return false;
+  const LS = room.meta.layers, lix = new Map(LS.map((x, i) => [x.id, i])), li = lix.get(lay || '') || 0;
   const color = list[0].color, rows = new Map();
   let xa = Infinity, xb = -Infinity, ya = Infinity, yb = -Infinity;
   for (const r of list) {
@@ -1617,11 +1882,13 @@ function fillCoverBlocked(ws, room, owner, list, cell) {
       if (box[q + 1] < xa || box[q] > xb || box[q + 3] < ya || box[q + 2] > yb) continue;
       for (let i = k * SUB, e = Math.min(a.length, i + SUB); i < e; i++) {
         const t = a[i];
-        if (!t.f || t.o === owner || t.color === color) continue;
-        const ht = t.size / 2, tx0 = Math.min(t.x0, t.x1) - ht, tx1 = Math.max(t.x0, t.x1) + ht, ty = (t.y0 + t.y1) / 2;
-        if (tx1 < xa || tx0 > xb || ty + ht < ya || ty - ht > yb) continue;
+        if (t.o === owner || t.color === color) continue;
+        const tl = lix.get(t.l || '') || 0;
+        if (t.f ? tl > li : tl >= li) continue;                  // (새 칠하기보다 위에 그려지는 것은 가려지지 않는다: 같은 레이어의 선, 위 레이어)
+        const ht = t.size / 2, tx0 = Math.min(t.x0, t.x1) - ht, tx1 = Math.max(t.x0, t.x1) + ht, ty0 = Math.min(t.y0, t.y1) - ht, ty1 = Math.max(t.y0, t.y1) + ht;
+        if (tx1 < xa || tx0 > xb || ty1 < ya || ty0 > yb) continue;
         let hit = false;
-        for (let j = Math.ceil((ty - ht - cell) / cell - 0.5), j1 = Math.floor((ty + ht + cell) / cell - 0.5); j <= j1 && !hit; j++) {
+        for (let j = Math.ceil((ty0 - cell) / cell - 0.5), j1 = Math.min(Math.floor((ty1 + cell) / cell - 0.5), Math.ceil((ty0 - cell) / cell - 0.5) + 4000); j <= j1 && !hit; j++) {
           const sp = rows.get(j);
           if (sp) for (const [x0, x1] of sp) if (x0 < tx1 && x1 > tx0) { hit = true; break; }
         }
@@ -1646,7 +1913,7 @@ function globalAllow(ws) {
 }
 
 // 어느 파일이 올라갔는지 바로 확인하는 용도 (화면의 설정 맨 아래에 '서버 버전'으로 보인다). db: none(저장소 없음) | connecting | ok | error
-const versionInfo = () => ({ stage: 3, date: '2026-10-13', rev: 51, db: dbState, dbKB: Math.round(dbOut / 1024), sync: syncStats });
+const versionInfo = () => ({ stage: 3, date: '2026-10-17', rev: 72, db: dbState, dbKB: Math.round(dbOut / 1024), sync: syncStats });
 
 // 들어온 원본 메시지의 크기·종류를 먼저 거른다. 칠하기('fill')만 16KB 를 넘을 수 있고, 그 외의 큰 메시지는 읽지도 않고 버린다.
 // 칠하기는 JSON 을 읽기 전에 속도 제한부터 확인한다 (무거운 메시지로 서버를 괴롭히지 못하게).
@@ -1693,7 +1960,10 @@ function handleMsg(ws, room, roomId, owner, msg) {
         o: owner, // 클라이언트가 보낸 값은 무시하고 서버가 정한다
       };
       if (![s.x0, s.y0, s.x1, s.y1].every(okNum)) return;
+      const lay = msgLayer(room, msg.l);
+      if (lay === null) return badLayer(ws);
       s.sid = typeof msg.sid === 'string' && SID_RE.test(msg.sid) ? msg.sid : autoSid(ws, s);
+      if (lay) s.l = lay;                                   // (값 순서: 화면과 같게 sid 다음)
       if (room.hn >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return; }
       if (shareFull(ws, room, owner, 1) || coverBlocked(ws, room, owner, s)) return;
       histPush(room, s);
@@ -1709,8 +1979,10 @@ function handleMsg(ws, room, roomId, owner, msg) {
       const x0 = r1(msg.x0), y0 = r1(msg.y0), x1 = r1(msg.x1), y1 = r1(msg.y1), r = r1(msg.r);
       if (![x0, y0, x1, y1, r].every(okNum)) return;
       const all = msg.all === true && isRoomOwner(room, owner);
-      if (!histErase(room, all ? null : owner, x0, y0, x1, y1, r)) return;
-      broadcast(room, ws, { type: 'erase', o: all ? null : owner, x0, y0, x1, y1, r });
+      const lay = msg.l === undefined ? null : msgLayer(room, msg.l);   // (레이어를 안 보내면 모든 레이어)
+      if (msg.l !== undefined && lay === null) return badLayer(ws);
+      if (!histErase(room, all ? null : owner, x0, y0, x1, y1, r, lay)) return;
+      broadcast(room, ws, { type: 'erase', o: all ? null : owner, x0, y0, x1, y1, r, ...(lay !== null ? { l: lay } : {}) });
     } else if (msg.type === 'erasestroke') {
       // 획 지우개: 경로에 닿은 획 전체를 지우고, 지워진 획 목록을 모두에게 알린다 (받는 쪽은 재계산하지 않는다)
       if (!allowSeg(ws)) return tooFast(ws);
@@ -1718,7 +1990,9 @@ function handleMsg(ws, room, roomId, owner, msg) {
       if (![x0, y0, x1, y1, r].every(okNum)) return;
       const all = msg.all === true && isRoomOwner(room, owner);
       const q = Number.isInteger(msg.q) && msg.q >= 0 && msg.q < 1e9 ? msg.q : 0;
-      const keys = histHit(room, all ? null : owner, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
+      const lay = msg.l === undefined ? null : msgLayer(room, msg.l);
+      if (msg.l !== undefined && lay === null) return badLayer(ws);
+      const keys = histHit(room, all ? null : owner, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE, lay);
       if (keys.length) {
         histRemoveStrokes(room, keys);
         broadcastAll(room, { type: 'strokesgone', keys, by: owner, q });
@@ -1739,9 +2013,12 @@ function handleMsg(ws, room, roomId, owner, msg) {
         const f = m.f === 1;
         const s = { x0: r1(m.x0), y0: r1(m.y0), x1: r1(m.x1), y1: r1(m.y1), color: String(m.color).slice(0, 9), size: Math.min(Math.max(+m.size || 4, f ? 0.1 : 1), PEN_MAX), o: owner, sid: m.sid };
         if (f) s.f = 1;
+        const lay = msgLayer(room, m.l);
+        if (lay === null) { badLayer(ws); break; }
+        if (lay) s.l = lay;
         if (![s.x0, s.y0, s.x1, s.y1].every(okNum) || typeof s.sid !== 'string' || !SID_RE.test(s.sid)) continue;
         if (room.hn + list.length >= MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); break; }
-        if (!f && coverBlocked(ws, room, owner, s, true)) break;   // (되돌리기로 큰 선을 바로 넣어 막기를 피하지 못하게)
+        if ((!f || (s.l || '') !== room.meta.layers[0].id) && coverBlocked(ws, room, owner, s, true)) break;   // (되돌리기로 큰 선을 바로 넣어 막기를 피하지 못하게. 맨 아래가 아닌 레이어의 칠하기 조각도)
         list.push(s);
       }
       if (!list.length || shareFull(ws, room, owner, list.length)) return;
@@ -1754,12 +2031,14 @@ function handleMsg(ws, room, roomId, owner, msg) {
       if (ws.fillPaid) ws.fillPaid = false; else if (!fillAllow(ws)) return no('rate');
       const f = checkFill(msg);
       if (!f) return no('bad');
+      const lay = msgLayer(room, msg.l);
+      if (lay === null) { badLayer(ws); return no('layer'); }
       if (room.hn + f.rows.length > MAX_HISTORY) { notice(ws, 'full', '그림이 가득 찼어요. 일부를 지우고 다시 그려 주세요.'); return no('full'); }
       if (shareFull(ws, room, owner, f.rows.length)) return no('share');
-      const fsegs = fillSegs(owner, f.sid, f.color, f.cell, f.rows);
-      if (fillCoverBlocked(ws, room, owner, fsegs, f.cell)) return no('cover');
+      const fsegs = fillSegs(owner, f.sid, f.color, f.cell, f.rows, lay);
+      if (fillCoverBlocked(ws, room, owner, fsegs, f.cell, lay)) return no('cover');
       histInsert(room, fsegs);
-      broadcast(room, ws, { type: 'fill', o: owner, sid: f.sid, color: f.color, cell: f.cell, rows: f.rows });
+      broadcast(room, ws, { type: 'fill', o: owner, sid: f.sid, color: f.color, cell: f.cell, rows: f.rows, ...(lay ? { l: lay } : {}) });
     } else if (msg.type === 'removesegs') {
       // 이전(undo): 내 선분 중 값이 같은 것을 정확히 지운다 (잘린 조각 되돌리기)
       if (!Array.isArray(msg.segs)) return;
@@ -1794,6 +2073,8 @@ function handleMsg(ws, room, roomId, owner, msg) {
         dpr: num(msg.dpr, 0, 10), w: num(msg.w, 0, 10000), h: num(msg.h, 0, 10000), cores: num(msg.cores, 0, 512), mem: num(msg.mem, 0, 1024), tool: t(msg.tool, 12), ua: t(msg.ua, 160) };
       console.log(`버벅임 [방 ${roomId}] 90% ${r.p90}ms 평균 ${r.avg}ms 최대 ${r.max}ms (${r.n}장) · 그림 ${r.segs}조각 · 배율 ${r.scale} · ${r.w}x${r.h}@${r.dpr} · 코어 ${r.cores} 메모리 ${r.mem}GB · ${r.tool} · ${r.ua}`);
       try { P.onPerf(roomId, r); } catch {}
+    } else if (msg.type === 'layer') {                    // 레이어 만들기·이름·순서·지우기
+      layerCmd(ws, room, msg).catch((e) => console.error('레이어 명령 오류:', e.message));
     } else if (msg.type === 'plusre') {                   // 화면: 방금 Plus 를 샀어요·꾸미기를 바꿨어요 → 계정 저장소에 다시 묻기
       const wait = 3000 - (Date.now() - (ws.plusReAt || 0));     // (3초에 한 번: 그 안에 또 오면 3초가 지난 뒤 한 번)
       if (wait <= 0) { ws.plusReAt = Date.now(); lookPlus(ws, room, true); }
@@ -1826,7 +2107,7 @@ function handleMsg(ws, room, roomId, owner, msg) {
       if (!text) return;
       pushChat(room, { o: owner, name: room.names[owner] || '익명', text });   // 시각과 닉네임은 서버가 붙인다 (그 시점의 이름으로 저장)
     } else if (msg.type === 'cmd') {
-      handleCmd(ws, room, roomId, msg);
+      handleCmd(ws, room, roomId, msg).catch((e) => console.error('방장 명령 오류:', e.message));
     } else if (msg.type === 'claim') {                   // 방장 되찾기 (서버 비밀값 OWNER_CLAIM 과 같은 코드)
       claimOwner(ws, room, msg);
     }
@@ -1922,17 +2203,21 @@ async function connect(ws, { url, cip }) {
   initSock(ws, owner);
   ws.room = room; ws.roomId = roomId;
   P.attach(ws);
+  // 레이어(69차)를 모르는 예전 화면(배포 전에 열어 둔 페이지): 새 그림 형식을 못 읽으니 새로 열게 한다 (화면은 'moved' 를 받으면 새로고침)
+  if (ws.echoOk && url.searchParams.get('L') !== '1') { byeAndClose(ws, { code: 'moved', text: '새 버전이 나왔어요. 새로고침할게요.' }); return; }
 
   try { await room.ready; } catch (e) { console.error('방 불러오기 오류:', e.message); try { ws.close(1011, 'room load error'); } catch {} return; }
   if (ws.readyState !== 1) return;
   const verdict = admit(room, roomId, owner, ws.ipt);  // 1) 방장 지정  2) 밴  3) 같은 인터넷 밴  4) 잠금
   if (verdict) { byeAndClose(ws, verdict); return; }   // 거부: clients 에 넣지 않고 입장·접속자 수 알림도 하지 않는다
+  if (needsKey(room, owner)) { ws.knock = { tries: 0, n: url.searchParams.get('n') }; P.attach(ws); send(ws, { type: 'locked', need: 'pw' }); return; }   // 비밀 방: 비밀번호를 받을 때까지 문 앞에서
   approve(ws, room, url.searchParams.get('n'));        // 승인: 초기 동기화
   P.attach(ws);
 }
 // 승인 전·강퇴/밴 뒤에 도착한 메시지는 무시한다
 function message(ws, raw, isBinary) {
   if (ws.approved && !ws.bye) return onRaw(ws, ws.room, ws.roomId, ws.owner, raw, isBinary);
+  if (ws.knock && !ws.bye && !isBinary && raw.length <= 400 && raw.toString('utf8', 0, 16) === '{"type":"unlock"') return knock(ws, raw);
   // 덩어리 목록은 화면이 열리자마자 보내서 승인보다 먼저 올 수 있다: 기억해 두었다가 승인 때 쓴다
   if (!ws.bye && ws.zOk === 3 && !isBinary && raw.length <= MAX_FILL_BYTES && raw.toString('utf8', 0, 20).startsWith('{"type":"sync",')) {
     try { const m = JSON.parse(raw); ws.pendingSync = { h: cleanHashes(m.h), id: syncId(m.id) }; } catch {}
@@ -1954,7 +2239,9 @@ async function restore(roomId, list) {
     sockets.add(ws);
     initSock(ws, a.o);
     ws.ipt = a.ipt || ''; ws.zOk = a.z || 0; ws.echoOk = a.e === 1; ws.room = room; ws.roomId = roomId;
+    if (a.pu > Date.now() && !room.plus.has(a.o)) room.plus.set(a.o, { until: a.pu, deco: cleanDeco(a.d), at: Math.min(Date.now(), +a.pa || 0) });   // (물어본 때 그대로: 5분이 지났으면 다시 묻는다)   // (소켓에 적어 둔 Plus)
     if (a.ap && ws.readyState === 1) { ws.approved = true; room.clients.add(ws); }
+    else if (a.k && ws.readyState === 1) ws.knock = { tries: Math.max(0, a.t | 0), n: typeof a.n === 'string' ? a.n : '' };
     else { sockets.delete(ws); try { ws.close(1012, 'restart'); } catch {} }   // 승인 전에 잠들었던 접속은 다시 들어오게 한다
   }
   return room;
@@ -1963,6 +2250,6 @@ function dropRoom(id) { rooms.delete(id); }            // (Cloudflare: 방이 �
 
 module.exports = {
   setPlatform, connect, message, closed, restore, dropRoom, getRoom, packRoom, parseDbUrl, maintainRoom, saveAll, saveTick, pruneConnRate, versionInfo, newRoomId, ipTag, cleanDeco, ownerIdOf,
-  rooms, sockets, get dbState() { return dbState; },
+  rooms, sockets, get dbState() { return dbState; }, LAYER_FREE, LAYER_MAX,
   MAX_FILL_BYTES, PING_MS, SAVE_MS, ROOM_RE, MAX_HISTORY,
 };

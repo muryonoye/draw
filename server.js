@@ -122,6 +122,7 @@ if (MOVED_TO) {
 // ---- 웹 서버 ----
 app.get('/version', (req, res) => res.json(core.versionInfo()));
 app.get('/auth/config', (req, res) => res.json({}));   // (계정 로그인은 Cloudflare 판에만: 화면이 계정 칸을 숨긴다)
+app.post('/plus/status', (req, res) => res.json({}));  // (Plus 도 Cloudflare 판만: 화면이 Plus 칸을 숨긴다)
 app.get('/', (req, res, next) => {
   if (!req.query.room) return res.redirect('/?room=' + core.newRoomId() + '&new=1');   // 방 없이 오면 새 방 (new=1: 화면이 '이 방 링크를 보내 주세요' 안내를 띄운다)
   next();

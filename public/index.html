@@ -170,6 +170,19 @@
   #imgView img { display: block; max-width: 100%; max-height: 60vh; margin: 0 auto; object-fit: contain; background: #fff; border-radius: var(--r-sm); -webkit-touch-callout: default; user-select: auto; }
   #imgView .acts { display: flex; gap: 8px; justify-content: flex-end; }
   #imgView a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+  #vidView, #rwView { position: fixed; inset: 0; z-index: 58; display: grid; place-items: center; background: rgba(40,34,20,.55); padding: 16px; }
+  #vidView[hidden], #rwView[hidden] { display: none; }
+  #vidView .card, #rwView .card { width: min(560px, 100%); max-height: calc(100% - 8px); overflow: auto; display: flex; flex-direction: column; gap: 10px; background: var(--panel); color: var(--text); border: 2.5px solid var(--line); border-radius: var(--paper-r); box-shadow: var(--shadow); padding: 16px; }
+  #vidView h3, #rwView h3 { margin: 0; font: 700 21px/1.2 var(--ui); }
+  #vidView video, #rwView img { display: block; max-width: 100%; max-height: 50vh; margin: 0 auto; background: #fff; border-radius: 10px; }
+  #vidView .acts, #rwView .acts { display: flex; gap: 8px; justify-content: flex-end; }
+  #vidView a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+  .rwlist { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
+  .rwlist button { text-align: left; font-family: var(--read); font-size: 14px; padding: 6px 10px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }
+  .rwlist button.on { background: var(--text); color: var(--panel); }
+  .papers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .papers button { width: 30px; height: 30px; border-radius: 8px; border: 2px solid var(--line); padding: 0; }
+  .papers button.on { outline: 3px solid var(--text); outline-offset: 2px; }
   #toasts { position: fixed; z-index: 70; left: 50%; transform: translateX(-50%); top: calc(54px + var(--safe-t)); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; width: min(92vw, 420px); }
   .toast { background: rgba(34,37,44,.96); color: var(--text); border: 1px solid var(--line); padding: 8px 14px; border-radius: 12px; box-shadow: var(--shadow); font-size: 13px; animation: tin .18s ease-out; word-break: keep-all; }
   .toast.warn { border-color: var(--warn); } .toast.err { border-color: var(--danger); } .toast.ok { border-color: var(--ok); }
@@ -258,6 +271,7 @@
     .toolwrap > .tool { width: auto; min-width: 0; }
     .toolsep { margin: 8px 1px; }
   }
+  @media (max-width: 380px) { .tool, .toolwrap { min-width: 26px; } #tools { padding-left: 4px !important; padding-right: 4px !important; } }   /* (360px 폰: 도구 13개가 한 줄에) */
   @media (min-width: 721px) and (max-height: 560px) {          /* 폰 가로 등 낮은 화면: 도구를 2줄(열)로, 왼쪽 위 상태 알약(HUD) 아래에서 시작 */
     #tools { flex-direction: row; flex-wrap: wrap; justify-content: center; align-content: flex-start; width: calc(var(--btn) * 2 + 18px);   /* 버튼 2개 + 사이 4 + 안쪽 여백 12 + 테두리 2 */
       top: 46px; transform: none; max-height: calc(100% - 56px); }
@@ -439,8 +453,16 @@
   .tag { background: var(--panel); color: var(--text); border: 1.5px solid var(--line); border-radius: var(--hand); font-size: 13px; font-weight: 700; }
   .tag.own { background: var(--text); color: var(--panel); }
   .tag.plus { background: #f9d65c; color: var(--text); }
+  .laylist { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow: auto; }
+  .layrow { display: flex; align-items: center; gap: 4px; border: 2px solid var(--line); border-radius: var(--hand); padding: 3px 4px; background: var(--panel); }
+  .layrow.on { background: var(--text); color: var(--panel); }
+  .layrow.on .lname small { color: inherit; }
+  .layrow.off .lname { opacity: .45; }
+  .layrow button { background: none; border: 0; color: inherit; padding: 4px; border-radius: 8px; min-width: 30px; min-height: 30px; display: inline-flex; align-items: center; justify-content: center; }
+  .layrow .lname { flex: 1; justify-content: flex-start; text-align: left; font: inherit; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layrow .lname small { font-family: var(--read); font-size: 11px; opacity: .7; margin-left: 6px; }
+  .layrow .lact { font-size: 15px; }
   .cmsg .chead .pb { font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: 6px; background: #f9d65c; color: #1d1d1b; }
-  .cur .dot.glyph { background: none !important; border: 0; box-shadow: none; width: 22px; height: 22px; left: -11px; top: -11px; font-size: 19px; line-height: 22px; text-align: center; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
   #plusBody .plist { margin: 6px 0 10px; padding-left: 18px; font-family: var(--read); font-size: 14px; }
   #plusBody .plist li { margin: 2px 0; }
   #plusBody .decorow { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
@@ -500,6 +522,9 @@
     <symbol id="i-eraser-stroke" viewBox="0 0 24 24"><path d="M3 15c3-9 6 4 9-4s6-3 9-8"/><path d="M14 16l6 6M20 16l-6 6"/></symbol>
     <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></symbol>
     <symbol id="i-size" viewBox="0 0 24 24"><path d="M4 6h16" stroke-width="1"/><path d="M4 12h16" stroke-width="2.5"/><path d="M4 18h16" stroke-width="4.5"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4 3 8.5l9 4.5 9-4.5L12 4Z"/><path d="m3 12.5 9 4.5 9-4.5"/><path d="m3 16.5 9 4.5 9-4.5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4"/><path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/></symbol>
     <symbol id="i-view" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6M11 8v6"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
@@ -604,6 +629,7 @@
     <button id="tUndo" class="tool" aria-label="이전 (실행 취소, Ctrl+Z)" title="이전 (실행 취소, Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo"/></svg></button>
     <button id="tRedo" class="tool" aria-label="되돌리기 (다시 실행, Ctrl+Shift+Z)" title="되돌리기 (다시 실행, Ctrl+Shift+Z)" disabled><svg class="ic"><use href="#i-redo"/></svg></button>
     <div class="toolsep"></div>
+    <button id="tLayers" class="tool" aria-label="레이어" title="레이어" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-layers"/></svg><span class="sub" id="layersSub">1</span></button>
     <button id="tColor" class="tool" aria-label="색상" title="색상" data-side="right" aria-expanded="false"><span class="sw" id="colorSw"></span></button>
     <button id="tSize" class="tool" aria-label="크기" title="크기" data-side="right" aria-expanded="false"><span class="num" id="sizeNumBtn">4</span></button>
     <button id="tView" class="tool" aria-label="보기·좌표 이동" title="보기·좌표 이동" data-side="right" aria-expanded="false"><svg class="ic"><use href="#i-view"/></svg></button>
@@ -622,12 +648,20 @@
   <div class="field" style="margin-top:12px"><label for="alphaRange">펜 투명도 <b id="alphaVal">100%</b> (칠하기는 늘 진하게)</label><input type="range" id="alphaRange" min="10" max="100" step="5" value="100" aria-label="펜 투명도"></div>
 </section>
 
+<section id="popLayers" class="pop" hidden aria-label="레이어">
+  <div class="sheetgrab"></div><h3>레이어 <span class="hint" id="layersCount" style="margin:0"></span></h3>
+  <div id="layerList" class="laylist"></div>
+  <button id="layerAdd" class="btn block" type="button" style="margin-top:8px">+ 새 레이어</button>
+  <div class="hint" id="layerHint">고른 레이어에 그려져요 (지우개·채우기·올가미도 그 레이어만). 눈을 끄면 내 화면에서만 숨겨요.</div>
+</section>
+
 <section id="popSize" class="pop" hidden aria-label="크기">
   <div class="sheetgrab"></div><h3><span id="sizeTitle">굵기</span><span id="sizeVal" class="hint" style="margin:0"></span></h3>
   <div class="prev"><i id="sizePrevDot"></i><span id="sizePrevTxt"></span></div>
   <div class="field" style="margin-top:12px"><input type="range" id="sizeRange" min="0" max="1000" step="1" aria-label="크기 슬라이더"></div>
   <div class="row"><input type="text" id="sizeNum" class="inp" inputmode="numeric" autocomplete="off" aria-label="크기 숫자 입력"><span class="hint" style="margin:0" id="sizeUnit">px</span></div>
   <div class="hint" id="sizeHint"></div>
+  <div class="field" id="sizeAlphaBox" style="margin-top:12px"><label for="sizeAlpha">펜 투명도 <b id="sizeAlphaVal">100%</b></label><input type="range" id="sizeAlpha" min="10" max="100" step="5" value="100" aria-label="펜 투명도"></div>
 </section>
 
 <section id="popHand" class="pop" hidden aria-label="화면 이동·올가미">
@@ -675,6 +709,7 @@
   <button id="fitAll" class="btn primary block" style="margin-bottom:10px"><svg class="ic"><use href="#i-view"/></svg>전체 그림 한눈에 보기</button>
   <button id="exportPng" class="btn block" style="margin-bottom:10px">그림을 이미지(PNG)로 저장</button>
   <button id="replayBtn" class="btn block" style="margin-bottom:10px">그리는 과정 다시 보기</button>
+  <button id="exportVideo" class="btn block" style="margin-bottom:10px">그리는 과정을 영상으로 저장 ✦</button>
   <div class="row">
     <button id="zOut" class="btn" aria-label="축소" title="축소"><svg class="ic"><use href="#i-minus"/></svg></button>
     <button id="z100" class="btn" style="flex:1" aria-label="배율 100%">100%</button>
@@ -724,7 +759,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span><b>U</b><span>자·도형 켜기·끄기 (도형을 끌 때 Shift: 15°씩·정사각형·정원)</span><b>M</b><span>올가미 (내 그림 골라 옮기기·크기)</span><b>Ctrl+D</b><span>고른 것 복제</span><b>Delete</b><span>고른 것 지우기</span><b>Esc</b><span>고르기 끝</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-16 68차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-17 72차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -748,6 +783,8 @@
 <div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
   <div class="card"><h3 id="mTitle"></h3><p id="mBody"></p><div id="mFields"></div><div id="mErr" class="err"></div><div class="acts"><button id="mCancel" class="btn">취소</button><button id="mOk" class="btn primary">확인</button></div></div>
 </div>
+<div id="vidView" hidden role="dialog" aria-modal="true" aria-labelledby="vidViewTitle"><div class="card"><h3 id="vidViewTitle">그리는 과정 영상</h3><video id="vidViewVid" controls playsinline muted></video><div class="hint" id="vidViewInfo"></div><div class="acts"><button id="vidClose" class="btn" type="button">닫기</button><a id="vidDl" class="btn primary" download="같이그리기.webm">다운로드</a></div></div></div>
+<div id="rwView" hidden role="dialog" aria-modal="true" aria-labelledby="rwViewTitle"><div class="card"><h3 id="rwViewTitle">방 되감기 ✦</h3><div class="hint">15분마다 남긴 그림이에요 (최근 2시간은 모두, 하루 안은 1시간마다, 일주일 안은 하루마다). 골라서 미리 보고 되돌려요. 되돌리기 전 그림도 남으니 다시 되돌릴 수 있어요.</div><div id="rwList" class="rwlist"></div><img id="rwImg" alt="그때의 그림" hidden><div class="hint" id="rwInfo"></div><div class="acts"><button id="rwClose" class="btn" type="button">닫기</button><button id="rwGo" class="btn danger" type="button" hidden>이때로 되돌리기</button></div></div></div>
 <div id="imgView" hidden role="dialog" aria-modal="true" aria-labelledby="imgViewTitle"><div class="card"><h3 id="imgViewTitle">그림 이미지</h3><img id="imgViewImg" alt="저장할 그림"><div class="hint" id="imgViewInfo"></div><div class="acts"><button id="imgClose" class="btn" type="button">닫기</button><a id="imgDl" class="btn primary" download="같이그리기.png">다운로드</a></div></div></div>
 <div id="toasts" aria-live="polite"></div>
 <div id="endScreen" hidden><div class="card"><h2 id="endTitle">연결이 종료되었어요</h2><p id="endText"></p><button id="endBtn" class="btn primary">다시 입장</button></div></div>
@@ -816,7 +853,7 @@ const now = () => performance.now();
 const rnd = (n) => crypto.getRandomValues(new Uint32Array(1))[0] % n;
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-const isEditable = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+const isEditable = (t) => !!t && ((t.tagName === 'INPUT' && !/^(range|checkbox|radio|button|submit|color)$/.test(t.type)) || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);   // (범위 슬라이더·체크 상자는 글자 칸이 아니다: 단축키가 먹게)
 const isNarrow = () => (window.matchMedia ? matchMedia('(max-width: 720px)').matches : innerWidth <= 720);
 const WIDE_MQ = window.matchMedia ? matchMedia('(min-width: 1000px)') : null;
 const isWide = () => (WIDE_MQ ? WIDE_MQ.matches : innerWidth >= 1000);   // 넓은 화면: 도구를 드롭다운 없이 다 꺼내 놓는다
@@ -886,9 +923,13 @@ function erInterval(s, ex0, ey0, edx, edy, eL, rho) {
   }
   return lo <= hi ? [lo, hi] : null;
 }
+// 레이어: 무료는 방에 2개까지 (기본 + 1), 그 이상은 만드는 사람이 Plus. 아무리 많아도 LAYER_MAX 개 (화면이 레이어마다 따로 그리므로)
+const LAYER_FREE = 2, LAYER_MAX = 30, LAYER_RE = /^[a-z0-9]{6}$/;
+const layerOf = (s) => s.l || '';                         // 선분의 레이어 ('' = 기본 레이어: 레이어가 생기기 전의 그림도 여기)
 // owner 가 null 이 아니면 그 사람의 선만 지운다. 지워진 곳이 없으면 null, 있으면 새 배열(잘린 조각 포함)을 돌려준다.
 // 잘린 조각은 원래 획의 sid 를 그대로 가진다. diff({removed:[], added:[]})를 넘기면 지워진 원본/새 조각을 담아 준다(이전·되돌리기용).
-function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
+// layer 가 문자열이면 그 레이어의 선만 (null·없음 = 모든 레이어)
+function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff, layer) {
   r = Math.min(Math.max(r, 1), ERASER_R_MAX);
   const edx = x1 - x0, edy = y1 - y0;
   const eL = Math.sqrt(edx * edx + edy * edy);
@@ -898,6 +939,7 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
   for (let i = 0; i < list.length; i++) {
     const s = list[i];
     if (owner !== null && s.o !== owner) continue;
+    if (layer != null && layerOf(s) !== layer) continue;
     const m = s.size / 2;
     if (Math.max(s.x0, s.x1) + m < minX || Math.min(s.x0, s.x1) - m > maxX ||
         Math.max(s.y0, s.y1) + m < minY || Math.min(s.y0, s.y1) - m > maxY) continue;
@@ -919,6 +961,7 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
     const piece = (a, b) => {
       const p = { x0: R1(s.x0 + dx * a), y0: R1(s.y0 + dy * a), x1: R1(s.x0 + dx * b), y1: R1(s.y0 + dy * b), color: s.color, size: s.size, o: s.o, sid: s.sid };
       if (s.f) p.f = 1;                                   // 칠하기 조각은 잘려도 칠하기 조각이다
+      if (s.l) p.l = s.l;                                 // (같은 레이어)
       return p;
     };
     if (iv[0] * len >= 0.25) { const p = piece(0, iv[0]); out.push(p); if (diff) diff.added.push(p); }
@@ -926,8 +969,8 @@ function eraseCapsule(list, owner, x0, y0, x1, y1, r, diff) {
   }
   return out;
 }
-// 지우개 경로에 한 번이라도 닿은 획의 [주인, sid] 목록 (최대 max개). owner 가 null 이 아니면 그 사람의 획만.
-function hitStrokes(list, owner, x0, y0, x1, y1, r, max) {
+// 지우개 경로에 한 번이라도 닿은 획의 [주인, sid] 목록 (최대 max개). owner 가 null 이 아니면 그 사람의 획만. layer: 위와 같음
+function hitStrokes(list, owner, x0, y0, x1, y1, r, max, layer) {
   r = Math.min(Math.max(r, 1), ERASER_R_MAX);
   const edx = x1 - x0, edy = y1 - y0;
   const eL = Math.sqrt(edx * edx + edy * edy);
@@ -938,6 +981,7 @@ function hitStrokes(list, owner, x0, y0, x1, y1, r, max) {
     const s = list[i];
     if (!s.sid || !s.o) continue;
     if (owner !== null && s.o !== owner) continue;
+    if (layer != null && layerOf(s) !== layer) continue;
     const m = s.size / 2;                                 // 범위 밖은 먼저 거른다 (획 이름을 만드는 것보다 훨씬 싸다)
     if (Math.max(s.x0, s.x1) + m < minX || Math.min(s.x0, s.x1) - m > maxX ||
         Math.max(s.y0, s.y1) + m < minY || Math.min(s.y0, s.y1) - m > maxY) continue;
@@ -976,17 +1020,19 @@ function insertSegs(list, items) {
 // 칠하기: 칸 크기(cell, 0.2의 배수)와 가로줄 목록([[줄, 시작칸, 끝칸], ...])을 선분으로 바꾼다. 칸 (i, j)의 중심은 ((i+0.5)*cell, (j+0.5)*cell).
 // 줄 두께는 칸 크기보다 조금 굵어서(FILL_THICK) 줄끼리 겹쳐 이음새가 안 보이고, 가장자리는 경계선 밑으로 살짝 들어간다.
 function fillSize(cell) { return Math.round(cell * FILL_THICK * 100) / 100; }
-function fillSegs(o, sid, color, cell, rows) {
+function fillSegs(o, sid, color, cell, rows, l) {        // l: 레이어 (기본 레이어면 없음)
   const size = fillSize(cell), R = (n) => Math.round(n * 10) / 10, out = [];
   for (const r of rows) {
     const y = R((r[0] + 0.5) * cell);
-    out.push({ x0: R((r[1] + 0.5) * cell), y0: y, x1: R((r[2] + 0.5) * cell), y1: y, color, size, o, sid, f: 1 });
+    const s = { x0: R((r[1] + 0.5) * cell), y0: y, x1: R((r[2] + 0.5) * cell), y1: y, color, size, o, sid, f: 1 };
+    if (l) s.l = l;
+    out.push(s);
   }
   return out;
 }
 // 그림 목록을 작게 담는 이진 형식 'D2' 풀기 (서버가 encodeSegs 로 만든다. 저장된 그림을 불러올 때 서버도 같은 함수를 쓴다).
 // [D2][문자열 수, (길이, UTF-8)…][선분 수][선분…]. 선분: 표시 1바이트 + 필요한 값들 (정수는 7비트씩 이어 쓰는 수, 좌표는 0.1 단위 정수의 차이).
-// 표시: 1 칠하기, 2 주인·획 바뀜, 4 색·굵기 바뀜, 8 앞 선분 끝에서 이어짐, 16 좌표를 실수 그대로, 32 굵기를 실수 그대로
+// 표시: 1 칠하기, 2 주인·획 바뀜, 4 색·굵기 바뀜, 8 앞 선분 끝에서 이어짐, 16 좌표를 실수 그대로, 32 굵기를 실수 그대로, 64 레이어 바뀜 (그 뒤 문자열 번호, '' = 기본)
 function decodeSegs(u) {
   const r = d2Reader(u);
   if (!r) return null;
@@ -1007,7 +1053,7 @@ function d2Reader(u) {
   const td = new TextDecoder(), S = new Array(vu());
   for (let i = 0; i < S.length; i++) { const l = vu(); if (p + l > n) throw cut(); S[i] = td.decode(u.subarray(p, p + l)); p += l; }
   const count = vu();
-  let o = '', sid = '', color = '', size = 0, px = 0, py = 0, X = 0, Y = 0;
+  let o = '', sid = '', color = '', size = 0, px = 0, py = 0, X = 0, Y = 0, lay = '';
   return {
     count,
     next() {
@@ -1015,6 +1061,7 @@ function d2Reader(u) {
       const fl = u[p++];
       if (fl & 2) { o = S[vu()]; sid = S[vu()]; }
       if (fl & 4) { color = S[vu()]; size = fl & 32 ? f64() : vu() / 100; }
+      if (fl & 64) lay = S[vu()];
       let x0, y0, x1, y1;
       if (fl & 16) {
         if (fl & 8) { x0 = px; y0 = py; } else { x0 = f64(); y0 = f64(); }
@@ -1024,9 +1071,10 @@ function d2Reader(u) {
         if (fl & 8) { x0 = px; y0 = py; } else { X0 = X + vs(); Y0 = Y + vs(); x0 = X0 / 10; y0 = Y0 / 10; }
         const X1 = X0 + vs(), Y1 = Y0 + vs(); x1 = X1 / 10; y1 = Y1 / 10;
       }
-      if (o === undefined || sid === undefined || color === undefined) throw new Error('D2: 잘못된 문자열 번호');
+      if (o === undefined || sid === undefined || color === undefined || lay === undefined) throw new Error('D2: 잘못된 문자열 번호');
       const s = { x0, y0, x1, y1, color, size, o, sid };
       if (fl & 1) s.f = 1;
+      if (lay) s.l = lay;
       px = x1; py = y1; X = Math.round(x1 * 10); Y = Math.round(y1 * 10);
       return s;
     },
@@ -1041,12 +1089,13 @@ function blockHash(u) {
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return (h2 >>> 0).toString(36).padStart(7, '0') + (h1 >>> 0).toString(36).padStart(7, '0');
 }
-// Plus 꾸미기: 이름 색·커서 모양 (서버는 이 목록에 있는 값만 받는다)
+// 방 종이 색 (✦ Plus 방장이 고름, 첫 번째 = 기본)
+const PAPERS = ['#f6f4ee', '#ffffff', '#fbf3df', '#fdecef', '#e9f3fb', '#e8f5ec', '#efeae0', '#e6e6e6'];
+// Plus 꾸미기: 이름 색 (서버는 이 목록에 있는 값만 받는다)
 const DECO_COLORS = ['#e53935', '#fb8c00', '#f9a825', '#43a047', '#00897b', '#1e88e5', '#3949ab', '#8e24aa', '#d81b60', '#6d4c41'];
-const DECO_CURSORS = ['dot', 'star', 'heart', 'flower', 'cat', 'pencil'];
 function cleanDeco(d) {
   const o = {};
-  if (d && typeof d === 'object') { if (DECO_COLORS.includes(d.c)) o.c = d.c; if (DECO_CURSORS.includes(d.cur)) o.cur = d.cur; }
+  if (d && typeof d === 'object') { if (DECO_COLORS.includes(d.c)) o.c = d.c; }
   return o;
 }
 // @@SHARED_END
@@ -1126,7 +1175,9 @@ function goRoom(id) { location.href = '/?room=' + encodeURIComponent(id); }
 const stage = $('stage'), board = $('board'), inkCv = $('c'), gridCv = $('grid'), hlCv = $('hl');
 const ctx = inkCv.getContext('2d'), gctx = gridCv.getContext('2d'), hctx = hlCv.getContext('2d');
 // 그림판 흰 바탕을 캔버스로도 칠해 둔다: 브라우저 '다크 모드'가 CSS 흰 바탕은 어둡게 바꿔도 캔버스 그림은 그대로 두기 때문 (그 경우 검은 선이 어두운 바탕에 묻혔다)
-{ const b = $('bg').getContext('2d'); b.fillStyle = '#f6f4ee'; b.fillRect(0, 0, 1, 1); }
+let paperC = '';                                                // 방 종이 색 (✦ Plus 방장이 고름, '' = 기본)
+function paintPaper() { const b = $('bg').getContext('2d'); b.fillStyle = paperC || PAPERS[0]; b.fillRect(0, 0, 1, 1); document.documentElement.style.setProperty('--paper', paperC || PAPERS[0]); }
+paintPaper();
 const slCv = $('sl'), sctx = slCv.getContext('2d');                  // 올가미: 둘러싸는 선·고른 것 테두리·옮기는 모습
 let lasso = null, sel = null, selDrag = null, selHide = null, rafSel = 0;
 const hiddenO = new Set();                                      // 내 화면에서만 숨긴 사람들의 그림 (주인 ID)
@@ -1181,14 +1232,15 @@ function viewMat(v) {
 }
 const ctxView = () => { const m = viewMat(curView()); ctx.setTransform(m[0] * dpr, m[1] * dpr, m[2] * dpr, m[3] * dpr, m[4] * dpr, m[5] * dpr); };
 const aligned = () => inkView.x === cam.x && inkView.y === cam.y && inkView.s === scale && inkView.r === rot;
-function ensureAligned() { if (!aligned() || exactT) paintInkExact(); }
+function ensureAligned() { if (!aligned() || exactT) { if (panReady()) paintInkPan(); else paintInkExact(true); } }
 
 let paintMs = 8, rafExact = 0, coarseT = 0;                    // paintMs: 최근 전체 다시 그리기에 걸린 시간 (평균, ms)
 const LIVE_PAINT_MS = 24;                                     // 이보다 빠르면 화면을 옮기는 동안에도 바로바로 다시 그린다 (마우스·휠 화면만)
 // 손가락 화면(폰·태블릿)은 화면 해상도가 높아 매번 다시 그리면 큰 그림을 매번 화면으로 옮기느라 오히려 버벅인다 → 예전처럼 늘려 보여 주고 멈추면 다시 그린다
 const LIVE_OK = !(window.matchMedia && matchMedia("(pointer: coarse)").matches);
-function paintInkExact() {
+function paintInkExact(keep) {                                // keep === true: 보기만 바뀜 (그림은 그대로 → 넓게 그려 둔 그림을 버리지 않는다)
   const t0 = performance.now();
+  if (keep !== true) inkSnap = null;
   clearTimeout(exactT); exactT = 0; clearTimeout(coarseT); coarseT = 0;
   if (rafExact) { cancelAnimationFrame(rafExact); rafExact = 0; }
   inkCv.style.transform = '';
@@ -1197,21 +1249,89 @@ function paintInkExact() {
   ctx.clearRect(0, 0, inkCv.width, inkCv.height);
   ctxView();
   const { xa, xb, ya, yb } = viewBox(30);
-  drawSegs(xa, xb, ya, yb);
-  paintPreview();
+  drawnN = 0; drawSegs(xa, xb, ya, yb); lastDrawn = drawnN;
   dirty = null;                                            // (조금만 다시 그리기가 예정돼 있었어도 이걸로 충분하다)
   if (drawSkipPx <= 0.6) { const d = performance.now() - t0; paintMs = d > paintMs ? d : paintMs * 0.85 + d * 0.15; }   // (오래 걸리면 바로 올리고, 빨라질 때는 천천히 내린다)
+}
+// ---- 72차: 그림이 많이 보일 때(멀리 축소) 화면 이동은 넓게 그려 둔 그림을 옮겨 붙인다 ----
+// 매번 수만 조각을 다시 칠하면 그리기 명령은 20ms 여도 GPU 가 칠하는 데 100ms 넘게 걸려 초당 7장이 됐다 (JS 시간만 재는 paintMs 로는 안 보였음).
+// 같은 배율·각도에서 옮기기만 하면 넓게 그려 둔 그림을 그만큼 옮겨 붙이고 (기기 픽셀 단위), 새 선·지운 자리는 그 그림에도 같이 반영한다.
+const SNAP_PAN_MIN = 5000;                                    // 화면에 그린 조각이 이만큼 넘으면 (적으면 다시 칠해도 빠르다)
+const SNAP_PX_MAX = 9e6;                                      // 넓게 그려 둘 캔버스의 최대 픽셀 (약 36MB)
+let inkSnap = null, snapCv = null, drawnN = 0, lastDrawn = 0;
+const panReady = () => LIVE_OK && lastDrawn >= SNAP_PAN_MIN && !rp && !altSrc && !selHide && inkView.s === scale && inkView.r === rot;
+const snapMat = (sn) => { const m = viewMat(sn.v), d = sn.dpr; return [m[0] * d, m[1] * d, m[2] * d, m[3] * d, (m[4] + sn.mx) * d, (m[5] + sn.my) * d]; };
+function snapOffset(sn) {                                     // 그 그림이 지금 화면을 다 덮으면 옮길 거리(CSS px), 아니면 null
+  if (!sn || sn.dpr !== dpr || sn.w !== cssW || sn.h !== cssH || sn.v.s !== scale || sn.v.r !== rot) return null;
+  const a = viewMat(sn.v), b = viewMat(curView()), dx = b[4] - a[4], dy = b[5] - a[5];
+  return Math.abs(dx) <= sn.mx && Math.abs(dy) <= sn.my ? { dx, dy } : null;
+}
+function buildSnap() {
+  const k = Math.min(0.5, (Math.sqrt(SNAP_PX_MAX / Math.max(1, inkCv.width * inkCv.height)) - 1) / 2);
+  if (k < 0.12) return null;                                   // (화면이 너무 커서 넓게 그려 둘 수 없다)
+  const mx = Math.round(cssW * k), my = Math.round(cssH * k);
+  const cv = snapCv || (snapCv = document.createElement('canvas'));
+  cv.width = Math.round((cssW + 2 * mx) * dpr); cv.height = Math.round((cssH + 2 * my) * dpr);
+  const sn = { cv, g: cv.getContext('2d'), v: curView(), mx, my, dpr, w: cssW, h: cssH };
+  sn.g.setTransform(...snapMat(sn));
+  const { xa, xb, ya, yb } = viewBox(Math.max(mx, my) + 30);
+  drawSegs(xa, xb, ya, yb, sn.g, scale);
+  return sn;
+}
+function paintInkPan() {                                      // 같은 배율·각도에서 옮기기만 했을 때
+  let o = snapOffset(inkSnap);
+  if (!o) { inkSnap = buildSnap(); o = snapOffset(inkSnap); if (!o) { paintInkExact(true); return; } }
+  clearTimeout(exactT); exactT = 0; clearTimeout(coarseT); coarseT = 0;
+  if (rafExact) { cancelAnimationFrame(rafExact); rafExact = 0; }
+  inkCv.style.transform = '';
+  inkView = curView();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, inkCv.width, inkCv.height);
+  ctx.drawImage(inkSnap.cv, Math.round((o.dx - inkSnap.mx) * dpr), Math.round((o.dy - inkSnap.my) * dpr));   // (기기 픽셀로 반올림: 반 픽셀보다 작게 어긋날 수 있지만 흐려지지 않는다)
+}
+function snapSeg(s) {                                         // 새 선분을 넓게 그려 둔 그림에도
+  const sn = inkSnap; if (!sn) return;
+  const g = sn.g; g.setTransform(...snapMat(sn));
+  g.strokeStyle = s.color; g.lineWidth = Math.max(s.size, 0.6 / sn.v.s); thinCaps(g, g.lineWidth * sn.v.s);
+  g.beginPath(); g.moveTo(s.x0, s.y0); g.lineTo(dotX(s, sn.v.s), s.y1); g.stroke();
+}
+function snapDirty(d) {                                       // 넓게 그려 둔 그림에서도 그 자리만 다시 (옮겨 붙일 때 지운 선이 되살아나지 않게)
+  const sn = inkSnap; if (!sn) return;
+  const m = snapMat(sn), W = sn.cv.width, H = sn.cv.height;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of [[d.xa, d.ya], [d.xb, d.ya], [d.xa, d.yb], [d.xb, d.yb]]) {
+    const px = m[0] * x + m[2] * y + m[4], py = m[1] * x + m[3] * y + m[5];
+    x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+  }
+  x0 = Math.max(0, Math.floor(x0) - 2); y0 = Math.max(0, Math.floor(y0) - 2); x1 = Math.min(W, Math.ceil(x1) + 2); y1 = Math.min(H, Math.ceil(y1) + 2);
+  if (x1 <= x0 || y1 <= y0) return;
+  const det = m[0] * m[3] - m[1] * m[2];                      // 그 픽셀 사각형을 덮는 월드 상자 (돌린 화면이면 더 넓다)
+  let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
+  for (const [px, py] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
+    const u = px - m[4], v = py - m[5], wx = (m[3] * u - m[2] * v) / det, wy = (-m[1] * u + m[0] * v) / det;
+    xa = Math.min(xa, wx); xb = Math.max(xb, wx); ya = Math.min(ya, wy); yb = Math.max(yb, wy);
+  }
+  const g = sn.g, e = 2 / sn.v.s;
+  g.save(); g.setTransform(1, 0, 0, 1, 0, 0);
+  g.beginPath(); g.rect(x0, y0, x1 - x0, y1 - y0); g.clip(); g.clearRect(x0, y0, x1 - x0, y1 - y0);
+  g.setTransform(...m); drawSegs(xa - e, xb + e, ya - e, yb + e, g, sn.v.s);
+  g.restore();
 }
 function paintCoarse() {                                       // 느린 화면에서 오래 움직일 때: 짧은 조각은 건너뛰고 빠르게 (멈추면 정확히 다시 그린다)
   coarseT = 0;
   const keep = drawSkipPx, ex = exactT; drawSkipPx = Math.max(keep, 2.5);
-  try { paintInkExact(); } finally { drawSkipPx = keep; }
-  if (ex) exactT = setTimeout(paintInkExact, GESTURE_REPAINT_MS);
+  try { paintInkExact(true); } finally { drawSkipPx = keep; }
+  if (ex) exactT = setTimeout(() => paintInkExact(true), GESTURE_REPAINT_MS);
 }
 // 선 목록을 덩어리(SEG_BLOCK 개씩)로 나눈 범위 (화면 밖 덩어리는 통째로 건너뛴다). 목록이 바뀌면(다른 배열이 되거나 길이가 바뀌면) 다시 만든다.
 const SEG_BLOCK = 256;
 let drawSkipPx = 0.6;                                      // (테스트에서 0 으로 바꿔 건너뛰지 않은 그림과 비교한다)
 let segIdx = null, segKeep = null;                        // segKeep: 지우개가 만든 새 목록 { arr, base: 그때의 segIdx, at }: 그 목록의 at 번호 앞은 예전과 같다
+// 레이어 (69차): 방의 레이어 목록(아래 → 위, 서버가 보냄), 내가 고른 레이어(curL, '' = 기본), 내 화면에서만 숨긴 레이어
+let layers = [{ id: '', name: '레이어 1', by: '' }], curL = '', hiddenL = new Set();
+const multiL = () => layers.length > 1 || hiddenL.size > 0;     // (레이어가 하나뿐이면 예전처럼 목록 순서대로 한 번에 그린다)
+function topLayer() { for (let i = layers.length - 1; i >= 0; i--) if (!hiddenL.has(layers[i].id)) return layers[i].id; return ''; }
+const withL = (s) => { if (curL) s.l = curL; return s; };     // 새로 그리는 선분: 고른 레이어
 function addSegs(items) { insertSegs(segs, items); if (items.some((s) => s.f)) segIdx = null; }   // 칠하기 조각은 목록 중간에 들어가서 덩어리 범위를 처음부터 다시 잰다
 function segIndex() {
   if (segIdx && segIdx.arr === segs && segIdx.len === segs.length) return segIdx;
@@ -1224,11 +1344,13 @@ function segIndex() {
     from = Math.min(from, Math.floor(segIdx.len / SEG_BLOCK), n);
     box.set(segIdx.box.subarray(0, from * 4));
   }
+  const lays = segIdx ? segIdx.lays.slice(0, from) : [];
   segKeep = null;
   for (let b = from; b < n; b++) {
-    let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
+    let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity, ls = null, base = false;   // ls: 이 덩어리에 있는 레이어들 (기본 레이어뿐이면 null)
     for (let i = b * SEG_BLOCK, e = Math.min(segs.length, i + SEG_BLOCK); i < e; i++) {
       const s = segs[i], h = s.size / 2;
+      if (s.l) { if (!ls) { ls = new Set(); if (base) ls.add(''); } ls.add(s.l); } else { base = true; if (ls) ls.add(''); }
       const a0 = (s.x0 < s.x1 ? s.x0 : s.x1) - h, a1 = (s.x0 > s.x1 ? s.x0 : s.x1) + h, c0 = (s.y0 < s.y1 ? s.y0 : s.y1) - h, c1 = (s.y0 > s.y1 ? s.y0 : s.y1) + h;
       if (a0 < xa) xa = a0;
       if (a1 > xb) xb = a1;
@@ -1236,29 +1358,44 @@ function segIndex() {
       if (c1 > yb) yb = c1;
     }
     box[b * 4] = xa; box[b * 4 + 1] = xb; box[b * 4 + 2] = ya; box[b * 4 + 3] = yb;
+    lays[b] = ls;                                             // (null = 기본 레이어만)
   }
-  return (segIdx = { arr: segs, len: segs.length, n, box });
+  return (segIdx = { arr: segs, len: segs.length, n, box, lays });
 }
+const blockHasL = (ix, b, lid) => { const ls = ix.lays && ix.lays[b]; return ls ? ls.has(lid) : lid === ''; };
 // 점(길이 0 인 선분)의 끝 x: 크롬은 길이 0 인 선분만 있는 path 를 그리지 않아서 화면 0.01px 만큼 늘린다
 const dotX = (s, k) => (s.x0 === s.x1 && s.y0 === s.y1 ? s.x1 + 0.01 / k : s.x1);
-function drawSegs(xa, xb, ya, yb, g = ctx, k = scale) {    // 월드 상자에 닿는 선을 목록 순서대로 g 에 그린다 (g 는 보기 변환이 된 상태, k = 화면 픽셀 / 월드)
+let altSrc = null;                                            // 다른 목록을 그릴 때 { list, ix, layers } (되감기 미리 보기): withSource 안에서만
+function withSource(list, lays, fn) { altSrc = { list, ix: blockIndex(list), layers: Array.isArray(lays) && lays.length ? lays : [{ id: '' }] }; try { return fn(); } finally { altSrc = null; } }
+function drawSegs(xa, xb, ya, yb, g = ctx, k = scale) {    // 월드 상자에 닿는 선을 g 에 그린다 (레이어가 여럿이면 아래 레이어부터, 레이어 안에서는 목록 순서대로)
+  if (altSrc) { if (altSrc.layers.length < 2) drawPass(xa, xb, ya, yb, g, k, null); else for (const L of altSrc.layers) drawPass(xa, xb, ya, yb, g, k, L.id); return; }
+  if (!multiL()) { drawPass(xa, xb, ya, yb, g, k, null); return; }
+  for (const L of layers) if (!hiddenL.has(L.id)) drawPass(xa, xb, ya, yb, g, k, L.id);
+}
+// 화면에서 2px 보다 가는 선은 끝·이음을 네모로: 보기엔 같고, 멀리 축소해서 수만 조각이 보일 때 GPU 가 칠하는 시간이 절반 아래로 (72차)
+const thinCaps = (g, px) => { if (px < 2) { g.lineCap = 'square'; g.lineJoin = 'bevel'; } else { g.lineCap = 'round'; g.lineJoin = 'round'; } };
+function drawPass(xa, xb, ya, yb, g, k, lid) {              // lid: 이 레이어만 (null = 모두)
   g.lineCap = 'round'; g.lineJoin = 'round';
-  const src = rp ? rp.list : segs, lim = rp ? rp.n : src.length;   // (그리는 과정 다시 보기 중이면 그 목록의 앞 n 개만)
-  const ix = rp ? rp.ix : segIndex(), box = ix.box, tol = drawSkipPx / k;
+  const src = altSrc ? altSrc.list : rp ? rp.list : segs, lim = altSrc ? src.length : rp ? rp.n : src.length;   // (그리는 과정 다시 보기 중이면 그 목록의 앞 n 개만)
+  const ix = altSrc ? altSrc.ix : rp ? rp.ix : segIndex(), box = ix.box, tol = drawSkipPx / k;
   let open = false, rc = null, rs = -1, rsid = null, lx = NaN, ly = NaN, px = NaN, py = NaN, pend = false;
   const flush = () => { if (pend) { g.lineTo(lx, ly); pend = false; } };   // 건너뛰던 마지막 점까지는 꼭 그린다
   for (let b = 0; b < ix.n; b++) {
     if (box[b * 4 + 1] < xa || box[b * 4] > xb || box[b * 4 + 3] < ya || box[b * 4 + 2] > yb) continue;
     if (b * SEG_BLOCK >= lim) break;
+    if (lid !== null && !blockHasL(ix, b, lid)) continue;   // (이 레이어 선이 없는 덩어리)
     for (let i = b * SEG_BLOCK, e = Math.min(lim, i + SEG_BLOCK); i < e; i++) {
       const s = src[i], hs = s.size / 2;
+      if (lid !== null && (s.l || '') !== lid) continue;
       if (selHide && selHide.has(s)) continue;              // (올가미로 옮기는 중인 선은 옮겨진 모습으로 따로 그린다)
       if (hiddenO.size && hiddenO.has(s.o)) continue;       // (내 화면에서 숨긴 사람)
       if (Math.max(s.x0, s.x1) + hs < xa || Math.min(s.x0, s.x1) - hs > xb || Math.max(s.y0, s.y1) + hs < ya || Math.min(s.y0, s.y1) - hs > yb) continue;
+      drawnN++;
       if (!open || s.color !== rc || s.size !== rs || (s.sid !== rsid && isClear(s.color))) {   // 같은 색·굵기가 이어지면 한 path 로 묶어 한 번에 그린다 (반투명은 획마다: 다른 획과 겹친 곳은 진하게)
         flush();
         if (open) g.stroke();
         g.beginPath(); g.strokeStyle = s.color; g.lineWidth = Math.max(s.size, (s.f ? FILL_MIN_PX : 0.6) / k);
+        thinCaps(g, g.lineWidth * k);
         rc = s.color; rs = s.size; rsid = s.sid; open = true; lx = NaN;
       }
       if (s.x0 !== lx || s.y0 !== ly) { flush(); g.moveTo(s.x0, s.y0); g.lineTo(dotX(s, k), s.y1); px = s.x1; py = s.y1; }   // 새 줄의 첫 선분은 늘 그린다 (점도 보이게)
@@ -1292,7 +1429,8 @@ function paintDirty() {
   rafDirty = 0;
   const d = dirty; dirty = null;
   if (!d || rafInk) return;
-  if (!aligned() || exactT) { paintInkExact(); return; }  // 화면을 옮기는 중(그림을 통째로 옮겨 보여 주는 중)이면 전체를 정확히
+  snapDirty(d);                                            // (화면 밖이어도: 넓게 그려 둔 그림에는 보일 수 있다)
+  if (!aligned() || exactT) { if (panReady()) paintInkPan(); else paintInkExact(true); return; }  // 화면을 옮기는 중(그림을 통째로 옮겨 보여 주는 중)이면 전체를 정확히
   let sx0 = Infinity, sy0 = Infinity, sx1 = -Infinity, sy1 = -Infinity;
   for (const [x, y] of [[d.xa, d.ya], [d.xb, d.ya], [d.xa, d.yb], [d.xb, d.yb]]) {
     const p = toScreen(x, y);
@@ -1302,7 +1440,7 @@ function paintDirty() {
   const px0 = Math.max(0, Math.floor(sx0 * dpr) - 2), py0 = Math.max(0, Math.floor(sy0 * dpr) - 2);
   const px1 = Math.min(inkCv.width, Math.ceil(sx1 * dpr) + 2), py1 = Math.min(inkCv.height, Math.ceil(sy1 * dpr) + 2);
   if (px1 <= px0 || py1 <= py0) return;                    // 화면 밖
-  if ((px1 - px0) * (py1 - py0) > inkCv.width * inkCv.height * 0.6) { paintInkExact(); return; }   // 넓으면 전체를 다시 그리는 게 낫다
+  if ((px1 - px0) * (py1 - py0) > inkCv.width * inkCv.height * 0.6) { paintInkExact(true); return; }   // (넓게 그려 둔 그림은 위에서 고쳤다)   // 넓으면 전체를 다시 그리는 게 낫다
   let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;   // 그 화면 사각형을 덮는 월드 상자
   for (const [x, y] of [[px0, py0], [px1, py0], [px0, py1], [px1, py1]]) {
     const w = toWorld({ x: x / dpr, y: y / dpr });
@@ -1313,25 +1451,19 @@ function paintDirty() {
   ctx.beginPath(); ctx.rect(px0, py0, px1 - px0, py1 - py0); ctx.clip();
   ctx.clearRect(px0, py0, px1 - px0, py1 - py0);
   const e = 2 / scale;                                     // (사각형 바로 밖의 가는 선도 최소 굵기로 그려져 안으로 걸칠 수 있다)
-  ctxView(); drawSegs(xa - e, xb + e, ya - e, yb + e); paintPreview();
+  ctxView(); drawSegs(xa - e, xb + e, ya - e, yb + e);
   ctx.restore();
-}
-function paintPreview() {
-  const st = strokeSt;
-  if (!st || st.phase !== 'pending' || st.kind !== 'pen' || !st.pts.length) return;
-  ctx.strokeStyle = st.color; ctx.lineWidth = Math.max(st.size, 0.6 / scale);
-  ctx.beginPath(); ctx.moveTo(st.pts[0].x, st.pts[0].y); ctx.lineTo(st.pts[0].x + 0.01 / scale, st.pts[0].y);   // (점 하나여도 보이게)
-  for (const p of st.pts) ctx.lineTo(p.x, p.y);
-  ctx.stroke();
 }
 function redrawInk() { if (!rafInk) rafInk = requestAnimationFrame(() => { rafInk = 0; paintInkExact(); }); }
 function incSeg(s) {                                       // 새 선분 하나만 덧그리기 (전체를 다시 그리지 않는다)
   if (rp) return;                                          // (다시 보기 중: 새 선은 닫으면 보인다)
   if (hiddenO.size && hiddenO.has(s.o)) return;
+  if (multiL()) { const l = s.l || ''; if (hiddenL.has(l)) return; if (l !== topLayer()) { redrawSegsArea([s]); return; } }
   if (isClear(s.color)) { redrawSegsArea([s]); return; }     // 반투명: 덧그리면 이음새가 진해진다 → 그 자리만 다시 그린다 (한 획 한 path)
   ensureAligned(); ctxView();
-  ctx.lineCap = 'round'; ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, 0.6 / scale);
+  ctx.strokeStyle = s.color; ctx.lineWidth = Math.max(s.size, 0.6 / scale); thinCaps(ctx, ctx.lineWidth * scale);
   ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(dotX(s, scale), s.y1); ctx.stroke();
+  snapSeg(s);
 }
 function paintHighlight() {
   hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1437,9 +1569,10 @@ function viewChanged(immediate) {
   if (hl && hl.all) paintHighlight();                           // ('그린 곳 보기' 강조는 화면을 옮겨도 따라간다)
   if (lastMouse && !ring.hidden) updateRing(lastMouse);        // 휠·키로 확대·축소하면 커서 원도 바로 같이
   clearTimeout(exactT); exactT = 0;
-  if (immediate) { paintInkExact(); return; }
-  if (LIVE_OK && paintMs < LIVE_PAINT_MS) { if (!rafExact) rafExact = requestAnimationFrame(() => { rafExact = 0; paintInkExact(); }); return; }   // 빠른 화면: 바로바로
-  exactT = setTimeout(paintInkExact, GESTURE_REPAINT_MS);
+  if (immediate) { if (panReady()) paintInkPan(); else paintInkExact(true); return; }
+  if (panReady()) { if (!rafExact) rafExact = requestAnimationFrame(() => { rafExact = 0; if (panReady()) paintInkPan(); else paintInkExact(true); }); return; }   // 그림이 많이 보일 때 옮기기만: 넓게 그려 둔 그림을 옮겨 붙인다
+  if (LIVE_OK && paintMs < LIVE_PAINT_MS) { if (!rafExact) rafExact = requestAnimationFrame(() => { rafExact = 0; paintInkExact(true); }); return; }   // 빠른 화면: 바로바로
+  exactT = setTimeout(() => paintInkExact(true), GESTURE_REPAINT_MS);
   if (LIVE_OK && !coarseT) coarseT = setTimeout(paintCoarse, 250);   // 느린 화면(마우스): 오래 움직이면 가끔 거칠게
 }
 function resize() {
@@ -1561,8 +1694,7 @@ function hudSoon() { if (!rafHud) rafHud = requestAnimationFrame(updateHud); }
 /* ===== 다른 사람 커서 / 이름 ===== */
 const hue = (o) => { let h = 0; for (const ch of String(o)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
 const colorOf = (o) => (plusMap[o] && plusMap[o].c) || `hsl(${hue(o)} 65% 42%)`;
-let plusMap = {};                                               // 지금 방의 Plus 사람들: 주인 ID → 꾸미기 { c: 이름 색, cur: 커서 모양 } (서버가 확인한 것)
-const CUR_GLYPH = { star: '★', heart: '♥', flower: '✿', cat: '🐱', pencil: '✏️' };
+let plusMap = {};                                               // 지금 방의 Plus 사람들: 주인 ID → 꾸미기 { c: 이름 색 } (서버가 확인한 것)
 const nameOf = (o) => names[o] || '알 수 없음';
 const cursors = new Map();                                   // 주인 ID -> { el, lbl, x, y, t }
 // glide: 서버가 모아 보내는 커서는 받은 간격(평균, 0.06~0.25초)에 맞춰 그 사이를 부드럽게 옮긴다 (화면을 움직일 때는 바로)
@@ -1628,11 +1760,9 @@ function showCursor(o, x, y, glide) {
   layoutCursor(c, glide && !fresh);
 }
 const labelOf = (o) => nameOf(o) + (plusMap[o] ? ' ✦' : '');
-function decoCursor(o, c) {                                       // Plus 꾸미기: 커서 모양·색
-  const g = plusMap[o] && CUR_GLYPH[plusMap[o].cur], col = colorOf(o);
-  c.el.querySelector('.dot').classList.toggle('glyph', !!g);
-  c.el.querySelector('.dot').textContent = g || '';
-  c.el.querySelector('.dot').style.background = g ? '' : col; c.el.querySelector('.dot').style.color = col;
+function decoCursor(o, c) {                                       // Plus 꾸미기: 이름 색
+  const col = colorOf(o);
+  c.el.querySelector('.dot').style.background = col;
   c.lbl.style.background = col; c.arr.style.fill = col;
 }
 function hideCursor(o) { const c = cursors.get(o); if (c) { c.el.remove(); cursors.delete(o); } }
@@ -1648,11 +1778,18 @@ function distToSeg(p, s) {
 }
 // 판정 거리 = 선 굵기/2 + 화면 기준 여유(px, 줌과 무관하게 일정). 가장 위에 그려진 선을 돌려준다.
 function hitTest(w, marginPx) {
+  if (!multiL()) return hitPass(w, marginPx, null);
+  for (let i = layers.length - 1; i >= 0; i--) { const id = layers[i].id; if (hiddenL.has(id)) continue; const s = hitPass(w, marginPx, id); if (s) return s; }
+  return null;
+}
+function hitPass(w, marginPx, lid) {
   const tol = marginPx / scale, ix = segIndex(), box = ix.box;
   for (let b = ix.n - 1; b >= 0; b--) {                    // 덩어리 범위(굵기 포함) 밖이면 통째로 건너뛴다 (큰 방에서 마우스를 움직일 때마다 전체를 보지 않게)
     if (w.x < box[b * 4] - tol || w.x > box[b * 4 + 1] + tol || w.y < box[b * 4 + 2] - tol || w.y > box[b * 4 + 3] + tol) continue;
+    if (lid !== null && !blockHasL(ix, b, lid)) continue;
     for (let i = Math.min(segs.length, (b + 1) * SEG_BLOCK) - 1; i >= b * SEG_BLOCK; i--) {
       const s = segs[i], r = s.size / 2 + tol;
+      if (lid !== null && (s.l || '') !== lid) continue;
       if (hiddenO.size && hiddenO.has(s.o)) continue;
       if (w.x < Math.min(s.x0, s.x1) - r || w.x > Math.max(s.x0, s.x1) + r || w.y < Math.min(s.y0, s.y1) - r || w.y > Math.max(s.y0, s.y1) + r) continue;
       if (distToSeg(w, s) <= r) return s;
@@ -1731,6 +1868,7 @@ function formModal({ title, body, ok = '확인', cancel = '취소', danger = fal
       let inp;
       if (f.type === 'select') { inp = document.createElement('select'); for (const [v, tx] of f.options) { const op = document.createElement('option'); op.value = v; op.textContent = tx; inp.appendChild(op); } }
       else if (f.type === 'textarea') { inp = document.createElement('textarea'); inp.rows = f.rows || 3; if (f.placeholder) inp.placeholder = f.placeholder; }
+      else if (f.type === 'password') { inp = document.createElement('input'); inp.type = 'password'; inp.autocomplete = f.newPw ? 'new-password' : 'current-password'; if (f.placeholder) inp.placeholder = f.placeholder; }
       else { inp = document.createElement('input'); inp.type = 'text'; inp.autocomplete = 'off'; if (f.placeholder) inp.placeholder = f.placeholder; }
       inp.id = 'mf_' + f.key; inp.className = 'inp'; if (f.value !== undefined) inp.value = f.value;
       wrap.append(lab, inp); box.appendChild(wrap); ctl[f.key] = { f, inp, wrap };
@@ -1746,8 +1884,11 @@ function formModal({ title, body, ok = '확인', cancel = '취소', danger = fal
   });
 }
 // 새로 생긴 기능 안내: 화면 판(NEWS_VER)이 바뀐 뒤 처음 그림을 받으면 한 번 (전에 써 본 사람에게만, 이 기기에 기억)
-const NEWS_VER = 3;
-const NEWS = ['패드·폰: 확대·이동·회전하려던 손가락이 선으로 그려지지 않게 고쳤어요. 펜(애플펜슬 등)을 쓰면 손가락은 화면 조작만 해요 (설정 → 펜으로만 그리기)',
+const NEWS_VER = 4;
+const NEWS = ['레이어: 도구 모음의 레이어 버튼. 고른 레이어에 그리고(지우개·채우기·올가미도 그 레이어만), 순서를 바꾸고, 눈을 끄면 내 화면에서만 숨겨요 (방마다 2개 무료)',
+  '펜 투명도를 굵기 창에서도 바꿀 수 있어요',
+  '그림이 많은 방에서 멀리 축소하고 화면을 옮길 때 버벅이던 것을 고쳤어요',
+  '패드·폰: 확대·이동·회전하려던 손가락이 선으로 그려지지 않게 고쳤어요. 펜(애플펜슬 등)을 쓰면 손가락은 화면 조작만 해요 (설정 → 펜으로만 그리기)',
   '새 디자인: 종이에 낙서한 느낌으로 바뀌었어요. 그림판이 화면 전체로 넓어지고, 도구 모음은 아래로 (고른 도구는 살짝 꿈틀거려요)',
   '계정: 설정 → 계정에서 구글·카카오로 로그인하면 다른 기기에서도 같은 사람 (방장 자격·내 그림이 따라와요)',
   '올가미: 손 버튼 ⌄ → 올가미 (M 키). 내 그림을 둘러싸서 옮기기·크기·복제·뒤집기·지우기',
@@ -2076,31 +2217,33 @@ $('fitAll').onclick = () => { closePop(); fitAll(); };
 
 /* ===== 그림을 이미지(PNG)로 저장: 흰 바탕. 전체 그림(긴 쪽 최대 EXPORT_MAX_PX) 또는 지금 보이는 화면 ===== */
 const EXPORT_MAX_PX = 4000, EXPORT_PAD_PX = 24;            // (아이폰 사파리는 캔버스 한 장이 약 1600만 픽셀까지라 4000 x 4000 안으로)
-function segsBounds() {
+function segsBounds(list = segs) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const s of segs) {
+  for (const s of list) {
     const h = s.size / 2;
     x0 = Math.min(x0, s.x0 - h, s.x1 - h); x1 = Math.max(x1, s.x0 + h, s.x1 + h);
     y0 = Math.min(y0, s.y0 - h, s.y1 - h); y1 = Math.max(y1, s.y0 + h, s.y1 + h);
   }
   return { x0, y0, x1, y1 };
 }
-function renderAllPng() {                                   // 전체 그림을 새 캔버스에: 100% 보다 크게는 안 키운다 (최대 2배 = 또렷하게)
-  const b = segsBounds(), w = Math.max(b.x1 - b.x0, 1), h = Math.max(b.y1 - b.y0, 1);
-  const k = Math.min(2, (EXPORT_MAX_PX - EXPORT_PAD_PX * 2) / Math.max(w, h));
+// maxPx: 긴 쪽 최대 (✦ Plus 고화질은 더 크게, 최대 4배까지 키움), bg: 바탕색 ('' = 투명), list: 그릴 목록 (되감기 미리 보기)
+function renderAllPng(maxPx = EXPORT_MAX_PX, bg = '#ffffff', list = segs, up = 2) {
+  const b = segsBounds(list), w = Math.max(b.x1 - b.x0, 1), h = Math.max(b.y1 - b.y0, 1);
+  const k = Math.min(up, (maxPx - EXPORT_PAD_PX * 2) / Math.max(w, h));
   const cv = document.createElement('canvas');
   cv.width = Math.max(1, Math.ceil(w * k) + EXPORT_PAD_PX * 2); cv.height = Math.max(1, Math.ceil(h * k) + EXPORT_PAD_PX * 2);
   const g = cv.getContext('2d');
-  g.fillStyle = '#ffffff'; g.fillRect(0, 0, cv.width, cv.height);
+  if (!g) return { cv: null, k };                             // (기기가 이렇게 큰 캔버스를 못 만듦)
+  if (bg) { g.fillStyle = bg; g.fillRect(0, 0, cv.width, cv.height); }
   g.setTransform(k, 0, 0, k, EXPORT_PAD_PX - b.x0 * k, EXPORT_PAD_PX - b.y0 * k);
   drawSegs(b.x0, b.x1, b.y0, b.y1, g, k);
   return { cv, k };
 }
-function renderViewPng() {                                  // 지금 보이는 화면 그대로 (격자 없이, 흰 바탕)
+function renderViewPng(bg = '#ffffff') {                    // 지금 보이는 화면 그대로 (격자 없이)
   paintInkExact();
   const cv = document.createElement('canvas'); cv.width = inkCv.width; cv.height = inkCv.height;
   const g = cv.getContext('2d');
-  g.fillStyle = '#ffffff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(inkCv, 0, 0);
+  if (bg) { g.fillStyle = bg; g.fillRect(0, 0, cv.width, cv.height); } g.drawImage(inkCv, 0, 0);
   return { cv, k: scale * dpr };
 }
 let imgUrl = null;
@@ -2118,18 +2261,98 @@ $('imgClose').onclick = hideImage;
 $('imgView').addEventListener('pointerdown', (e) => { if (e.target === $('imgView')) hideImage(); });
 async function exportPng() {
   closePop();
-  const v = await formModal({ title: '그림을 이미지로 저장', body: '흰 바탕의 PNG 이미지로 만들어요. (격자는 빼고)', ok: '만들기',
-    fields: [{ key: 'scope', type: 'select', label: '범위', options: [['all', '전체 그림'], ['view', '지금 보이는 화면']], value: 'all' }] });
+  const v = await formModal({ title: '그림을 이미지로 저장', body: 'PNG 이미지로 만들어요. (격자는 빼고)', ok: '만들기',
+    fields: [{ key: 'scope', type: 'select', label: '범위', options: [['all', '전체 그림'], ['view', '지금 보이는 화면']], value: 'all' },
+      { key: 'q', type: 'select', label: '크기', options: [['n', '보통 (긴 쪽 4000픽셀까지)'], ['hq', '✦ 고화질 (긴 쪽 1만 픽셀까지)']], value: 'n', showIf: (x) => x.scope === 'all' },
+      { key: 'bg', type: 'select', label: '바탕', options: [['white', '흰색'], ['paper', '방 종이 색'], ['none', '✦ 투명 (그림만)']], value: 'white' }] });
   if (!v) return;
   if (v.scope === 'all' && !segs.length) { toast('아직 그림이 없어요'); return; }
-  const { cv, k } = v.scope === 'all' ? renderAllPng() : renderViewPng();
-  cv.toBlob((blob) => {
-    if (!blob) { toast('이미지를 만들지 못했어요 (그림이 너무 커요)', 'warn'); return; }
-    const pct = k * 100 / (v.scope === 'all' ? 1 : dpr);
-    showImage(blob, `${cv.width} x ${cv.height} 픽셀` + (v.scope === 'all' ? ` · 그림 배율 ${pct >= 10 ? Math.round(pct) : Math.round(pct * 100) / 100}%` : ''));
-  }, 'image/png');
+  if ((v.scope === 'all' && v.q === 'hq') || v.bg === 'none') { if (!hasPlus()) { plusAsk('고화질·투명 배경 이미지는 ✦ Plus 기능이에요.'); return; } }
+  const bg = v.bg === 'none' ? '' : v.bg === 'paper' ? (paperC || PAPERS[0]) : '#ffffff';
+  // (아이폰·아이패드 사파리는 캔버스 한 장이 약 1600만 픽셀까지: 크게 만들 수 없으면 PNG 가 비어 나온다 → 더 작게 다시)
+  const toBlobP = (c) => new Promise((res) => { try { c.toBlob(res, 'image/png'); } catch { res(null); } });
+  const sizes = v.scope !== 'all' ? [0] : v.q === 'hq' ? [10000, 7000, 5000, 3000] : [EXPORT_MAX_PX];
+  let cv = null, k = 1, blob = null;
+  for (const m of sizes) {
+    const r = m ? renderAllPng(m, bg, segs, v.q === 'hq' ? 4 : 2) : renderViewPng(bg);
+    if (!r.cv) continue;
+    blob = await toBlobP(r.cv);
+    if (blob) { cv = r.cv; k = r.k; break; }
+  }
+  if (!blob) { toast(v.q === 'hq' ? '이 기기에서는 이렇게 큰 이미지를 만들 수 없어요. 보통 크기로 해 주세요' : '이미지를 만들지 못했어요 (그림이 너무 커요)', 'warn'); return; }
+  const pct = k * 100 / (v.scope === 'all' ? 1 : dpr);
+  showImage(blob, `${cv.width} x ${cv.height} 픽셀` + (v.scope === 'all' ? ` · 그림 배율 ${pct >= 10 ? Math.round(pct) : Math.round(pct * 100) / 100}%` : ''));
 }
 $('exportPng').onclick = exportPng;
+let vidUrl = null, vidBusy = false;
+async function exportVideo() {
+  closePop();
+  if (!hasPlus()) { plusAsk('그리는 과정을 영상 파일로 저장하는 건 ✦ Plus 기능이에요.'); return; }
+  if (!segs.length) { toast('아직 그림이 없어요'); return; }
+  if (vidBusy) return;
+  const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  const mime = window.MediaRecorder && HTMLCanvasElement.prototype.captureStream ? types.find((t) => MediaRecorder.isTypeSupported(t)) : null;
+  if (!mime) { toast('이 브라우저는 영상을 만들 수 없어요 (크롬·사파리 최신판에서 해 주세요)', 'warn'); return; }
+  const v = await formModal({ title: '그리는 과정 영상 ✦', body: '그림이 그려지는 과정을 영상 파일로 만들어요. 만드는 동안(길이만큼) 이 화면을 열어 두세요.', ok: '만들기',
+    fields: [{ key: 'sec', type: 'select', label: '길이', options: [['10', '10초'], ['20', '20초'], ['40', '40초']], value: '20' }, { key: 'res', type: 'select', label: '크기', options: [['720', '1280 x 720'], ['1080', '1920 x 1080']], value: '1080' }] });
+  if (!v) return;
+  vidBusy = true;
+  try { await makeVideo(segs.slice(), layers.filter((L) => !hiddenL.has(L.id)), +v.sec, v.res === '720' ? [1280, 720] : [1920, 1080], mime); }
+  catch (e) { console.warn(e); toast('영상을 만들지 못했어요', 'warn'); }
+  finally { vidBusy = false; document.querySelectorAll('canvas[data-vid]').forEach((c) => c.remove()); }   // (중간에 실패해도 숨은 캔버스를 남기지 않게)
+}
+async function makeVideo(list, lays, sec, [W, H], mime) {
+  const FPS = 30, frames = sec * FPS, bg = paperC || '#ffffff', pad = 40;
+  const b = segsBounds(list), k = Math.min(4, (W - pad * 2) / Math.max(b.x1 - b.x0, 1), (H - pad * 2) / Math.max(b.y1 - b.y0, 1));
+  const ox = (W - (b.x1 - b.x0) * k) / 2 - b.x0 * k, oy = (H - (b.y1 - b.y0) * k) / 2 - b.y0 * k;
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  out.style.cssText = 'position:fixed;left:-99999px;top:0;width:2px;height:2px;'; out.dataset.vid = '1';   // (사파리는 문서 안의 캔버스여야 녹화된다)
+  document.body.appendChild(out);
+  const og = out.getContext('2d'), ids = lays.map((L) => L.id), lc = new Map();
+  for (const id of ids) { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.setTransform(k, 0, 0, k, ox, oy); g.lineCap = g.lineJoin = 'round'; lc.set(id, g); }
+  const compose = () => { og.setTransform(1, 0, 0, 1, 0, 0); og.fillStyle = bg; og.fillRect(0, 0, W, H); for (const id of ids) og.drawImage(lc.get(id).canvas, 0, 0); };
+  compose();
+  const rec = new MediaRecorder(out.captureStream(FPS), { mimeType: mime, videoBitsPerSecond: W >= 1920 ? 8e6 : 5e6 }), parts = [];
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+  const done = new Promise((r) => { rec.onstop = r; });
+  rec.start(1000);
+  const per = Math.max(1, Math.ceil(list.length / frames));
+  let i = 0, f = 0;
+  toast(`영상을 만드는 중이에요… (${sec}초)`, 'ok');
+  await new Promise((resolve) => {
+    const tick = () => {
+      const end = Math.min(list.length, i + per);
+      const open = new Map();                                   // (레이어마다 같은 색·굵기·획을 한 path 로: 반투명 선 이음새가 진해지지 않게 — 그림판과 같은 방식)
+      for (; i < end; i++) {
+        const s = list[i], g = lc.get(s.l || '') || null;
+        if (!g || (hiddenO.size && hiddenO.has(s.o))) continue;
+        let o = open.get(g);
+        if (!o || o.c !== s.color || o.w !== s.size || (o.sid !== s.sid && isClear(s.color))) {
+          if (o) g.stroke();
+          g.beginPath(); g.strokeStyle = s.color; g.lineWidth = Math.max(s.size, (s.f ? FILL_MIN_PX : 0.6) / k);
+          o = { c: s.color, w: s.size, sid: s.sid, lx: NaN, ly: NaN }; open.set(g, o);
+        }
+        if (s.x0 !== o.lx || s.y0 !== o.ly) g.moveTo(s.x0, s.y0);
+        g.lineTo(dotX(s, k), s.y1); o.lx = s.x1; o.ly = s.y1;
+      }
+      for (const g of open.keys()) g.stroke();
+      compose(); f++;
+      if (i < list.length || f < frames + FPS * 1.5) setTimeout(tick, 1000 / FPS); else resolve();   // (끝난 그림을 1.5초 더 보여 준다)
+    };
+    tick();
+  });
+  rec.stop(); await done; out.remove();
+  const blob = new Blob(parts, { type: mime.split(';')[0] });
+  if (vidUrl) URL.revokeObjectURL(vidUrl);
+  vidUrl = URL.createObjectURL(blob);
+  const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm', d = new Date(), p2 = (n) => String(n).padStart(2, '0');
+  $('vidViewVid').src = vidUrl; $('vidDl').href = vidUrl;
+  $('vidDl').download = `같이그리기_${room}_${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_과정.${ext}`;
+  $('vidViewInfo').textContent = `${W} x ${H} · ${sec}초 · ${(blob.size / 1048576).toFixed(1)}MB (${ext})`;
+  $('vidView').hidden = false;
+}
+$('exportVideo').onclick = exportVideo;
+$('vidClose').onclick = () => { $('vidView').hidden = true; try { $('vidViewVid').pause(); } catch {} };
 
 /* ===== 올가미: 내 그림을 둘러싸 고르고 옮기기·크기 바꾸기 ===== */
 // 고르기: 올가미 안에 가운데 점이 있는 선분이 절반 넘는 내 획은 그 획 전체. 칠하기도 획(한 번 칠한 것)마다.
@@ -2183,7 +2406,7 @@ function lassoEnd(ok) {
   for (const q of pts) { xa = Math.min(xa, q.x); xb = Math.max(xb, q.x); ya = Math.min(ya, q.y); yb = Math.max(yb, q.y); }
   const by = new Map();
   for (const s of segs) {
-    if (s.o !== me) continue;
+    if (s.o !== me || (s.l || '') !== curL) continue;
     const mx = (s.x0 + s.x1) / 2, my = (s.y0 + s.y1) / 2;
     let e = by.get(s.sid); if (!e) by.set(s.sid, e = { n: 0, all: [] });
     e.all.push(s);
@@ -2191,7 +2414,7 @@ function lassoEnd(ok) {
   }
   const list = [];
   for (const e of by.values()) if (e.n * 2 > e.all.length) for (const s of e.all) list.push(s);
-  if (!list.length) { toast('내 그림을 둘러싸 주세요 (다른 사람 그림은 고를 수 없어요)'); selSoon(); return; }
+  if (!list.length) { toast(layers.length > 1 ? '고른 레이어의 내 그림을 둘러싸 주세요 (다른 사람 그림·다른 레이어는 고를 수 없어요)' : '내 그림을 둘러싸 주세요 (다른 사람 그림은 고를 수 없어요)'); selSoon(); return; }
   if (list.length > SEL_MAX) { toast('한 번에 ' + SEL_MAX.toLocaleString() + '조각까지만 고를 수 있어요 (지금 ' + list.length.toLocaleString() + '조각). 조금 작게 둘러싸 주세요', 'warn'); selSoon(); return; }
   sel = { list, set: new Set(list), box: selBoxOf(list) };
   selSoon();
@@ -2216,6 +2439,7 @@ function selApply(t) {                                         // 고른 것에 
     const a = selT(t, s.x0, s.y0), b = selT(t, s.x1, s.y1);
     const n = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: s.color, size: clamp(Math.round(s.size * Math.abs(t.k) * 10) / 10, s.f ? 0.1 : 1, PEN_MAX), o: me, sid: s.sid };
     if (s.f) n.f = 1;
+    if (s.l) n.l = s.l;
     return n;
   }).filter((n) => [n.x0, n.y0, n.x1, n.y1].every((v) => Math.abs(v) <= MAX_COORD));
   const r = removeExactSegs(segs, removed); if (r) segs = r;
@@ -2231,7 +2455,7 @@ function dupSel() {                                            // 복제: 새 �
   if (!src.length) return;
   if (segs.length + src.length > roomMax) { toast(FULL_MSG, 'warn'); return; }
   const sids = new Map(), off = 24 / scale;
-  const added = src.map((s) => { if (!sids.has(s.sid)) sids.set(s.sid, newSid()); const n = { x0: r1(s.x0 + off), y0: r1(s.y0 + off), x1: r1(s.x1 + off), y1: r1(s.y1 + off), color: s.color, size: s.size, o: me, sid: sids.get(s.sid) }; if (s.f) n.f = 1; return n; }).filter((n) => inRange(n.x0, n.y0, n.x1, n.y1));
+  const added = src.map((s) => { if (!sids.has(s.sid)) sids.set(s.sid, newSid()); const n = { x0: r1(s.x0 + off), y0: r1(s.y0 + off), x1: r1(s.x1 + off), y1: r1(s.y1 + off), color: s.color, size: s.size, o: me, sid: sids.get(s.sid) }; if (s.f) n.f = 1; if (s.l) n.l = s.l; return n; }).filter((n) => inRange(n.x0, n.y0, n.x1, n.y1));
   if (!added.length) return;
   addSegs(added); sendSegs('addsegs', added);
   pushAct({ t: 'erase', removed: [], added: added.slice() });
@@ -2300,16 +2524,17 @@ function paintSel() {
 const RP_SECONDS = 20, RP_SPEEDS = [1, 2, 4, 8];
 let rp = null, rpRaf = 0, rpLast = 0;
 function blockIndex(arr) {                                     // segIndex 와 같은 덩어리 범위 (이 목록 전용, 한 번만)
-  const n = Math.ceil(arr.length / SEG_BLOCK), box = new Float64Array(n * 4);
+  const n = Math.ceil(arr.length / SEG_BLOCK), box = new Float64Array(n * 4), lays = Array.from({ length: n }, () => new Set());
   for (let b = 0; b < n; b++) {
     let xa = Infinity, ya = Infinity, xb = -Infinity, yb = -Infinity;
     for (let i = b * SEG_BLOCK, e = Math.min(arr.length, i + SEG_BLOCK); i < e; i++) {
       const s = arr[i], h = s.size / 2;
       xa = Math.min(xa, s.x0 - h, s.x1 - h); xb = Math.max(xb, s.x0 + h, s.x1 + h); ya = Math.min(ya, s.y0 - h, s.y1 - h); yb = Math.max(yb, s.y0 + h, s.y1 + h);
+      lays[b].add(s.l || '');
     }
     box[b * 4] = xa; box[b * 4 + 1] = xb; box[b * 4 + 2] = ya; box[b * 4 + 3] = yb;
   }
-  return { arr, len: arr.length, n, box };
+  return { arr, len: arr.length, n, box, lays };
 }
 function startReplay() {
   closePop(); clearSel();
@@ -2330,7 +2555,8 @@ function rpTick(t) {
   const n = Math.floor(rp.f);
   if (n > rp.n) {
     const a = rp.n; rp.n = n;
-    if (aligned() && !exactT && !rafInk) { ctxView(); drawRange(rp.list, a, n); }   // 새로 나올 선만 위에 덧그린다 (목록 순서 = 칠하는 순서)
+    if (aligned() && !exactT && !rafInk && !multiL()) { ctxView(); drawRange(rp.list, a, n); }
+    else if (aligned() && !exactT && !rafInk) redrawSegsArea(rp.list.slice(a, n));   // 새로 나올 선만 위에 덧그린다 (목록 순서 = 칠하는 순서. 레이어가 여럿이면 레이어 순서대로 다시)
     else redrawInk();
     syncReplayUI();
   }
@@ -2463,6 +2689,7 @@ function fillColorAt(wx, wy) {
   const p = { x: wx, y: wy };
   for (let i = n - 1; i >= 0; i--) {
     const s = segs[i];
+    if ((s.l || '') !== curL) continue;
     if (distToSeg(p, s) <= s.size / 2) return String(s.color).toLowerCase();
   }
   return '#ffffff';
@@ -2480,8 +2707,8 @@ function computeFill(wx, wy) {
   const si = Math.floor(wx / cell) - gx0, sj = Math.floor(wy / cell) - gy0;
   if (si < 0 || sj < 0 || si >= gw || sj >= gh) return { err: 'out' };
   const wall = new Uint8Array(gw * gh);
-  for (const s of segs) {                                      // 1) 벽: 선이 지나가는 칸 (선이 칸보다 가늘어도 한 칸 너비로 쳐서 틈으로 새지 않게)
-    if (s.f) continue;
+  for (const s of segs) {                                      // 1) 벽: 선이 지나가는 칸 (선이 칸보다 가늘어도 한 칸 너비로 쳐서 틈으로 새지 않게) — 보이는 레이어 모두
+    if (s.f || (hiddenL.size && hiddenL.has(s.l || ''))) continue;
     const rho = Math.max(s.size / 2, cell * 0.5) + cell * 0.01;
     const i0 = Math.max(0, Math.ceil((Math.min(s.x0, s.x1) - rho) / cell - 0.5) - gx0), i1 = Math.min(gw - 1, Math.floor((Math.max(s.x0, s.x1) + rho) / cell - 0.5) - gx0);
     const j0 = Math.max(0, Math.ceil((Math.min(s.y0, s.y1) - rho) / cell - 0.5) - gy0), j1 = Math.min(gh - 1, Math.floor((Math.max(s.y0, s.y1) + rho) / cell - 0.5) - gy0);
@@ -2505,6 +2732,7 @@ function computeFill(wx, wy) {
   const col = new Uint16Array(gw * gh), ids = new Map();
   for (const s of segs) {
     if (!s.f) break;                                           // 칠하기 조각은 목록 앞쪽에 모여 있다
+    if ((s.l || '') !== curL) continue;                        // (고른 레이어의 칠하기만: 다른 레이어 색 위에도 새로 칠할 수 있게)
     let id = ids.get(s.color);
     if (!id) { id = Math.min(ids.size + 1, 65535); ids.set(s.color, id); }
     const h = s.size / 2;
@@ -2562,9 +2790,9 @@ function doFill(p) {
   if (r.err) { toast(FILL_ERR[r.err] || '채울 수 없어요', 'warn'); return; }
   if (segs.length + r.rows.length > roomMax) { toast(FULL_MSG, 'warn'); return; }
   const sid = newSid(), color = S.color;
-  const list = fillSegs(me, sid, color, r.cell, r.rows);
+  const list = fillSegs(me, sid, color, r.cell, r.rows, curL);
   noteColor();
-  const msg = { type: 'fill', sid, color, cell: r.cell, rows: r.rows };
+  const msg = { type: 'fill', sid, color, cell: r.cell, rows: r.rows, ...(curL ? { l: curL } : {}) };
   addSegs(list);
   const fa = { t: 'draw', sid, segs: list, fill: msg };
   pushAct(fa); noteAct(fa);
@@ -2595,6 +2823,64 @@ function finishDrop(p, touch) {
   const back = dropFrom === 'fill' ? 'fill' : 'pen';
   setColor(c); setTool(back);
   toast('색을 가져왔어요 ' + c, 'ok');
+}
+// ── 레이어 창 ──
+const layKey = () => 'draw:layer:' + room;
+function setCurL(id, quiet) {
+  const was = curL;
+  curL = layers.some((x) => x.id === id) ? id : '';
+  if (was !== curL) { lsSet(layKey(), curL); if (sel) clearSel(); }
+  if (!quiet && hiddenL.has(curL)) { hiddenL.delete(curL); redrawInk(); }      // (숨긴 레이어를 고르면 다시 보이게: 안 보이는 곳에 그리지 않게)
+  syncLayerUI(); renderLayers();
+}
+function syncLayerUI() {
+  const i = layers.findIndex((x) => x.id === curL);
+  $('layersSub').textContent = layers.length > 1 ? String(i + 1) : '1';
+  $('tLayers').title = '레이어: ' + (layers[i] ? layers[i].name : '레이어 1');
+}
+const canEditL = (L) => !!L && (L.by === me || isStaff());
+function renderLayers() {
+  const box = $('layerList'); if (!box) return;
+  box.textContent = '';
+  $('layersCount').textContent = layers.length > 1 ? layers.length + '개' : '';
+  for (let i = layers.length - 1; i >= 0; i--) {                  // 위 레이어가 위에
+    const L = layers[i], row = mk('div', 'layrow' + (L.id === curL ? ' on' : '') + (hiddenL.has(L.id) ? ' off' : '')); row.dataset.id = L.id;
+    const eye = mk('button', 'leye'); eye.type = 'button'; eye.appendChild(icon(hiddenL.has(L.id) ? 'i-eye-off' : 'i-eye'));
+    eye.setAttribute('aria-label', (hiddenL.has(L.id) ? '보이기: ' : '숨기기 (내 화면에서만): ') + L.name);
+    eye.onclick = () => { if (hiddenL.has(L.id)) hiddenL.delete(L.id); else hiddenL.add(L.id); renderLayers(); redrawInk(); };
+    const nm = mk('button', 'lname', L.name); nm.type = 'button';
+    if (L.by) nm.appendChild(mk('small', '', L.by === me ? '내 레이어' : nameOf(L.by)));
+    nm.onclick = () => { setCurL(L.id); };
+    row.append(eye, nm);
+    if (canEditL(L)) {
+      const act = (t, label, fn, dis) => { const b = mk('button', 'lact', t); b.type = 'button'; b.title = label; b.setAttribute('aria-label', label + ': ' + L.name); b.disabled = !!dis; b.onclick = fn; row.appendChild(b); };
+      act('▲', '위로', () => send({ type: 'layer', op: 'move', id: L.id, to: i + 1 }), i === layers.length - 1);
+      act('▼', '아래로', () => send({ type: 'layer', op: 'move', id: L.id, to: i - 1 }), i === 0);
+      act('✎', '이름 바꾸기', async () => { const v = await formModal({ title: '레이어 이름', fields: [{ key: 'n', label: '이름 (30글자)', value: L.name, maxChars: 30 }], ok: '바꾸기' }); if (v && v.n.trim()) send({ type: 'layer', op: 'rename', id: L.id, name: v.n.trim() }); });
+      if (L.id) act('🗑', '지우기', async () => {
+        const n = segs.filter((s) => s.l === L.id).length;
+        const v = await formModal({ title: `'${L.name}' 지우기`, body: n ? `이 레이어의 그림 ${n.toLocaleString()}조각도 모두 지워져요 (모두의 화면에서). 되돌릴 수 없어요.` : '빈 레이어예요.', ok: '지우기', danger: true });
+        if (v) send({ type: 'layer', op: 'del', id: L.id });
+      });
+    }
+    box.appendChild(row);
+  }
+  const free = layers.length < LAYER_FREE || hasPlus();
+  $('layerAdd').textContent = free ? '+ 새 레이어' : '+ 새 레이어 (✦ Plus)';
+  $('layerHint').textContent = '고른 레이어에 그려져요 (지우개·채우기·올가미도 그 레이어만). 눈을 끄면 내 화면에서만 숨겨요.' + (hasPlus() ? '' : ` 무료는 ${LAYER_FREE}개 · ✦ Plus 는 마음껏`);
+}
+$('tLayers').onclick = () => { renderLayers(); openPop('popLayers', $('tLayers')); };
+$('layerAdd').onclick = () => {
+  if (!me || !histOk) { toast('연결 중이에요. 잠시 후 다시 해 주세요', 'warn'); return; }
+  if (myRestr.spectator) { toast('지금은 보기만 할 수 있어요', 'warn'); return; }
+  if (layers.length >= LAYER_MAX) { toast(`레이어는 ${LAYER_MAX}개까지 만들 수 있어요`, 'warn'); return; }
+  if (layers.length >= LAYER_FREE && !hasPlus()) { closePop(); plusAsk(`레이어는 ${LAYER_FREE}개까지 무료예요. ✦ Plus 는 레이어를 마음껏 만들 수 있어요.`); return; }
+  send({ type: 'layer', op: 'add', id: curL });
+};
+{
+  const a = $('sizeAlpha');
+  a.oninput = () => { const r = $('alphaRange'); r.value = a.value; r.dispatchEvent(new Event('input')); $('sizeAlphaVal').textContent = a.value + '%'; };
+  $('tSize').addEventListener('click', () => { a.value = String(Math.round((S.alpha || 1) * 100)); $('sizeAlphaVal').textContent = a.value + '%'; $('sizeAlphaBox').hidden = sizeTarget() !== 'pen'; });
 }
 function selectFill() { setTool('fill'); tipToast('채우기: 닫힌 칸이나 칠한 곳을 눌러 주세요 (끌면 화면 이동)'); }
 function selectDrop() { setTool('drop'); tipToast('스포이드: 누른 채 움직여 색을 보고, 떼면 가져와요'); }
@@ -2866,7 +3152,7 @@ function textSegs(at, text, px, sid, color) {                  // 글자를 칸(
     const p = w >= h ? P(r.a + t / 2, r.t + h / 2) : P(r.a + w / 2, r.t + t / 2);
     const q = w >= h ? P(r.b + 1 - t / 2, r.t + h / 2) : P(r.a + w / 2, r.bt + 1 - t / 2);
     if (!inRange(p.x, p.y, q.x, q.y)) continue;
-    out.push({ x0: r1(p.x), y0: r1(p.y), x1: r1(q.x), y1: r1(q.y), color, size: clamp(Math.round((t + 0.4) * cw * 10) / 10, 1, PEN_MAX), o: me, sid });
+    out.push(withL({ x0: r1(p.x), y0: r1(p.y), x1: r1(q.x), y1: r1(q.y), color, size: clamp(Math.round((t + 0.4) * cw * 10) / 10, 1, PEN_MAX), o: me, sid }));
   }
   return out;
 }
@@ -3045,11 +3331,13 @@ function penSeg(st, a, b) {
   if (!inRange(a.x, a.y, b.x, b.y)) return;                     // (그릴 수 있는 범위 밖: 화면에서도 그리지 않는다)
   const size = st.press ? pressSize(st, a.p == null ? b.p : b.p == null ? a.p : (a.p + b.p) / 2) : st.size;
   const s = { x0: r1(a.x), y0: r1(a.y), x1: r1(b.x), y1: r1(b.y), color: st.color, size, o: me, sid: st.sid };
+  if (st.l) s.l = st.l;
   segs.push(s); if (st.act) st.act.segs.push(s); incSeg(s); send({ type: 'seg', ...s });
   if (st.mirror) {                                             // 대칭자: 거울에 비친 선분 (같은 굵기·색, 다른 획)
     const A = mirrorPt(st.mirror, a), B = mirrorPt(st.mirror, b);
     if (!inRange(A.x, A.y, B.x, B.y)) return;
     const m = { x0: r1(A.x), y0: r1(A.y), x1: r1(B.x), y1: r1(B.y), color: st.color, size, o: me, sid: st.msid };
+    if (st.l) m.l = st.l;
     segs.push(m); if (st.act) st.act.segs.push(m); incSeg(m); send({ type: 'seg', ...m });
   }
 }
@@ -3068,12 +3356,12 @@ function blocksNear(x0, y0, x1, y1, r) {
   for (let b = 0; b < ix.n; b++) if (!(box[b * 4 + 1] < xa || box[b * 4] > xb || box[b * 4 + 3] < ya || box[b * 4 + 2] > yb)) out.push(b);
   return out;
 }
-function eraseSegs(owner, x0, y0, x1, y1, r, diff) {           // eraseCapsule(segs, …) 과 같은 결과 (바뀌면 새 목록, 아니면 null)
+function eraseSegs(owner, x0, y0, x1, y1, r, diff, layer) {    // eraseCapsule(segs, …) 과 같은 결과 (바뀌면 새 목록, 아니면 null). layer: 그 레이어만 (null = 모두)
   const parts = [];
   let last = 0, first = -1;
   for (const b of blocksNear(x0, y0, x1, y1, r)) {
     const i0 = b * SEG_BLOCK, i1 = Math.min(segs.length, i0 + SEG_BLOCK);
-    const res = eraseCapsule(segs.slice(i0, i1), owner, x0, y0, x1, y1, r, diff);
+    const res = eraseCapsule(segs.slice(i0, i1), owner, x0, y0, x1, y1, r, diff, layer);
     if (!res) continue;
     if (first < 0) first = i0;
     parts.push(segs.slice(last, i0), res); last = i1;
@@ -3084,10 +3372,10 @@ function eraseSegs(owner, x0, y0, x1, y1, r, diff) {           // eraseCapsule(s
   segKeep = { arr: out, base: segIdx, at: first };              // (이 목록을 쓰면 덩어리 범위는 바뀐 곳부터만 다시 잰다)
   return out;
 }
-function hitSegs(owner, x0, y0, x1, y1, r, max) {               // hitStrokes(segs, …) 와 같은 결과
+function hitSegs(owner, x0, y0, x1, y1, r, max, layer) {        // hitStrokes(segs, …) 와 같은 결과
   const keys = new Map();
   for (const b of blocksNear(x0, y0, x1, y1, r)) {
-    for (const k of hitStrokes(segs.slice(b * SEG_BLOCK, Math.min(segs.length, (b + 1) * SEG_BLOCK)), owner, x0, y0, x1, y1, r, max)) {
+    for (const k of hitStrokes(segs.slice(b * SEG_BLOCK, Math.min(segs.length, (b + 1) * SEG_BLOCK)), owner, x0, y0, x1, y1, r, max, layer)) {
       const key = k[0] + '|' + k[1];
       if (keys.has(key)) continue;
       if (keys.size >= max) return [...keys.values()];
@@ -3100,13 +3388,13 @@ function erasePart(st, a, b) {
   if (!inRange(a.x, a.y, b.x, b.y)) return;
   const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
   const diff = { removed: [], added: [] };
-  const res = eraseSegs(sc, x0, y0, x1, y1, r, diff);
-  if (res) { segs = res; if (st.act) mergeDiff(st.act, diff); eraseArea(x0, y0, x1, y1, r, diff.removed); send({ type: 'erase', x0, y0, x1, y1, r, ...(sc === null ? { all: true } : {}) }); }
+  const res = eraseSegs(sc, x0, y0, x1, y1, r, diff, st.l);
+  if (res) { segs = res; if (st.act) mergeDiff(st.act, diff); eraseArea(x0, y0, x1, y1, r, diff.removed); send({ type: 'erase', x0, y0, x1, y1, r, l: st.l, ...(sc === null ? { all: true } : {}) }); }
 }
 function eraseStroke(st, a, b) {
   if (!inRange(a.x, a.y, b.x, b.y)) return;
   const x0 = r1(a.x), y0 = r1(a.y), x1 = r1(b.x), y1 = r1(b.y), r = st.r, sc = eraseScope();
-  const keys = hitSegs(sc, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE);
+  const keys = hitSegs(sc, x0, y0, x1, y1, r, MAX_STROKES_PER_ERASE, st.l);
   if (!keys.length) return;
   const diff = { removed: [], added: [] };
   const res = removeStrokes(segs, keys, diff);
@@ -3114,7 +3402,7 @@ function eraseStroke(st, a, b) {
   const q = ++qSeq;
   pendingQ.set(q, new Set(keys.map((k) => k[0] + '|' + k[1])));
   if (pendingQ.size > 100) pendingQ.delete(pendingQ.keys().next().value);
-  send({ type: 'erasestroke', q, x0, y0, x1, y1, r, ...(sc === null ? { all: true } : {}) });
+  send({ type: 'erasestroke', q, x0, y0, x1, y1, r, l: st.l, ...(sc === null ? { all: true } : {}) });
 }
 function emit(st, a, b) { if (st.kind === 'pen') penSeg(st, a, b); else if (st.kind === 'epart') erasePart(st, a, b); else eraseStroke(st, a, b); }
 function strokePoint(st, sx, sy, t, force, p) {                // 너무 가깝거나 빠른 점은 생략 (마지막 점은 force 로 반드시 보낸다). p: 펜 필압(0~1)
@@ -3206,7 +3494,7 @@ function startStroke(rec) {
   const w = toWorld(rec);
   const guide = kind === 'pen' ? rulerGuide(w) : null;         // 자가 켜져 있으면 이 획이 따라갈 선·원
   if (guide) { const q = guidePoint(guide, w); if (q) { w.x = q.x; w.y = q.y; } }
-  const st = strokeSt = { guide, id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: penColor(), size: S.penSize,
+  const st = strokeSt = { l: curL, guide, id: rec.id, kind, sid: erase ? null : newSid(), phase: touch ? 'pending' : 'live', pts: [], color: penColor(), size: S.penSize,
     r: r1(S.eraserD / 2), lsx: rec.x, lsy: rec.y, lt: rec.t0, last: w, skip: [], sx: rec.x, sy: rec.y, moved: 0, born: now(), confirmedAt: 0, timer: 0, act: null,
     press: kind === 'pen' && rec.type === 'pen' && S.pressure, pp: clamp(rec.p || 0.5, 0, 1),   // 필압은 펜(애플펜슬·태블릿 펜)일 때만
     tau: kind === 'pen' ? SMOOTH_MS[S.smooth] || 0 : 0, ex: rec.x, ey: rec.y, et: rec.t0 };     // 손떨림 보정은 펜 도구일 때
@@ -3309,6 +3597,7 @@ board.addEventListener('pointerdown', (e) => {
   const panWanted = e.button === 1 || tool === 'hand' || spaceDown || (rec.type === 'touch' && S.penOnly) || !!rp;   // (다시 보기 중에는 끌면 화면 이동만)
   if (panWanted) { gmode = 'pan'; return; }
   if (rec.type === 'mouse' && e.button !== 0) return;
+  if ((tool === 'pen' || tool === 'eraser' || tool === 'fill' || tool === 'select') && multiL() && hiddenL.has(curL)) { toast('숨긴 레이어예요. 눈을 켜거나 다른 레이어를 고르면 그릴 수 있어요', 'warn'); return; }
   if (tool === 'select') {                                    // 올가미: 고른 것 안쪽·모서리를 잡으면 옮기기·크기, 아니면 새로 둘러싸기
     if (!me || !histOk) { toast('연결 중이에요. 잠시 후 다시 해 주세요', 'warn'); return; }
     if (myRestr.spectator) { toast('지금은 보기만 할 수 있어요', 'warn'); return; }
@@ -3702,6 +3991,22 @@ function renderAdmin() {
   const s1 = sec('접속');
   sw(s1, 'adminLock', '방 잠금', '켜면 새 접속을 막아요 (이미 있는 사람과 방장은 그대로)', locked, (v) => sendCmd({ cmd: 'lock', on: v }));
   sw(s1, 'adminGate', '새로 온 사람은 보기만', '처음 온 사람은 방장·부방장이 허락해야 그릴 수 있어요 (전에 왔던 사람은 그대로). 분탕이 걱정될 때 켜 두세요', gateOn, (v) => sendCmd({ cmd: 'gate', on: v }));
+  if (isOwner()) {
+    const sx = sec('✦ Plus 방 기능');
+    const prow = (name, sub, btns) => {
+      const r = mk('div', 'arow'), nm = mk('div', 'nm', name); nm.appendChild(mk('small', '', sub)); r.appendChild(nm);
+      for (const [label, fn] of btns) { const b = mk('button', 'btn', label); b.type = 'button'; b.onclick = fn; r.appendChild(b); }
+      sx.appendChild(r);
+    };
+    prow(secretOn ? '🔒 비밀 방 켜짐' : '비밀 방', secretOn ? '비밀번호를 아는 사람만 들어와요 (방장·부방장은 늘)' : '비밀번호를 아는 사람만 들어오게 해요',
+      secretOn ? [['비밀번호 바꾸기', () => setSecret(true)], ['끄기', async () => { if (await confirmModal({ title: '비밀 방을 끌까요?', body: '링크를 아는 누구나 들어올 수 있게 돼요.', ok: '끄기' })) sendCmd({ cmd: 'secret', on: false }); }]] : [['켜기', () => setSecret(false)]]);
+    if (snapsOn) prow('방 되감기', plusRoomOn ? '분탕·실수로 망가진 그림을 15분 단위로 되돌려요 (방장이 Plus 인 동안 남겨요)' : '방장이 Plus 가 되면 15분마다 그림을 남겨요', [['열기', openRewind]]);
+    const pr = mk('div', 'arow'), pn = mk('div', 'nm', '방 종이 색'); pn.appendChild(mk('small', '', '그림판 바탕색 (모두에게)')); pr.appendChild(pn);
+    const pw = mk('div', 'papers');
+    for (const c of PAPERS) { const b = mk('button'); b.type = 'button'; b.style.background = c; b.title = c; b.setAttribute('aria-label', '종이 색 ' + c); b.classList.toggle('on', (paperC || PAPERS[0]) === c); b.onclick = () => (hasPlus() ? sendCmd({ cmd: 'paper', paper: c }) : plusAsk('방 종이 색은 ✦ Plus 기능이에요.')); pw.appendChild(b); }
+    sx.appendChild(pr); sx.appendChild(pw);
+    if (!hasPlus()) sx.appendChild(mk('small', 'hint', '✦ Plus 를 쓰면 켤 수 있어요 (설정 → Plus)'));
+  }
   const sp = sec('그리기 보호');
   sw(sp, 'adminCover', '남의 그림 덮기 막기', '방장·부방장이 아닌 사람이 다른 사람 그림을 한꺼번에 많이 덮으면 (흰색 큰 붓으로 싹 덮기 등) 그 선을 막고 채팅으로 알려요', coverOn, (v) => sendCmd({ cmd: 'cover', on: v }));
   const srvNow = a.now ? a.now + (now() - adminAt) : Date.now();
@@ -3833,7 +4138,7 @@ $('chatSend').onclick = sendChat;
 /* --- 이전(실행 취소) / 되돌리기(다시 실행): 내가 그린 획과 내 지우개 동작 --- */
 const UNDO_MAX = 50;
 let undoSt = [], redoSt = [];
-const plain = (s) => { const p = { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1, color: s.color, size: s.size, sid: s.sid }; if (s.f) p.f = 1; return p; };
+const plain = (s) => { const p = { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1, color: s.color, size: s.size, sid: s.sid }; if (s.f) p.f = 1; if (s.l) p.l = s.l; return p; };
 function syncUndoUi() {
   $('tUndo').disabled = !undoSt.length || myRestr.spectator; $('tRedo').disabled = !redoSt.length || myRestr.spectator;
 }
@@ -4063,7 +4368,7 @@ function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   outQ = []; if (outT) { clearTimeout(outT); outT = 0; }
   segQ = []; clearTimeout(segQT); segQT = 0; undoTok = UNDO_BURST; undoAt = now();   // (새 접속: 서버 한도도 새로)
-  const sock = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=3' : ''}&e=1`);
+  const sock = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&k=${myKey}&n=${encodeURIComponent(myNick)}${zOk ? '&z=3' : ''}&e=1&L=1`);
   sock.binaryType = 'arraybuffer';
   ws = sock;
   sock.onopen = () => { if (sock !== ws) return; if (zOk) requestSync(sock); retry = 0; connected = true; lastMsgAt = now(); updateBanner(); hudSoon(); };
@@ -4103,7 +4408,7 @@ function onMessage(data) {
 }
 function handleMsg(m) {
   switch (m.type) {
-    case 'hello': me = m.me; flushErrs(); break;
+    case 'hello': me = m.me; flushErrs(); if (plusRePending) { plusRePending = false; send({ type: 'plusre' }); } break;
     case 'pong': break;
     case 'history': sendClaim(); clearSel(); newsSoon(); segs = Array.isArray(m.data) ? m.data : []; histOk = true; resetUndo(); redrawInk(); checkCap(); rememberRoom();
       for (const q of segQ) {                                                      // 아직 안 보낸 이전·되돌리기·글자 조각: 받은 그림 위에 다시 (서버도 곧 받는다)
@@ -4118,9 +4423,9 @@ function handleMsg(m) {
     case 'name': names[m.o] = m.name; refreshLabels(); renderPeople(); if (m.o === me) nickEl.value = m.name; break;
     case 'presence': online = new Set(m.owners || []); count = online.size; hudSoon(); renderPeople(); break;
     case 'count': if (!online.size) { count = m.n; hudSoon(); } break;
-    case 'seg': segs.push(m); if (aligned() && !exactT) incSeg(m); else redrawInk(); break;
+    case 'seg': segs.push(m); if ((aligned() && !exactT) || panReady()) incSeg(m); else redrawInk(); break;   // (옮기는 중이어도 넓게 그려 둔 그림이 있으면 덧그린다)
     case 'clear': segs = segs.filter((s) => s.o !== m.o); if (m.o === me) resetUndo(); redrawInk(); break;
-    case 'erase': { const d = { removed: [], added: [] }, res = eraseSegs(m.o, m.x0, m.y0, m.x1, m.y1, m.r, d); if (res) { segs = res; eraseArea(m.x0, m.y0, m.x1, m.y1, m.r, d.removed); } break; }
+    case 'erase': { const d = { removed: [], added: [] }, res = eraseSegs(m.o, m.x0, m.y0, m.x1, m.y1, m.r, d, typeof m.l === 'string' ? m.l : null); if (res) { segs = res; eraseArea(m.x0, m.y0, m.x1, m.y1, m.r, d.removed); } break; }
     case 'strokesgone': {
       const keys = Array.isArray(m.keys) ? m.keys : [], d = { removed: [], added: [] };
       const res = removeStrokes(segs, keys, d);
@@ -4136,18 +4441,51 @@ function handleMsg(m) {
     case 'curs': if (Array.isArray(m.l)) for (let i = 0; i + 2 < m.l.length; i += 3) showCursor(m.l[i], m.l[i + 1], m.l[i + 2], true); break;   // 서버가 0.1초마다 모아 보낸 커서들
     case 'curhide': hideCursor(m.o); break;
     case 'notice':
+      if (m.code === 'plus') { plusAsk(m.text || '✦ Plus 기능이에요'); break; }
       toast(m.text || '알림', 'warn');
-      if (m.code === 'share' || m.code === 'cover' || m.code === 'rate' || m.code === 'full' || m.code === 'spectator') {                              // 서버가 내 선을 받지 않았다: 그 획은 거기서 멈추고, 화면을 서버 그림에 맞춘다
+      if (m.code === 'layer') setCurL('', true);
+      if (m.code === 'share' || m.code === 'cover' || m.code === 'rate' || m.code === 'full' || m.code === 'spectator' || m.code === 'layer') {                              // 서버가 내 선을 받지 않았다: 그 획은 거기서 멈추고, 화면을 서버 그림에 맞춘다
         const st = strokeSt;
         if (st && st.kind === 'pen') { commitAct(st); strokeSt = null; if (gmode === 'draw' || gmode === 'pending') gmode = 'none'; }
         resyncNow();
       }
       break;
     case 'roomstate': if (typeof m.title === 'string' && m.title !== roomTitle) { roomTitle = m.title; syncRoomLabel(); rememberRoom(); }
+      if (!!m.secret !== secretOn) { secretOn = !!m.secret; syncRoomLabel(); }
+      plusRoomOn = !!m.plusRoom; snapsOn = !!m.snaps;
+      if ((m.paper || '') !== paperC) { paperC = PAPERS.includes(m.paper) ? m.paper : ''; paintPaper(); }
       ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); if (m.max > 0) { roomMax = m.max; checkCap(); }
       mods = new Set(Array.isArray(m.mods) ? m.mods : []); gateOn = !!m.gate; coverOn = m.cover !== false; roomShare = m.share > 0 && m.share < 1 ? m.share : 0;
       syncOwnerUI(); break;
-    case 'plusmap': plusMap = m.l && typeof m.l === 'object' ? m.l : {}; refreshLabels(); renderPeople(); renderChatAll(); break;
+    case 'layers': {
+      layers = Array.isArray(m.l) && m.l.length ? m.l : [{ id: '', name: '레이어 1', by: '' }];
+      for (const id of [...hiddenL]) if (!layers.some((x) => x.id === id)) hiddenL.delete(id);
+      if (m.mine) setCurL(m.mine);
+      else setCurL(layers.some((x) => x.id === curL) ? curL : (layers.some((x) => x.id === lsGet(layKey())) ? lsGet(layKey()) : ''), true);
+      renderLayers(); segIdx = null; redrawInk(); break;
+    }
+    case 'locked': lockedRoom = true; if (lockPw) sendUnlock(); else askRoomPw(); break;   // 비밀 방: 비밀번호를 넣어야 들어간다
+    case 'unlock':
+      if (m.ok) { lockedRoom = false; lockPw = null; hideHint(); if (m.sync && zOk && ws && ws.readyState === 1) requestSync(ws); }
+      else { lockPw = null; askRoomPw(m.wait ? '여러 번 틀려서 잠시 막혔어요. 조금 뒤에 다시 해 주세요' : '비밀번호가 맞지 않아요' + (m.left ? ` (${m.left}번 더 할 수 있어요)` : '')); }
+      break;
+    case 'rewinds': showRewinds(Array.isArray(m.l) ? m.l : []); break;
+    case 'rwpeek': peekRewind(m); break;
+    case 'rewound': $('rwView').hidden = true; clearSel(); resetUndo(); resyncNow(); if (m.by !== me) toast('방장이 그림을 되돌렸어요', 'warn'); else toast('그림을 되돌렸어요', 'ok'); break;
+    case 'layerdel': {
+      const before = segs.length;
+      segs = segs.filter((s) => (s.l || '') !== m.id); hiddenL.delete(m.id);
+      if (curL === m.id) setCurL('', true);
+      if (segs.length !== before) { clearSel(); redrawInk(); }
+      break;
+    }
+    case 'plusmap': {
+      plusMap = m.l && typeof m.l === 'object' ? m.l : {}; refreshLabels(); renderPeople();
+      const stick = atBottom(), top = chatList.scrollTop, pill = $('chatNew').hidden;
+      renderChatAll(); if (!stick) { chatList.scrollTop = top; $('chatNew').hidden = pill; }
+      if (!$('popSettings').hidden) renderPlus();
+      break;
+    }
     case 'me': {
       const wasPlus = myPlus > Date.now();
       myPlus = +m.plus || 0;
@@ -4175,7 +4513,7 @@ function handleMsg(m) {
     case 'cmderr': toast(m.text || '명령을 실행하지 못했어요', 'err'); break;
     case 'clearall': segs = []; resetUndo(); redrawInk(); break;
     case 'segs': addSegs(Array.isArray(m.list) ? m.list : []); redrawInk(); break;
-    case 'fill': addSegs(fillSegs(m.o, m.sid, m.color, m.cell, Array.isArray(m.rows) ? m.rows : [])); redrawInk(); break;
+    case 'fill': addSegs(fillSegs(m.o, m.sid, m.color, m.cell, Array.isArray(m.rows) ? m.rows : [], typeof m.l === 'string' ? m.l : '')); redrawInk(); break;
     case 'fillno': {                                                               // 서버가 내 칠하기를 받지 않았다: 내 화면에서도 되돌린다
       const sid = typeof m.sid === 'string' ? m.sid : null;
       if (sid) { segs = segs.filter((s) => !(s.o === me && s.sid === sid)); undoSt = undoSt.filter((a) => a.sid !== sid); redoSt = redoSt.filter((a) => a.sid !== sid); syncUndoUi(); redrawInk(); }
@@ -4193,13 +4531,69 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-16 68차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-17 72차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 let roomTitle = '';                                             // 방 이름 (방장·부방장이 정함, 없으면 방 코드)
 const BASE_TITLE = '같이 그리기';                                 // (Cloudflare 는 첫 화면 제목에 방 이름을 미리 넣어 보낸다)
+let secretOn = false, plusRoomOn = false, snapsOn = false, lockedRoom = false, lockPw = null, askingPw = false;
+// 비밀 방: 들어가기 전에 비밀번호 (틀리면 다시, 닫으면 안내 상자)
+async function askRoomPw(err) {
+  if (askingPw) return;
+  askingPw = true;
+  const v = await formModal({ title: '🔒 비밀 방이에요', body: (err ? err + '\n' : '') + '방장이 알려 준 비밀번호를 넣어 주세요. 한 번 들어오면 다음부터는 바로 들어와요.', ok: '들어가기', cancel: '닫기',
+    fields: [{ key: 'pw', type: 'password', label: '비밀번호', maxChars: 40 }] });
+  askingPw = false;
+  if (!v || !v.pw) { showHint('🔒 비밀 방이에요. 비밀번호를 알아야 그림을 볼 수 있어요', '비밀번호 넣기', () => askRoomPw()); return; }
+  lockPw = v.pw; sendUnlock();
+}
+function sendUnlock() { if (ws && ws.readyState === 1 && lockPw) ws.send(JSON.stringify({ type: 'unlock', pw: lockPw })); }
+async function setSecret(change) {
+  if (!hasPlus()) { plusAsk('비밀 방은 ✦ Plus 기능이에요. 비밀번호를 아는 사람만 들어올 수 있어요.'); return; }
+  const v = await formModal({ title: change ? '비밀번호 바꾸기' : '🔒 비밀 방 만들기', body: change ? '' : '비밀번호를 아는 사람만 들어와요 (방장·부방장은 늘 들어와요). 지금 방에 있는 사람은 그대로 있어요.', ok: change ? '바꾸기' : '비밀 방으로',
+    fields: [{ key: 'pw', type: 'password', newPw: true, label: '비밀번호 (4~40글자)', maxChars: 40 }, { key: 'pw2', type: 'password', newPw: true, label: '한 번 더', maxChars: 40 },
+      ...(change ? [{ key: 'reset', type: 'check', label: '전에 들어온 사람도 새 비밀번호를 넣게 하기', value: false }] : [])],
+    validate: (x) => (Array.from(x.pw).length < 4 ? '4글자 이상으로 해 주세요' : x.pw !== x.pw2 ? '두 비밀번호가 달라요' : null) });
+  if (v) sendCmd({ cmd: 'secret', on: true, pw: v.pw, reset: !!v.reset });
+}
+// 방 되감기: 목록 → 고르면 미리 보기 → 이때로 되돌리기
+let rwPick = null;
+function openRewind() {
+  if (!hasPlus()) { plusAsk('방 되감기는 ✦ Plus 기능이에요. 분탕·실수로 망가진 그림을 15분 단위로 되돌려요.'); return; }
+  closeSide(); rwPick = null;
+  $('rwList').textContent = '불러오는 중…'; $('rwImg').hidden = true; $('rwGo').hidden = true; $('rwInfo').textContent = '';
+  $('rwView').hidden = false;
+  sendCmd({ cmd: 'rewind', op: 'list' });
+}
+function rwTime(at) { const d = new Date(at); return d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', weekday: 'short', hour: 'numeric', minute: '2-digit' }); }
+function showRewinds(l) {
+  const box = $('rwList'); box.textContent = '';
+  if (!l.length) { box.appendChild(mk('div', 'hint', '아직 남긴 그림이 없어요. 그림이 바뀌면 15분마다 남겨요.')); return; }
+  for (const x of l) {
+    const b = mk('button', '', rwTime(x.at) + ' · ' + fmtN(x.n) + '조각' + (x.label ? ' · ' + x.label : '')); b.type = 'button'; b.dataset.at = String(x.at);
+    b.onclick = () => { rwPick = x.at; for (const e of box.children) e.classList.toggle('on', e === b); $('rwInfo').textContent = '미리 보기를 만드는 중…'; sendCmd({ cmd: 'rewind', op: 'peek', at: x.at }); };
+    box.appendChild(b);
+  }
+}
+async function peekRewind(m) {
+  if (m.at !== rwPick || $('rwView').hidden) return;
+  try {
+    const list = decodeSegs(await inflateBytes(Uint8Array.from(atob(m.z), (c) => c.charCodeAt(0)))) || [];
+    if (!list.length) { $('rwImg').hidden = true; $('rwInfo').textContent = '그때는 그림이 없었어요 (빈 방)'; $('rwGo').hidden = false; return; }
+    const { cv } = withSource(list, m.layers, () => renderAllPng(1600, paperC || '#ffffff', list));
+    cv.toBlob((b) => { if (!b || m.at !== rwPick) return; const u = URL.createObjectURL(b); const img = $('rwImg'); if (img.dataset.u) URL.revokeObjectURL(img.dataset.u); img.dataset.u = u; img.src = u; img.hidden = false; }, 'image/png');
+    $('rwInfo').textContent = rwTime(m.at) + ' 그림 · ' + fmtN(list.length) + '조각';
+    $('rwGo').hidden = false;
+  } catch (e) { $('rwInfo').textContent = '미리 보기를 만들지 못했어요'; }
+}
+$('rwClose').onclick = () => { $('rwView').hidden = true; };
+$('rwGo').onclick = async () => {
+  if (!rwPick) return;
+  const v = await formModal({ title: '이때로 되돌릴까요?', body: rwTime(rwPick) + ' 그림으로 모두의 화면이 바뀌어요. 지금 그림도 남으니 나중에 다시 되돌릴 수 있어요.', ok: '되돌리기', danger: true });
+  if (v) sendCmd({ cmd: 'rewind', op: 'go', at: rwPick });
+};
 function syncRoomLabel() {
   const t = roomTitle ? Array.from(roomTitle) : null;
-  $('roomLabel').textContent = t ? (t.length > 12 ? t.slice(0, 12).join('') + '…' : roomTitle) : room.length > 10 ? room.slice(0, 10) + '…' : room;
+  $('roomLabel').textContent = (secretOn ? '🔒 ' : '') + (t ? (t.length > 12 ? t.slice(0, 12).join('') + '…' : roomTitle) : room.length > 10 ? room.slice(0, 10) + '…' : room);
   $('btnRoom').title = '방 메뉴' + (roomTitle ? ` (${roomTitle} · 방 코드 ${room})` : '');
   document.title = roomTitle ? roomTitle + ' · ' + BASE_TITLE : BASE_TITLE;
 }
@@ -4261,13 +4655,16 @@ function renderAcct() {
 }
 if (window.fetch) fetch('/auth/config').then((r) => (r.ok ? r.json() : null)).then((j) => { authCfg = j; renderAcct(); }).catch(() => {});
 // ── Plus (구독, Cloudflare 판): 결제는 Polar. 방 안에서 Plus 인지는 서버가 알려 준 것(me.plus)으로만 판단한다 ──
-let myPlus = 0, plusInfo = null, plusJustBought = false;          // myPlus: Plus 가 끝나는 때 (0 = 아님) / plusInfo: /plus/status 답
+let myPlus = 0, plusInfo = null, plusJustBought = false, plusRePending = false;          // myPlus: Plus 가 끝나는 때 (0 = 아님) / plusInfo: /plus/status 답
 const hasPlus = () => myPlus > Date.now();
-const PLUS_PERKS = ['레이어 무제한 (무료는 2개)', '방 되감기: 분탕·실수로 망가진 방을 원하는 때로', '비밀 방: 비밀번호를 아는 사람만 들어와요', '고화질 내보내기: 아주 큰 PNG·투명 배경·그리는 과정 영상', '꾸미기: ✦ 배지·이름 색·커서 모양·방 종이 색'];
+const PLUS_PERKS = ['레이어 무제한 (무료는 2개)', '방 되감기: 분탕·실수로 망가진 방을 원하는 때로', '비밀 방: 비밀번호를 아는 사람만 들어와요', '고화질 내보내기: 아주 큰 PNG·투명 배경·그리는 과정 영상', '꾸미기: ✦ 배지·이름 색·방 종이 색'];
 const plusPost = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: myKey, ...body }) }).then(async (r) => ({ ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) }));
 function plusStatus() {
   if (!window.fetch) return Promise.resolve();
-  return plusPost('/plus/status', {}).then((r) => { if (r.ok) { plusInfo = r.j; if (r.j.until > myPlus && !me) myPlus = r.j.until; } else plusInfo = null; renderPlus(); }).catch(() => {});
+  return plusPost('/plus/status', {}).then((r) => {
+    if (r.ok && r.j && r.j.o) { plusInfo = r.j; if (r.j.until > myPlus) { if (me) send({ type: 'plusre' }); else myPlus = r.j.until; } } else plusInfo = null;
+    renderPlus();
+  }).catch(() => {});
 }
 function syncPlusUI() { document.body.classList.toggle('isplus', hasPlus()); }
 function renderPlus() {
@@ -4279,23 +4676,23 @@ function renderPlus() {
   const until = Math.max(myPlus, plusInfo.until || 0), on = until > Date.now();
   if (on) {
     body.appendChild(mk('div', 'hint', `Plus 사용 중 · ${new Date(until).toLocaleDateString('ko-KR')}까지` + (plusInfo.pu > Date.now() ? ' (구독 중이면 자동으로 이어져요)' : '')));
-    if (plusInfo.pu > 0) { const b = mk('button', 'btn block', '구독 관리 (해지·카드·영수증)'); b.type = 'button'; b.style.marginTop = '6px'; b.onclick = plusPortal; body.appendChild(b); }
+
     body.appendChild(mk('div', 'hint', '이름 색'));
-    const r1 = mk('div', 'decorow'), cur = (plusMap[me] || plusInfo.deco || {});
+    const r1 = mk('div', 'decorow'), cur = (plusInfo.deco || plusMap[me] || {});
     const none = mk('button', '', '✕'); none.type = 'button'; none.title = '기본'; none.classList.toggle('on', !cur.c); none.onclick = () => setDeco({ ...cur, c: undefined }); r1.appendChild(none);
     for (const c of DECO_COLORS) { const b = mk('button'); b.type = 'button'; b.style.background = c; b.title = c; b.classList.toggle('on', cur.c === c); b.onclick = () => setDeco({ ...cur, c }); r1.appendChild(b); }
     body.appendChild(r1);
-    body.appendChild(mk('div', 'hint', '내 커서 모양 (다른 사람 화면에 보여요)'));
-    const r2 = mk('div', 'decorow');
-    for (const k of DECO_CURSORS) { const b = mk('button', '', CUR_GLYPH[k] || '●'); b.type = 'button'; b.classList.toggle('on', (cur.cur || 'dot') === k); b.onclick = () => setDeco({ ...cur, cur: k }); r2.appendChild(b); }
-    body.appendChild(r2);
   } else {
     const ul = mk('ul', 'plist'); for (const t of PLUS_PERKS) ul.appendChild(mk('li', '', t)); body.appendChild(ul);
     const b = mk('button', 'btn primary block', plusInfo.on ? 'Plus 시작하기' + (plusInfo.price ? ' · ' + plusInfo.price : '') : 'Plus 준비 중이에요'); b.type = 'button';
     b.disabled = !plusInfo.on; b.onclick = plusBuy; body.appendChild(b);
     body.appendChild(mk('small', 'hint', plusInfo.acct ? '결제는 Polar(해외 결제 대행)에서 해요. 언제든 해지할 수 있어요.' : 'Plus 는 로그인한 계정에 붙어요 (다른 기기에서도 그대로). 먼저 위 계정 칸에서 로그인해 주세요.'));
   }
+  if (plusInfo.pu > 0) { const b = mk('button', 'btn block', '구독 관리 (해지·카드·영수증)'); b.type = 'button'; b.style.marginTop = '6px'; b.onclick = plusPortal; body.appendChild(b); }   // (구독이 끝났어도: 결제가 계속되는데 Plus 가 꺼졌을 때 확인하러)
   if (plusInfo.o) { const n = mk('small', 'hint'); n.append('계정 번호 ', mk('span', 'acctno', plusInfo.o)); body.appendChild(n); }
+  const lk = mk('small', 'hint'), a1 = mk('a', '', '약관·해지·환불'), a2 = mk('a', '', '개인정보');
+  a1.href = '/terms.html'; a2.href = '/privacy.html'; a1.target = a2.target = '_blank'; a1.rel = a2.rel = 'noopener';
+  lk.append(a1, ' · ', a2); body.appendChild(lk);
 }
 async function plusBuy() {
   if (!plusInfo || !plusInfo.acct) { toast('먼저 로그인해 주세요 (설정 → 계정)', 'warn'); return; }
@@ -4328,7 +4725,7 @@ async function plusAsk(what) {
     plusJustBought = true;
     setTimeout(() => toast('결제를 확인하고 있어요…', 'ok'), 300);
     const tryRefresh = (n) => loginReady.then(() => plusPost('/plus/refresh', {})).then((r) => {
-      if (r.ok && r.j.until > Date.now()) { myPlus = Math.max(myPlus, r.j.until); send({ type: 'plusre' }); plusStatus(); return; }
+      if (r.ok && r.j.until > Date.now()) { myPlus = Math.max(myPlus, r.j.until); if (me) send({ type: 'plusre' }); else plusRePending = true; plusStatus(); return; }
       if (n < 5) setTimeout(() => tryRefresh(n + 1), 3000 * (n + 1));            // (결제 확인이 몇 초 늦을 수 있다)
       else toast('결제 확인이 늦어지고 있어요. 조금 뒤 새로고침해 주세요', 'warn');
     }).catch(() => {});

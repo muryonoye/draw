@@ -13,6 +13,10 @@ function sqlStore(storage, importOld) {
   const sql = storage.sql;
   sql.exec('CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS parts (pid INTEGER PRIMARY KEY, data TEXT NOT NULL)');
+  // 되감기 사본 (✦ Plus 방): snaps = 때·조각 수·이름·나눈 수, snapparts = 900KB 씩 나눈 내용 (값 하나 2MB 한도)
+  sql.exec("CREATE TABLE IF NOT EXISTS snaps (at INTEGER PRIMARY KEY, n INTEGER NOT NULL, label TEXT NOT NULL, k INTEGER NOT NULL, h TEXT NOT NULL DEFAULT '')");
+  sql.exec('CREATE TABLE IF NOT EXISTS snapparts (at INTEGER NOT NULL, i INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (at, i))');
+  const SNAP_CHUNK = 900000;
   const get = (k) => { const r = sql.exec('SELECT v FROM kv WHERE k = ?', k).toArray()[0]; return r ? r.v : null; };
   const put = (k, v) => { sql.exec('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v', k, v); };
   let savedNames = null;                                          // 마지막으로 쓴 이름 목록
@@ -51,6 +55,22 @@ function sqlStore(storage, importOld) {
       if (nm) savedNames = names;
     },
     async saveMeta(id, json) { put('meta', json); },
+    snapSave(at, n, label, text, h) {
+      const k = Math.max(1, Math.ceil(text.length / SNAP_CHUNK));
+      storage.transactionSync(() => {
+        sql.exec('DELETE FROM snapparts WHERE at = ?', at);
+        sql.exec('INSERT OR REPLACE INTO snaps (at, n, label, k, h) VALUES (?, ?, ?, ?, ?)', at, n, label, k, h || '');
+        for (let i = 0; i < k; i++) sql.exec('INSERT INTO snapparts (at, i, data) VALUES (?, ?, ?)', at, i, text.slice(i * SNAP_CHUNK, (i + 1) * SNAP_CHUNK));
+      });
+    },
+    snapList() { return sql.exec('SELECT at, n, label, h FROM snaps ORDER BY at DESC').toArray(); },
+    snapLoad(at) {
+      const r = sql.exec('SELECT k FROM snaps WHERE at = ?', at).toArray()[0];
+      if (!r) return null;
+      const ps = sql.exec('SELECT data FROM snapparts WHERE at = ? ORDER BY i', at).toArray();
+      return ps.length === r.k ? ps.map((x) => x.data).join('') : null;
+    },
+    snapDel(at) { storage.transactionSync(() => { sql.exec('DELETE FROM snaps WHERE at = ?', at); sql.exec('DELETE FROM snapparts WHERE at = ?', at); }); },
     async saveExtra(id, json) { put('extra', json); },
   };
 }
@@ -74,6 +94,8 @@ const stores = new Map();
 // 방 id → 그 방 객체(WeakRef). 방 객체가 메모리에서 내려가 사라지면 그 방의 그림·저장소도 공용 목록에서 지운다 (같은 프로그램에 방이 쌓여 메모리 128MB 를 넘지 않게)
 const live = new Map();
 function pruneGone() { for (const [id, w] of live) if (!w.deref()) { live.delete(id); stores.delete(id); core.dropRoom(id); } }
+// 방 객체가 깨어날 때 Plus 를 다시 묻지 않게: 아는 Plus 기간·꾸미기를 소켓에
+const plusAtt = (ws) => { const pp = ws.room && ws.room.plus && ws.room.plus.get(ws.owner); return pp && !pp.asking && pp.until > Date.now() ? { pu: pp.until, pa: pp.at, d: pp.deco || {} } : {}; };
 core.setPlatform({
   hasStore: true,
   storeFor: (id) => stores.get(id) || null,
@@ -82,7 +104,15 @@ core.setPlatform({
   // 강퇴·밴: 다른 사람의 메시지를 처리하는 중에 닫으면 닫기 인사가 상대에게 안 가는 경우가 있다 (쉬는 소켓 방식). 화면은 'bye' 를 받으면 스스로 끊으므로 방에서만 바로 뺀다
   afterBye: (ws) => core.closed(ws),
   // 접속 정보를 소켓에 적어 둔다 (방 객체가 메모리에서 내려갔다 깨어나도 누가 어떤 접속인지 알 수 있게, 최대 2KB)
-  attach: (ws) => { try { ws.serializeAttachment({ o: ws.owner, ipt: ws.ipt || '', z: ws.zOk || 0, ap: ws.approved ? 1 : 0, e: ws.echoOk ? 1 : 0 }); } catch {} },
+  attach: (ws) => { try { ws.serializeAttachment({ o: ws.owner, ipt: ws.ipt || '', z: ws.zOk || 0, ap: ws.approved ? 1 : 0, e: ws.echoOk ? 1 : 0, ...(ws.knock ? { k: 1, t: ws.knock.tries | 0, n: String(ws.knock.n || '').slice(0, 40) } : {}), ...plusAtt(ws) }); } catch {} },
+  // 되감기 사본: 그 방 객체의 SQLite
+  snaps: {
+    save: async (id, at, n, label, text, h) => { const st = stores.get(id); if (st) st.snapSave(at, n, label, text, h); },
+    list: async (id) => { const st = stores.get(id); return st ? st.snapList() : []; },
+    load: async (id, at) => { const st = stores.get(id); return st ? st.snapLoad(at) : null; },
+    del: async (id, at) => { const st = stores.get(id); if (st) st.snapDel(at); },
+  },
+  snapLater: (id, ms) => { const w = live.get(id), obj = w && w.deref(); if (obj) obj.snapLater(ms); },   // (그 방 객체의 알람)
   // 화면이 버벅였다는 알림: Stats 객체에 모아 /stats 에서 본다
   onPerf: (roomId, r) => { if (ENV && ENV.STATS) statsObj(ENV).fetch('https://stats/perf', { method: 'POST', body: JSON.stringify({ room: roomId, ...r, at: Date.now() }) }).catch(() => {}); },
   // Plus: 그 사람(주인 ID)의 Plus 기간·꾸미기를 계정 저장소에서
@@ -120,7 +150,7 @@ export class Room extends DurableObject {
     const url = new URL(req.url);
     if (url.pathname === '/title') {                    // 링크 미리보기용 방 이름 (저장소에서 읽기만: 방을 불러오거나 아무것도 쓰지 않는다)
       let t = '';
-      try { t = JSON.parse(this.store.get('meta') || '{}').title || ''; } catch {}
+      try { const m = JSON.parse(this.store.get('meta') || '{}'); t = m.secret ? '' : m.title || ''; } catch {}   // (비밀 방은 이름도 안 알려 준다)
       return new Response(String(t).slice(0, 60), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     }
     const raw = url.searchParams.get('room') || 'lobby', roomId = core.ROOM_RE.test(raw) ? raw : 'lobby';
@@ -183,6 +213,16 @@ export class Room extends DurableObject {
     await core.restore(this.id, socks.map((ws) => [ws, ws.deserializeAttachment() || {}]));
   }
 
+  // 되감기 사본 알람: 이미 더 이른 알람이 있으면 그대로
+  async snapLater(ms) {
+    try { const at = Date.now() + ms, cur = await this.ctx.storage.getAlarm(); if (cur && cur <= at) return; await this.ctx.storage.setAlarm(at); } catch (e) { console.error('알람 설정 실패:', e.message); }
+  }
+  async alarm() {                                    // (방 객체가 잠들었으면 방을 불러와서 점검: 저장·되감기 사본)
+    if (!this.id) return;
+    try { const room = core.getRoom(this.id); await room.ready; await core.maintainRoom(this.id, room, true); this.report(); }
+    catch (e) { console.error('알람 점검 오류:', e.message); }
+  }
+
   // 바뀐 게 있으면 SAVE_MS 뒤 저장 (타이머가 도는 동안은 잠들지 않고, 다 저장하면 다시 잠들 수 있다)
   later() {
     if (this.saveT || !this.id) return;
@@ -223,6 +263,7 @@ export class Stats extends DurableObject {
     this.sql = ctx.storage.sql;
     this.sql.exec('CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, bytes INTEGER NOT NULL, segs INTEGER NOT NULL, title TEXT NOT NULL, at INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS perf (at INTEGER NOT NULL, data TEXT NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS fails (k TEXT NOT NULL, at INTEGER NOT NULL)');
   }
   async fetch(req) {
     const path = new URL(req.url).pathname, s = this.sql;
@@ -232,6 +273,13 @@ export class Stats extends DurableObject {
       s.exec('INSERT INTO rooms (id, bytes, segs, title, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET bytes = excluded.bytes, segs = excluded.segs, title = excluded.title, at = excluded.at',
         b.id, Math.max(0, +b.bytes || 0), Math.max(0, +b.segs || 0), String(b.title || '').slice(0, 30), +b.at || Date.now());
       return new Response('ok');
+    }
+    if (path === '/fail') {                                    // 관리 코드를 틀림: { k, add } → 그 곳 10분 · 모두 1시간 횟수
+      const now = Date.now(), k = String(b.k || '').slice(0, 64);
+      s.exec('DELETE FROM fails WHERE at < ?', now - 3600000);
+      if (b.add) s.exec('INSERT INTO fails (k, at) VALUES (?, ?)', k, now);
+      const one = (q, ...a) => (s.exec(q, ...a).toArray()[0] || {}).n || 0;
+      return Response.json({ mine: one('SELECT COUNT(*) AS n FROM fails WHERE k = ? AND at >= ?', k, now - 600000), all: one('SELECT COUNT(*) AS n FROM fails') });
     }
     if (path === '/perf') {                                    // 버벅임 알림 (최근 300개만)
       s.exec('INSERT INTO perf (at, data) VALUES (?, ?)', Date.now(), JSON.stringify(b).slice(0, 1000));
@@ -287,21 +335,23 @@ function tooManyFails(ip, add) {
   const now = Date.now(), a = (fails.get(ip) || []).filter((t) => t > now - 600000);
   if (add) a.push(now);
   if (a.length) fails.set(ip, a); else fails.delete(ip);
-  if (fails.size > 5000) fails.clear();
+  if (fails.size > 5000) for (const x of [...fails.keys()].slice(0, 1000)) fails.delete(x);
   return a.length >= 10;
 }
 // 그 밖의 횟수 제한 (이 프로그램 안): k 마다 ms 동안 n 번까지
 const hits = new Map();
-function rateOk(k, n, ms) { const now = Date.now(), a = (hits.get(k) || []).filter((t) => t > now - ms); if (a.length >= n) { hits.set(k, a); return false; } a.push(now); hits.set(k, a); if (hits.size > 5000) hits.clear(); return true; }
+function rateOk(k, n, ms) { const now = Date.now(), a = (hits.get(k) || []).filter((t) => t > now - ms); if (a.length >= n) { hits.set(k, a); return false; } a.push(now); hits.delete(k); hits.set(k, a); if (hits.size > 5000) for (const x of [...hits.keys()].slice(0, 1000)) hits.delete(x); return true; }
 const clientIp = (req, env) => (env.LOCAL_DEV === '1' ? req.headers.get('X-Test-IP') : req.headers.get('CF-Connecting-IP')) || 'local';
 async function stats(req, env, url) {
   if (url.pathname === '/stats') return new Response(STATS_PAGE, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
   if (req.method !== 'POST' || !env.STATS) return new Response('not found', { status: 404 });
-  const ip = clientIp(req, env);
-  if (tooManyFails(ip, false)) return new Response('wait', { status: 429 });
+  const ip = clientIp(req, env), k = ip.includes(':') ? ip.split(':').slice(0, 4).join(':') : ip;   // (IPv6 는 앞 64비트: 한 집·한 회사)
+  const guard = async (add) => { try { return await (await statsObj(env).fetch('https://stats/fail', { method: 'POST', body: JSON.stringify({ k, add }) })).json(); } catch { return { mine: 0, all: 0 }; } };
+  const g0 = await guard(false);
+  if (tooManyFails(k, false) || g0.mine >= 10 || g0.all >= 50) return new Response('wait', { status: 429 });
   let b = {}; try { b = await req.json(); } catch {}
   const code = String(env.OWNER_CLAIM || '');
-  if (code.length < 8 || typeof b.key !== 'string' || !sameSecret(b.key, code)) { tooManyFails(ip, true); return new Response('no', { status: 403 }); }
+  if (code.length < 8 || typeof b.key !== 'string' || !sameSecret(b.key, code)) { tooManyFails(k, true); await guard(true); return new Response('no', { status: 403 }); }
   const J = (r) => new Response(r.body, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
   if (b.act === 'gift' && env.ACCT) {                     // Plus 선물 (친구·시험용): 주인 ID 에 며칠 (0 이면 선물 취소)
     return J(await acctObj(env).fetch('https://acct/plus/gift', { method: 'POST', body: JSON.stringify({ o: b.o, days: b.days }) }));
@@ -476,6 +526,7 @@ export class Accounts extends DurableObject {
     }
     if (path === '/plus/polar') {                              // 결제 소식(웹훅)에서 확인한 구독 기간
       if (!O_RE.test(b.o) || !(b.until >= 0)) return bad('o');
+      if (b.until === 0 && !this.sql.exec('SELECT 1 AS x FROM plus WHERE o = ?', b.o).toArray()[0]) return Response.json({ ok: true });
       this.plusSet(b.o, { pu: Math.floor(b.until) });
       return Response.json({ ok: true });
     }
@@ -527,10 +578,14 @@ function untilOf(env, st, now = Date.now()) {               // Polar 고객 상�
   }
   return u;
 }
-async function refreshPlus(env, o) {                         // Polar 에 이 사람의 상태를 물어 계정 저장소에 적는다
+async function refreshPlus(env, o, sub) {                    // Polar 에 이 사람의 상태를 물어 계정 저장소에 적는다 (sub: 이 사람이 결제한 구독 소식 — 다른 고객에 붙었을 때)
   const st = await polar(env, 'GET', '/v1/customers/external/' + encodeURIComponent(o) + '/state');
   if (!st.ok && st.status !== 404) throw new Error('Polar 고객 상태 ' + st.status);
-  const until = st.ok ? untilOf(env, st.j) : 0;
+  let until = st.ok ? untilOf(env, st.j) : 0;
+  if (sub && sub.id && /^[0-9a-f-]{36}$/.test(sub.id) && (sub.product_id === env.POLAR_PRODUCT || (sub.product && sub.product.id === env.POLAR_PRODUCT))) {   // (그 구독을 Polar 에 다시 물어 확인)
+    const r = await polar(env, 'GET', '/v1/subscriptions/' + sub.id);
+    if (r.ok && r.j && r.j.metadata && r.j.metadata.o === o) until = Math.max(until, untilOf(env, { active_subscriptions: [r.j] }));
+  }
   await acctObj(env).fetch('https://acct/plus/polar', { method: 'POST', body: JSON.stringify({ o, until }) });
   return until;
 }
@@ -552,24 +607,33 @@ async function plusRoute(req, env, url) {
     if (body.length > 1000000) return new Response('too big', { status: 413 });
     if (!plusReady(env) || !hookOk(env, req, body)) return new Response('no', { status: 403 });
     let ev = null; try { ev = JSON.parse(body); } catch { return new Response('bad', { status: 400 }); }
-    const o = extOf(ev && ev.data);
-    if (!o || !/^(subscription|order|customer)\./.test(String(ev.type))) return new Response('', { status: 202 });   // (상관없는 소식·우리 계정이 아닌 고객)
-    try { const u = await refreshPlus(env, o); console.log(`Plus 소식 ${ev.type}: ${o} → ${u ? new Date(u).toISOString() : '없음'}`); }
+    const o = extOf(ev && ev.data), md = ev && ev.data && ev.data.metadata, mo = md && typeof md.o === 'string' && /^[A-Za-z0-9_-]{10}$/.test(md.o) ? md.o : null;
+    const os = [...new Set([o, mo].filter(Boolean))];
+    if (!os.length || !/^(subscription|order|customer)\./.test(String(ev.type))) return new Response('', { status: 202 });   // (상관없는 소식·우리 계정이 아닌 고객)
+    if (o && mo && o !== mo) console.log(`Plus 소식: 고객 ${o} 와 결제한 계정 ${mo} 가 달라요 (같은 이메일?)`);
+    try { for (const x of os) { const u = await refreshPlus(env, x, x === mo ? ev.data : null); console.log(`Plus 소식 ${ev.type}: ${x} → ${u ? new Date(u).toISOString() : '없음'}`); } }
     catch (e) { console.error('Plus 소식 처리 실패:', e.message); return new Response('retry', { status: 500 }); }   // (Polar 가 다시 보낸다)
     return new Response('', { status: 202 });
   }
   if (req.method !== 'POST') return new Response('not found', { status: 404 });
   let b = {}; try { b = await req.json(); } catch {}
   const me = await (await acctObj(env).fetch('https://acct/plus/me', { method: 'POST', body: JSON.stringify({ key: b.key }) })).json();
-  if (path === '/plus/status') return J({ ...me, on: plusReady(env), price: String(env.PLUS_PRICE || '').slice(0, 40) });
+  if (path === '/plus/status') {
+    const now = Date.now();
+    if (plusReady(env) && me.acct && me.pu > 0 && me.pu < now + GRACE_MS && me.pu > now - 45 * 86400000 && rateOk('st:' + me.o, 1, 3600000)) {
+      try { me.pu = await refreshPlus(env, me.o); me.until = Math.max(me.pu, me.gu || 0); } catch {}
+    }
+    return J({ ...me, on: plusReady(env), price: String(env.PLUS_PRICE || '').slice(0, 40) });
+  }
   if (!me.o) return J({ error: 'key' }, 400);
   if (path === '/plus/deco') {
     const r = await acctObj(env).fetch('https://acct/plus/deco', { method: 'POST', body: JSON.stringify({ key: b.key, deco: b.deco }) });
     return new Response(r.body, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
   }
   if (!plusReady(env)) return J({ error: 'off' }, 503);
-  if (path === '/plus/refresh') {                             // 결제하고 돌아옴: 웹훅을 기다리지 않고 바로 확인 (1분에 6번까지)
-    if (!rateOk('re:' + me.o, 6, 60000)) return J({ error: 'wait' }, 429);
+  if (path === '/plus/refresh') {                             // 결제하고 돌아옴: 웹훅을 기다리지 않고 바로 확인 (계정만, 1분에 6번까지)
+    if (!me.acct) return J({ error: 'login' }, 403);
+    if (!rateOk('re:' + me.o, 6, 60000) || !rateOk('reip:' + clientIp(req, env), 20, 60000)) return J({ error: 'wait' }, 429);
     try { return J({ until: Math.max(await refreshPlus(env, me.o), me.gu || 0) }); } catch (e) { console.error(e.message); return J({ error: 'polar' }, 502); }
   }
   if (!me.acct) return J({ error: 'login' }, 403);
