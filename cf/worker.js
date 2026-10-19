@@ -542,7 +542,7 @@ export class Accounts extends DurableObject {
       const key = typeof b.key === 'string' && KEY_RE.test(b.key) ? b.key : null, o = key && core.ownerIdOf(key);
       if (!o) return bad('key');
       const r = this.plusRow(o);
-      if (Math.max(r.pu, r.gu) <= now) return Response.json({ error: 'plus' }, { status: 403 });
+      if (!core.PLUS_FREE && Math.max(r.pu, r.gu) <= now) return Response.json({ error: 'plus' }, { status: 403 });   // (무료인 동안은 누구나 이름 색)
       const d = core.cleanDeco(b.deco);
       this.plusSet(o, { deco: JSON.stringify(d) });
       return Response.json({ ok: true, deco: d });
@@ -623,14 +623,14 @@ async function plusRoute(req, env, url) {
     if (plusReady(env) && me.acct && me.pu > 0 && me.pu < now + GRACE_MS && me.pu > now - 45 * 86400000 && rateOk('st:' + me.o, 1, 3600000)) {
       try { me.pu = await refreshPlus(env, me.o); me.until = Math.max(me.pu, me.gu || 0); } catch {}
     }
-    return J({ ...me, on: plusReady(env), price: String(env.PLUS_PRICE || '').slice(0, 40) });
+    return J({ ...me, on: !core.PLUS_FREE && plusReady(env), free: core.PLUS_FREE, price: String(env.PLUS_PRICE || '').slice(0, 40) });
   }
   if (!me.o) return J({ error: 'key' }, 400);
   if (path === '/plus/deco') {
     const r = await acctObj(env).fetch('https://acct/plus/deco', { method: 'POST', body: JSON.stringify({ key: b.key, deco: b.deco }) });
     return new Response(r.body, { status: r.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
   }
-  if (!plusReady(env)) return J({ error: 'off' }, 503);
+  if (!plusReady(env) || (core.PLUS_FREE && path === '/plus/checkout')) return J({ error: 'off' }, 503);   // (무료인 동안은 새 결제를 받지 않는다)
   if (path === '/plus/refresh') {                             // 결제하고 돌아옴: 웹훅을 기다리지 않고 바로 확인 (계정만, 1분에 6번까지)
     if (!me.acct) return J({ error: 'login' }, 403);
     if (!rateOk('re:' + me.o, 6, 60000) || !rateOk('reip:' + clientIp(req, env), 20, 60000)) return J({ error: 'wait' }, 429);

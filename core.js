@@ -1380,18 +1380,23 @@ const isWaiting = (room, o) => room.meta.gate && !!(room.meta.log[o] && room.met
 const isSpect = (room, o) => !!room.meta.spectators[o] || isWaiting(room, o);
 const roomStateMsg = (room) => ({ type: 'roomstate', owner: room.noSave ? null : room.meta.owner, locked: room.meta.locked, persist: dbState === 'ok' && !room.noSave, max: MAX_HISTORY,
   mods: room.noSave ? [] : Object.keys(room.meta.mods), gate: room.meta.gate, cover: !room.meta.noCover, share: OWNER_SHARE, title: room.meta.title || '',
-  secret: !!room.meta.secret, paper: room.meta.paper || '', plusRoom: roomPlus(room), snaps: !!P.snaps });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
+  secret: !!room.meta.secret, paper: room.meta.paper || '', plusRoom: roomPlus(room), snaps: !!P.snaps, free: PLUS_FREE });   // persist: 이 방의 그림이 DB 에 저장되는 중인가
 function meMsg(room, o, now = Date.now()) {
   const mu = room.meta.mutes[o];
   return { type: 'me', muted: mu && (mu.until === 0 || mu.until > now) ? { until: mu.until, now, reason: mu.reason || '' } : null, spectator: isSpect(room, o), wait: isWaiting(room, o), plus: plusUntil(room, o) };
 }
 // ---- Plus (구독): 계정 저장소(P.plusOf)가 알려 준 Plus 기간·꾸미기. Plus 기능은 화면이 보낸 걸 믿지 않고 서버가 이걸로 검사한다 ----
 const PLUS_CACHE_MS = Math.max(1000, +process.env.PLUS_CACHE_MS || 5 * 60 * 1000);                             // (한 번 물어본 건 5분 동안 그대로: 들어올 때마다 계정 저장소를 깨우지 않게)
+const PLUS_FREE = process.env.PLUS_FREE !== '0';              // (73차) 결제를 받지 않는 동안: Plus 기능을 모두에게 무료로 ('0' 이면 예전처럼 Plus 만)
 const plusUntil = (room, o) => { const p = room.plus.get(o); return p && p.until > Date.now() ? p.until : 0; };
-const isPlus = (room, o) => plusUntil(room, o) > 0;
+const isPlus = (room, o) => PLUS_FREE || plusUntil(room, o) > 0;
 function plusMapMsg(room) {                                     // 지금 이 방에 있는 Plus 사람들 (배지·이름 색)
   const l = {};
-  for (const c of room.clients) if (!l[c.owner] && isPlus(room, c.owner)) l[c.owner] = room.plus.get(c.owner).deco || {};
+  for (const c of room.clients) {
+    if (l[c.owner]) continue;
+    const p = room.plus.get(c.owner);
+    if (PLUS_FREE ? p && p.deco && p.deco.c : isPlus(room, c.owner)) l[c.owner] = (p && p.deco) || {};   // (무료일 때는 이름 색을 고른 사람만: 배지 없음)
+  }
   return { type: 'plusmap', l };
 }
 function setPlus(room, o, r, all) {                             // 계정 저장소의 답을 적는다 (Plus·꾸미기가 바뀌었으면 그 사람 화면과 방 사람들에게: 어디서 물었든)
@@ -1423,8 +1428,9 @@ function ownerChanged(room) {                                   // 방장이 바
   syncOwnerPlus(room);
   for (const c of room.clients) if (c.owner === room.meta.owner) { lookPlus(c, room); break; }
 }
-const roomPlus = (room) => !room.noSave && room.meta.ownerPlus > Date.now();
+const roomPlus = (room) => !room.noSave && (PLUS_FREE || room.meta.ownerPlus > Date.now());
 async function plusOk(ws, room) {                              // 이 사람이 Plus 인가 (모르면 계정 저장소에 물어서 기다린다)
+  if (PLUS_FREE) return true;
   const o = ws.owner, c = room.plus.get(o);
   if (c && !c.asking && Date.now() - c.at < PLUS_CACHE_MS) return isPlus(room, o);
   if (isGuest(o) || !P.plusOf || room.noSave) return false;
@@ -1913,7 +1919,7 @@ function globalAllow(ws) {
 }
 
 // 어느 파일이 올라갔는지 바로 확인하는 용도 (화면의 설정 맨 아래에 '서버 버전'으로 보인다). db: none(저장소 없음) | connecting | ok | error
-const versionInfo = () => ({ stage: 3, date: '2026-10-17', rev: 72, db: dbState, dbKB: Math.round(dbOut / 1024), sync: syncStats });
+const versionInfo = () => ({ stage: 3, date: '2026-10-19', rev: 73, db: dbState, dbKB: Math.round(dbOut / 1024), sync: syncStats });
 
 // 들어온 원본 메시지의 크기·종류를 먼저 거른다. 칠하기('fill')만 16KB 를 넘을 수 있고, 그 외의 큰 메시지는 읽지도 않고 버린다.
 // 칠하기는 JSON 을 읽기 전에 속도 제한부터 확인한다 (무거운 메시지로 서버를 괴롭히지 못하게).
@@ -2250,6 +2256,6 @@ function dropRoom(id) { rooms.delete(id); }            // (Cloudflare: 방이 �
 
 module.exports = {
   setPlatform, connect, message, closed, restore, dropRoom, getRoom, packRoom, parseDbUrl, maintainRoom, saveAll, saveTick, pruneConnRate, versionInfo, newRoomId, ipTag, cleanDeco, ownerIdOf,
-  rooms, sockets, get dbState() { return dbState; }, LAYER_FREE, LAYER_MAX,
+  rooms, sockets, get dbState() { return dbState; }, LAYER_FREE, LAYER_MAX, PLUS_FREE,
   MAX_FILL_BYTES, PING_MS, SAVE_MS, ROOM_RE, MAX_HISTORY,
 };

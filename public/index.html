@@ -759,7 +759,7 @@
   <h3 style="margin-top:12px">단축키</h3>
   <div class="kbd"><b>P · B · D</b><span>펜</span><b>E</b><span>지우개</span><b>F · G · W</b><span>채우기</span><b>I</b><span>스포이드 (Alt 누르는 동안도)</span><b>H</b><span>화면 이동 (Space 누르는 동안도)</span><b>R</b><span>화면 회전 (Shift 누르고 돌리면 45°씩 · Shift+Space 누르는 동안도)</span><b>R → Space</b><span>기울기는 그대로, 원래 도구로</span><b>[ ]</b><span>펜·지우개 크기 (Shift: 크게)</span><b>Ctrl + / −</b><span>확대 / 축소</span><b>Ctrl+0</b><span>전체 그림 보기 (Ctrl+Alt+0: 100%)</span><b>Ctrl+Z</b><span>이전</span><b>Ctrl+Shift+Z</b><span>되돌리기</span><b>Shift+클릭</b><span>앞 획 끝에서 직선</span><b>U</b><span>자·도형 켜기·끄기 (도형을 끌 때 Shift: 15°씩·정사각형·정원)</span><b>M</b><span>올가미 (내 그림 골라 옮기기·크기)</span><b>Ctrl+D</b><span>고른 것 복제</span><b>Delete</b><span>고른 것 지우기</span><b>Esc</b><span>고르기 끝</span></div>
   <div class="hint">도구 키를 누른 채 그리고 떼면 원래 도구로 돌아가요 (클립 스튜디오와 같은 키)</div>
-  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-17 72차)</div>
+  <div class="hint" id="verTxt" style="margin-top:14px">화면 버전: 3단계 (2026-10-19 73차)</div>
 </section>
 
 <section id="popRow" class="pop" hidden aria-label="사용자 관리">
@@ -1759,7 +1759,7 @@ function showCursor(o, x, y, glide) {
   if (fresh) decoCursor(o, c);
   layoutCursor(c, glide && !fresh);
 }
-const labelOf = (o) => nameOf(o) + (plusMap[o] ? ' ✦' : '');
+const labelOf = (o) => nameOf(o) + (plusMap[o] && !freeAll ? ' ✦' : '');
 function decoCursor(o, c) {                                       // Plus 꾸미기: 이름 색
   const col = colorOf(o);
   c.el.querySelector('.dot').style.background = col;
@@ -1884,8 +1884,9 @@ function formModal({ title, body, ok = '확인', cancel = '취소', danger = fal
   });
 }
 // 새로 생긴 기능 안내: 화면 판(NEWS_VER)이 바뀐 뒤 처음 그림을 받으면 한 번 (전에 써 본 사람에게만, 이 기기에 기억)
-const NEWS_VER = 4;
-const NEWS = ['레이어: 도구 모음의 레이어 버튼. 고른 레이어에 그리고(지우개·채우기·올가미도 그 레이어만), 순서를 바꾸고, 눈을 끄면 내 화면에서만 숨겨요 (방마다 2개 무료)',
+const NEWS_VER = 5;
+const NEWS = ['레이어 무제한, 방 되감기, 비밀 방, 고화질·투명 이미지와 그리는 과정 영상, 이름 색, 방 종이 색을 모두 무료로 쓸 수 있어요 (방 관리 · 보기 메뉴 · 설정)',
+  '레이어: 도구 모음의 레이어 버튼. 고른 레이어에 그리고(지우개·채우기·올가미도 그 레이어만), 순서를 바꾸고, 눈을 끄면 내 화면에서만 숨겨요 ',
   '펜 투명도를 굵기 창에서도 바꿀 수 있어요',
   '그림이 많은 방에서 멀리 축소하고 화면을 옮길 때 버벅이던 것을 고쳤어요',
   '패드·폰: 확대·이동·회전하려던 손가락이 선으로 그려지지 않게 고쳤어요. 펜(애플펜슬 등)을 쓰면 손가락은 화면 조작만 해요 (설정 → 펜으로만 그리기)',
@@ -2263,8 +2264,8 @@ async function exportPng() {
   closePop();
   const v = await formModal({ title: '그림을 이미지로 저장', body: 'PNG 이미지로 만들어요. (격자는 빼고)', ok: '만들기',
     fields: [{ key: 'scope', type: 'select', label: '범위', options: [['all', '전체 그림'], ['view', '지금 보이는 화면']], value: 'all' },
-      { key: 'q', type: 'select', label: '크기', options: [['n', '보통 (긴 쪽 4000픽셀까지)'], ['hq', '✦ 고화질 (긴 쪽 1만 픽셀까지)']], value: 'n', showIf: (x) => x.scope === 'all' },
-      { key: 'bg', type: 'select', label: '바탕', options: [['white', '흰색'], ['paper', '방 종이 색'], ['none', '✦ 투명 (그림만)']], value: 'white' }] });
+      { key: 'q', type: 'select', label: '크기', options: [['n', '보통 (긴 쪽 4000픽셀까지)'], ['hq', (freeAll ? "고화질 (긴 쪽 1만 픽셀까지)" : "✦ 고화질 (긴 쪽 1만 픽셀까지)")]], value: 'n', showIf: (x) => x.scope === 'all' },
+      { key: 'bg', type: 'select', label: '바탕', options: [['white', '흰색'], ['paper', '방 종이 색'], ['none', (freeAll ? "투명 (그림만)" : "✦ 투명 (그림만)")]], value: 'white' }] });
   if (!v) return;
   if (v.scope === 'all' && !segs.length) { toast('아직 그림이 없어요'); return; }
   if ((v.scope === 'all' && v.q === 'hq') || v.bg === 'none') { if (!hasPlus()) { plusAsk('고화질·투명 배경 이미지는 ✦ Plus 기능이에요.'); return; } }
@@ -2293,7 +2294,7 @@ async function exportVideo() {
   const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
   const mime = window.MediaRecorder && HTMLCanvasElement.prototype.captureStream ? types.find((t) => MediaRecorder.isTypeSupported(t)) : null;
   if (!mime) { toast('이 브라우저는 영상을 만들 수 없어요 (크롬·사파리 최신판에서 해 주세요)', 'warn'); return; }
-  const v = await formModal({ title: '그리는 과정 영상 ✦', body: '그림이 그려지는 과정을 영상 파일로 만들어요. 만드는 동안(길이만큼) 이 화면을 열어 두세요.', ok: '만들기',
+  const v = await formModal({ title: (freeAll ? "그리는 과정 영상" : "그리는 과정 영상 ✦"), body: '그림이 그려지는 과정을 영상 파일로 만들어요. 만드는 동안(길이만큼) 이 화면을 열어 두세요.', ok: '만들기',
     fields: [{ key: 'sec', type: 'select', label: '길이', options: [['10', '10초'], ['20', '20초'], ['40', '40초']], value: '20' }, { key: 'res', type: 'select', label: '크기', options: [['720', '1280 x 720'], ['1080', '1920 x 1080']], value: '1080' }] });
   if (!v) return;
   vidBusy = true;
@@ -3875,7 +3876,7 @@ function renderPeople() {
     const li = mk('li', 'prow'); li.dataset.o = o;
     const dot = mk('span', 'dot'); dot.style.background = colorOf(o);
     li.append(dot, mk('span', 'nm', nameOf(o)));
-    if (plusMap[o]) li.appendChild(mk('span', 'tag plus', '✦ Plus'));
+    if (plusMap[o] && !freeAll) li.appendChild(mk('span', 'tag plus', '✦ Plus'));
     if (o === ownerId) { const t = mk('span', 'tag own'); t.append(icon('i-crown'), document.createTextNode('방장')); li.appendChild(t); }
     else if (mods.has(o)) li.appendChild(mk('span', 'tag mod', '부방장'));
     if (o === me) li.appendChild(mk('span', 'tag', '나'));
@@ -3992,7 +3993,7 @@ function renderAdmin() {
   sw(s1, 'adminLock', '방 잠금', '켜면 새 접속을 막아요 (이미 있는 사람과 방장은 그대로)', locked, (v) => sendCmd({ cmd: 'lock', on: v }));
   sw(s1, 'adminGate', '새로 온 사람은 보기만', '처음 온 사람은 방장·부방장이 허락해야 그릴 수 있어요 (전에 왔던 사람은 그대로). 분탕이 걱정될 때 켜 두세요', gateOn, (v) => sendCmd({ cmd: 'gate', on: v }));
   if (isOwner()) {
-    const sx = sec('✦ Plus 방 기능');
+    const sx = sec((freeAll ? "방 기능" : "✦ Plus 방 기능"));
     const prow = (name, sub, btns) => {
       const r = mk('div', 'arow'), nm = mk('div', 'nm', name); nm.appendChild(mk('small', '', sub)); r.appendChild(nm);
       for (const [label, fn] of btns) { const b = mk('button', 'btn', label); b.type = 'button'; b.onclick = fn; r.appendChild(b); }
@@ -4000,7 +4001,7 @@ function renderAdmin() {
     };
     prow(secretOn ? '🔒 비밀 방 켜짐' : '비밀 방', secretOn ? '비밀번호를 아는 사람만 들어와요 (방장·부방장은 늘)' : '비밀번호를 아는 사람만 들어오게 해요',
       secretOn ? [['비밀번호 바꾸기', () => setSecret(true)], ['끄기', async () => { if (await confirmModal({ title: '비밀 방을 끌까요?', body: '링크를 아는 누구나 들어올 수 있게 돼요.', ok: '끄기' })) sendCmd({ cmd: 'secret', on: false }); }]] : [['켜기', () => setSecret(false)]]);
-    if (snapsOn) prow('방 되감기', plusRoomOn ? '분탕·실수로 망가진 그림을 15분 단위로 되돌려요 (방장이 Plus 인 동안 남겨요)' : '방장이 Plus 가 되면 15분마다 그림을 남겨요', [['열기', openRewind]]);
+    if (snapsOn) prow('방 되감기', plusRoomOn ? (freeAll ? '분탕·실수로 망가진 그림을 15분 단위로 되돌려요' : '분탕·실수로 망가진 그림을 15분 단위로 되돌려요 (방장이 Plus 인 동안 남겨요)') : '방장이 Plus 가 되면 15분마다 그림을 남겨요', [['열기', openRewind]]);
     const pr = mk('div', 'arow'), pn = mk('div', 'nm', '방 종이 색'); pn.appendChild(mk('small', '', '그림판 바탕색 (모두에게)')); pr.appendChild(pn);
     const pw = mk('div', 'papers');
     for (const c of PAPERS) { const b = mk('button'); b.type = 'button'; b.style.background = c; b.title = c; b.setAttribute('aria-label', '종이 색 ' + c); b.classList.toggle('on', (paperC || PAPERS[0]) === c); b.onclick = () => (hasPlus() ? sendCmd({ cmd: 'paper', paper: c }) : plusAsk('방 종이 색은 ✦ Plus 기능이에요.')); pw.appendChild(b); }
@@ -4109,7 +4110,7 @@ function chatEl(m) {                                              // 모든 글�
   const el = mk('div', 'cmsg' + (m.o === me ? ' mine' : '')), head = mk('div', 'chead'), dot = mk('span', 'cdot');
   dot.style.background = colorOf(m.o);
   head.append(dot, mk('b', '', m.name));
-  if (plusMap[m.o]) head.appendChild(mk('span', 'pb', '✦'));
+  if (plusMap[m.o] && !freeAll) head.appendChild(mk('span', 'pb', '✦'));
   head.appendChild(mk('span', '', fmtTime(m.t)));
   el.append(head, mk('div', 'ctext', m.text)); return el;
 }
@@ -4452,7 +4453,7 @@ function handleMsg(m) {
       break;
     case 'roomstate': if (typeof m.title === 'string' && m.title !== roomTitle) { roomTitle = m.title; syncRoomLabel(); rememberRoom(); }
       if (!!m.secret !== secretOn) { secretOn = !!m.secret; syncRoomLabel(); }
-      plusRoomOn = !!m.plusRoom; snapsOn = !!m.snaps;
+      plusRoomOn = !!m.plusRoom; snapsOn = !!m.snaps; applyFree(m.free);
       if ((m.paper || '') !== paperC) { paperC = PAPERS.includes(m.paper) ? m.paper : ''; paintPaper(); }
       ownerId = m.owner || null; locked = !!m.locked; setPersist(m.persist); if (m.max > 0) { roomMax = m.max; checkCap(); }
       mods = new Set(Array.isArray(m.mods) ? m.mods : []); gateOn = !!m.gate; coverOn = m.cover !== false; roomShare = m.share > 0 && m.share < 1 ? m.share : 0;
@@ -4531,7 +4532,7 @@ if (window.visualViewport) {                                                    
   visualViewport.addEventListener('resize', upd); visualViewport.addEventListener('scroll', upd); upd();
 }
 nickEl.value = myNick;
-const CLIENT_VER = '3단계 (2026-10-17 72차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
+const CLIENT_VER = '3단계 (2026-10-19 73차)', DB_LABEL = { ok: '켜짐 (영구 저장)', none: '꺼짐 (DB 주소 없음)', connecting: '연결 중', error: '오류 (다시 연결 중)' };
 if (window.fetch) fetch('/version').then((r) => (r.ok ? r.json() : null)).then((j) => { $('verTxt').textContent = '화면 버전: ' + CLIENT_VER + ' · 서버 버전: ' + (j ? j.stage + '단계' : '옛 버전') + (j && j.db ? ' · 저장소: ' + (DB_LABEL[j.db] || j.db) : ''); }).catch(() => {});
 let roomTitle = '';                                             // 방 이름 (방장·부방장이 정함, 없으면 방 코드)
 const BASE_TITLE = '같이 그리기';                                 // (Cloudflare 는 첫 화면 제목에 방 이름을 미리 넣어 보낸다)
@@ -4656,12 +4657,24 @@ function renderAcct() {
 if (window.fetch) fetch('/auth/config').then((r) => (r.ok ? r.json() : null)).then((j) => { authCfg = j; renderAcct(); }).catch(() => {});
 // ── Plus (구독, Cloudflare 판): 결제는 Polar. 방 안에서 Plus 인지는 서버가 알려 준 것(me.plus)으로만 판단한다 ──
 let myPlus = 0, plusInfo = null, plusJustBought = false, plusRePending = false;          // myPlus: Plus 가 끝나는 때 (0 = 아님) / plusInfo: /plus/status 답
-const hasPlus = () => myPlus > Date.now();
+let freeAll = false;                                            // (73차) 서버가 Plus 기능을 모두에게 무료로 열었나 (roomstate.free)
+const hasPlus = () => freeAll || myPlus > Date.now();
+function applyFree(v) {                                          // 무료일 때는 ✦ 표시·결제 안내를 숨긴다
+  if (freeAll === !!v) return;
+  freeAll = !!v;
+  const t = (id, free, paid) => { const e = $(id); if (e) e.textContent = freeAll ? free : paid; };
+  t('exportVideo', '그리는 과정을 영상으로 저장', '그리는 과정을 영상으로 저장 ✦');
+  t('rwViewTitle', '방 되감기', '방 되감기 ✦');
+  const lb = document.querySelector('#plusBox > label'); if (lb) lb.textContent = freeAll ? '이름 색' : '✦ Plus';
+  syncPlusUI(); renderPlus(); refreshLabels();
+  if (typeof renderLayers === 'function') renderLayers();
+}
 const PLUS_PERKS = ['레이어 무제한 (무료는 2개)', '방 되감기: 분탕·실수로 망가진 방을 원하는 때로', '비밀 방: 비밀번호를 아는 사람만 들어와요', '고화질 내보내기: 아주 큰 PNG·투명 배경·그리는 과정 영상', '꾸미기: ✦ 배지·이름 색·방 종이 색'];
 const plusPost = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: myKey, ...body }) }).then(async (r) => ({ ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) }));
 function plusStatus() {
   if (!window.fetch) return Promise.resolve();
   return plusPost('/plus/status', {}).then((r) => {
+    if (r.ok && r.j && r.j.free) applyFree(true);
     if (r.ok && r.j && r.j.o) { plusInfo = r.j; if (r.j.until > myPlus) { if (me) send({ type: 'plusre' }); else myPlus = r.j.until; } } else plusInfo = null;
     renderPlus();
   }).catch(() => {});
@@ -4673,6 +4686,14 @@ function renderPlus() {
   box.hidden = !plusInfo;
   if (!plusInfo) return;
   body.textContent = '';
+  if (freeAll) {                                                  // 결제를 받지 않는 동안: 이름 색만 (Plus 기능은 모두 무료)
+    const r1 = mk('div', 'decorow'), cur = (plusInfo.deco || plusMap[me] || {});
+    const none = mk('button', '', '✕'); none.type = 'button'; none.title = '기본'; none.classList.toggle('on', !cur.c); none.onclick = () => setDeco({ ...cur, c: undefined }); r1.appendChild(none);
+    for (const c of DECO_COLORS) { const b = mk('button'); b.type = 'button'; b.style.background = c; b.title = c; b.classList.toggle('on', cur.c === c); b.onclick = () => setDeco({ ...cur, c }); r1.appendChild(b); }
+    body.appendChild(r1);
+    body.appendChild(mk('small', 'hint', '사람 목록·채팅·커서에 보이는 내 이름 색이에요. 레이어·되감기·비밀 방·고화질 저장은 모두 무료예요.'));
+    return;
+  }
   const until = Math.max(myPlus, plusInfo.until || 0), on = until > Date.now();
   if (on) {
     body.appendChild(mk('div', 'hint', `Plus 사용 중 · ${new Date(until).toLocaleDateString('ko-KR')}까지` + (plusInfo.pu > Date.now() ? ' (구독 중이면 자동으로 이어져요)' : '')));
